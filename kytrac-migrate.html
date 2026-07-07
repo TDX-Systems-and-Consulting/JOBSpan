@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KYTRAC — Multi-Tenancy Migration</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #060e1e; color: #eaf0fb; font-family: -apple-system, sans-serif; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; }
+  .card { background: rgba(8,18,36,.9); border: 1px solid rgba(217,119,6,.3); border-radius: 16px; padding: 32px; max-width: 620px; width: 100%; }
+  h1 { font-size: 1.4rem; color: #f59e0b; margin-bottom: 6px; }
+  .sub { color: #94a3b8; font-size: .85rem; margin-bottom: 24px; line-height: 1.6; }
+  .warning { background: rgba(239,68,68,.08); border: 1px solid rgba(239,68,68,.3); border-radius: 10px; padding: 14px; margin-bottom: 20px; font-size: .83rem; color: #fca5a5; line-height: 1.5; }
+  .btn { width: 100%; padding: 14px; border-radius: 10px; border: none; font-size: 1rem; font-weight: 700; cursor: pointer; margin-bottom: 10px; }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+  .btn-google { background: #fff; color: #1a1a1a; display: flex; align-items: center; justify-content: center; gap: 10px; }
+  .btn-amber { background: #d97706; color: #fff; }
+  .btn-outline { background: transparent; border: 1px solid rgba(217,119,6,.4); color: #f59e0b; }
+  .progress-wrap { display: none; margin-bottom: 16px; }
+  .progress-track { background: rgba(255,255,255,.08); border-radius: 999px; height: 10px; overflow: hidden; margin-bottom: 8px; }
+  .progress-bar { height: 100%; background: #d97706; border-radius: 999px; width: 0%; transition: width .2s; }
+  .progress-label { font-size: .8rem; color: #94a3b8; text-align: center; }
+  .log { display: none; background: #020810; border: 1px solid rgba(255,255,255,.06); border-radius: 10px; padding: 12px; height: 260px; overflow-y: auto; font-size: .74rem; font-family: monospace; margin-bottom: 16px; }
+  .ok { color: #34d399; } .err { color: #f87171; } .info { color: #60a5fa; } .skip { color: #94a3b8; } .warn { color: #fbbf24; }
+  .success { display: none; background: rgba(52,211,153,.1); border: 1px solid rgba(52,211,153,.3); border-radius: 10px; padding: 16px; text-align: center; margin-bottom: 16px; color: #34d399; font-weight: 700; font-size: .9rem; line-height: 1.7; }
+  input { width: 100%; padding: 11px 14px; background: rgba(8,19,37,.8); border: 1px solid rgba(217,119,6,.3); border-radius: 10px; color: #eaf0fb; font-size: .9rem; margin-bottom: 14px; }
+  label { display: block; font-size: .78rem; color: #94a3b8; margin-bottom: 5px; }
+  #authSection { display: block; }
+  #setupSection { display: none; }
+  #migrateSection { display: none; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>KYTRAC Multi-Tenancy Migration</h1>
+  <p class="sub">This moves all existing KYTRAC data (jobs, customers, vendors, settings, etc.) into a company-scoped namespace. Run this once — it's safe to re-run, won't duplicate data.</p>
+
+  <div class="warning">⚠️ Run this before using the new version of KYTRAC. After migration, all data lives under <code>companies/{companyId}/...</code> and the old flat collections will no longer be read.</div>
+
+  <div id="authSection">
+    <button class="btn btn-google" onclick="signIn()">
+      <svg width="20" height="20" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+      Sign in with Google
+    </button>
+  </div>
+
+  <div id="setupSection">
+    <p style="color:#34d399;font-size:.83rem;margin-bottom:16px">✅ Signed in</p>
+    <label>Company Name *</label>
+    <input id="companyName" placeholder="Jason Hudson Construction" />
+    <label>Owner Name</label>
+    <input id="ownerName" placeholder="Jason Hudson" />
+    <button class="btn btn-amber" onclick="startMigration()">Migrate Data to Company Namespace</button>
+  </div>
+
+  <div id="migrateSection">
+    <div class="progress-wrap" id="progressWrap" style="display:block">
+      <div class="progress-track"><div class="progress-bar" id="progressBar"></div></div>
+      <div class="progress-label" id="progressLabel">Starting...</div>
+    </div>
+    <div class="log" id="log"></div>
+    <div class="success" id="successSection"></div>
+    <button class="btn btn-outline" onclick="window.location.href='kytrac.html'" style="display:none" id="openBtn">Open KYTRAC →</button>
+  </div>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+<script>
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyDoFC2N0rrgwO-vY8SCPb3J-jKgSLYn5BQ",
+  authDomain: "kytrac-72d91.firebaseapp.com",
+  projectId: "kytrac-72d91",
+  storageBucket: "kytrac-72d91.firebasestorage.app",
+  messagingSenderId: "1061786207687",
+  appId: "1:1061786207687:web:219bce6739311f43b205e2"
+};
+
+let db, auth, currentUser, companyId;
+firebase.initializeApp(FIREBASE_CONFIG);
+db = firebase.firestore();
+auth = firebase.auth();
+
+auth.onAuthStateChanged(u => {
+  if (u) {
+    currentUser = u;
+    document.getElementById('authSection').style.display = 'none';
+    document.getElementById('setupSection').style.display = 'block';
+    document.getElementById('ownerName').value = u.displayName || '';
+  }
+});
+
+function signIn() {
+  auth.signInWithPopup(new firebase.auth.GoogleAuthProvider()).catch(e => alert('Sign in failed: ' + e.message));
+}
+
+function log(msg, cls) {
+  const el = document.getElementById('log');
+  el.style.display = 'block';
+  const d = document.createElement('div');
+  if (cls) d.className = cls;
+  d.textContent = msg;
+  el.appendChild(d);
+  el.scrollTop = el.scrollHeight;
+}
+
+function setProgress(pct, label) {
+  document.getElementById('progressBar').style.width = pct + '%';
+  document.getElementById('progressLabel').textContent = label;
+}
+
+async function copyCollection(fromPath, toRef, label, subcollections = []) {
+  const snap = await db.collection(fromPath).get();
+  let copied = 0, skipped = 0;
+  for (const doc of snap.docs) {
+    const data = doc.data();
+    const newRef = toRef.doc(doc.id);
+    const existing = await newRef.get();
+    if (existing.exists) {
+      skipped++;
+    } else {
+      await newRef.set({ ...data, companyId });
+      copied++;
+      // Migrate subcollections
+      for (const sub of subcollections) {
+        const subSnap = await db.collection(fromPath).doc(doc.id).collection(sub).get();
+        for (const subDoc of subSnap.docs) {
+          const subExisting = await newRef.collection(sub).doc(subDoc.id).get();
+          if (!subExisting.exists) {
+            await newRef.collection(sub).doc(subDoc.id).set({ ...subDoc.data(), companyId });
+          }
+        }
+      }
+    }
+  }
+  log(`  ${label}: ${copied} migrated, ${skipped} already exist`, copied > 0 ? 'ok' : 'skip');
+  return { copied, skipped, total: snap.size };
+}
+
+async function startMigration() {
+  const name = document.getElementById('companyName').value.trim();
+  if (!name) { alert('Company name is required.'); return; }
+  const ownerName = document.getElementById('ownerName').value.trim();
+
+  document.getElementById('setupSection').style.display = 'none';
+  document.getElementById('migrateSection').style.display = 'block';
+
+  try {
+    // Step 1: Create or find company doc
+    log('Step 1: Setting up company...', 'info');
+    const email = currentUser.email.toLowerCase();
+    const existing = await db.collection('companies').where('ownerEmail','==',email).limit(1).get();
+    
+    if (!existing.empty) {
+      companyId = existing.docs[0].id;
+      log('  Found existing company: ' + companyId, 'ok');
+    } else {
+      const ref = await db.collection('companies').add({
+        name,
+        ownerEmail: email,
+        ownerName: ownerName || email,
+        memberEmails: [email],
+        plan: 'trial',
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      });
+      companyId = ref.id;
+      log('  Created company: ' + companyId, 'ok');
+    }
+
+    const compRef = db.collection('companies').doc(companyId);
+    setProgress(10, 'Company created...');
+
+    // Step 2: Migrate each collection
+    const collections = [
+      { from: 'jobs', label: 'Jobs', subs: ['phases','logs','estimate','changeorders','subs','invoices'] },
+      { from: 'customers', label: 'Customers', subs: [] },
+      { from: 'vendors', label: 'Vendors', subs: ['bills'] },
+      { from: 'catalog', label: 'Catalog', subs: [] },
+      { from: 'todos', label: 'Todos', subs: [] },
+      { from: 'timeentries', label: 'Time Entries', subs: [] },
+      { from: 'documents', label: 'Documents', subs: [] },
+      { from: 'calendarEvents', label: 'Calendar Events', subs: [] },
+      { from: 'purchaseOrders', label: 'Purchase Orders', subs: [] },
+      { from: 'settings', label: 'Settings', subs: [] },
+    ];
+
+    log('', '');
+    log('Step 2: Migrating collections...', 'info');
+
+    let totalCopied = 0;
+    for (let i = 0; i < collections.length; i++) {
+      const c = collections[i];
+      const pct = 10 + Math.round((i / collections.length) * 85);
+      setProgress(pct, `Migrating ${c.label}...`);
+      const result = await copyCollection(c.from, compRef.collection(c.from), c.label, c.subs);
+      totalCopied += result.copied;
+      await new Promise(r => setTimeout(r, 100));
+    }
+
+    // Step 3: Set up settings/company if not already there
+    log('', '');
+    log('Step 3: Finalizing company profile...', 'info');
+    const settingsRef = compRef.collection('settings').doc('company');
+    const settingsDoc = await settingsRef.get();
+    if (!settingsDoc.exists) {
+      await settingsRef.set({
+        companyName: name,
+        email: currentUser.email,
+        phone: '',
+        address: '',
+        license: '',
+        insurance: '',
+        logo: '',
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      });
+      log('  Company profile created', 'ok');
+    } else {
+      log('  Company profile already exists', 'skip');
+    }
+
+    setProgress(100, 'Complete!');
+    log('', '');
+    log('✅ Migration complete! ' + totalCopied + ' records moved.', 'info');
+    log('Company ID: ' + companyId, 'info');
+    log('All data now lives under companies/' + companyId + '/...', 'info');
+
+    document.getElementById('successSection').style.display = 'block';
+    document.getElementById('successSection').innerHTML = `
+      ✅ Migration complete!<br>
+      <span style="font-size:.8rem;font-weight:400;color:#94a3b8">${totalCopied} records migrated to your company namespace.<br>
+      Company ID: <code style="color:#f59e0b">${companyId}</code></span>
+    `;
+    document.getElementById('openBtn').style.display = 'block';
+
+  } catch(e) {
+    log('❌ Error: ' + e.message, 'err');
+    console.error(e);
+  }
+}
+</script>
+</body>
+</html>

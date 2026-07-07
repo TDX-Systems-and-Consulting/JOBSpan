@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>KYTRAC — Fix Estimated Costs</title>
+<style>
+  body { font-family: monospace; background: #0a1628; color: #eaf0fb; padding: 20px; }
+  h2 { color: #d97706; }
+  .btn { background: #d97706; color: #fff; border: none; padding: 10px 24px; border-radius: 8px; font-size: 1rem; cursor: pointer; margin: 8px 4px; }
+  .btn-google { background: #fff; color: #333; }
+  .log { background: #0d1f3c; border: 1px solid #1e3a5f; border-radius: 8px; padding: 16px; margin-top: 16px; max-height: 500px; overflow-y: auto; font-size: .85rem; line-height: 1.8; }
+  .ok { color: #34d399; } .err { color: #f87171; } .info { color: #60a5fa; }
+  p.sub { color: #94a3b8; font-size: .9rem; }
+</style>
+</head>
+<body>
+<h2>KYTRAC Fix Estimated Costs</h2>
+<p class="sub">Calculates estimated cost per job from JobTread line items using catalog cost/price ratios. Updates estCost so margin works correctly.</p>
+<div id="authSection">
+  <button class="btn btn-google" onclick="signIn()">Sign in with Google</button>
+</div>
+<div id="mainSection" style="display:none">
+  <p>Signed in as: <span id="userEmail"></span></p>
+  <button class="btn" onclick="runFix(false)">Run Est Cost Fix</button>
+  <button class="btn" onclick="runFix(true)">Force Update All</button>
+  <div class="log" id="log"><span class="info">Ready.</span></div>
+</div>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script>
+firebase.initializeApp({apiKey:"AIzaSyDoFC2N0rrgwO-vY8SCPb3J-jKgSLYn5BQ",authDomain:"kytrac-72d91.firebaseapp.com",projectId:"kytrac-72d91"});
+const db=firebase.firestore(),auth=firebase.auth(),CID='mtOiSAzppjVbxKdHRJBH';
+const EST_COSTS={"0001":11429.95,"1065":8594.91,"1072":3021.91,"1081":4245.85,"1082":58559.91,"1083":1986.77,"1084":2977.24,"1087":25224.22,"1095":2400.0,"1096":8070.82,"1099":1239.61,"1100":11288.86,"1101":767.99,"1102":27961.05,"1103":1185.04,"1105":1440.82,"1106":67592.92,"1107":585.46,"1108":6271.16,"1109":335.27,"1115":4568.66,"1116":204.59,"1117":522.5,"1119":1258.0,"1123":427.06,"1124":111140.06,"1129":3557.19,"1132":1197.61,"1133":875.19,"1136":127.09,"1144":13107.22,"1145":11757.51,"1146":417.49,"1147":38480.78,"1148":9603.16,"1149":47438.72,"1150":4034.96,"1151":1143.61,"1152":21188.32,"1153":4091.0,"1154":573.91,"1156":2465.88,"1158":5830.7,"1159":173.91,"1160":8077.95,"1161":6342.03,"1162":28383.12,"1163":16338.47,"1164":5162.8,"1166":29440.0,"1169":10930.93,"1171":11642.3,"1172":869.57,"1173":7985.31,"1174":3645.55,"1175":1280.58,"1176":66305.01,"1177":9770.29,"1179":72724.69,"1182":1467.59,"1183":46740.53,"1185":2537.5,"1186":13084.36,"1187":15775.75,"1188":18927.05,"1189":9866.82,"1190":4151.08,"1194":55022.8,"1200":3221.32,"1202":1434.78,"1203":1205.22,"1204":1192.97,"1205":39961.44,"1206":12208.64,"1207":15940.73,"1209":14052.86,"1210":1017.19,"1212":249.67,"1213":4310.7,"1215":195.76,"1216":35561.4,"1218":20029.54,"1221":60542.16,"1225":888.08,"1226":2775.94,"1227":49748.49,"1228":31886.28,"1229":5908.38,"1231":54888.21,"1234":8244.43,"1243":15408.66,"1244":240.13,"1245":60472.33,"1250":313.41,"1264":3673.17,"1269":356.44};
+auth.onAuthStateChanged(u=>{if(u){document.getElementById('authSection').style.display='none';document.getElementById('mainSection').style.display='block';document.getElementById('userEmail').textContent=u.email;}});
+function signIn(){auth.signInWithPopup(new firebase.auth.GoogleAuthProvider());}
+function log(msg,cls){const el=document.getElementById('log');el.innerHTML+=`<div class="${cls||''}">${msg}</div>`;el.scrollTop=el.scrollHeight;}
+async function runFix(force){
+  document.getElementById('log').innerHTML='';
+  log('Starting...','info');
+  const snap=await db.collection('companies').doc(CID).collection('jobs').get();
+  log('Found '+snap.size+' jobs','info');
+  let updated=0,skipped=0,noData=0;
+  for(const doc of snap.docs){
+    const data=doc.data();
+    const jobNum=String(data.jobNumber||'').trim();
+    const existingEC=data.estCost||0;
+    const estCost=EST_COSTS[jobNum];
+    if(!estCost){noData++;continue;}
+    if(!force&&existingEC>0){skipped++;continue;}
+    const cv=data.contractValue||data.approvedOrders||0;
+    const margin=cv>0?Math.round((cv-estCost)/cv*1000)/10:0;
+    try{
+      await doc.ref.update({estCost,updatedAt:firebase.firestore.FieldValue.serverTimestamp()});
+      log('Job #'+jobNum+' ('+( data.name||'').slice(0,35)+'): estCost=$'+estCost.toLocaleString()+(cv>0?' margin='+margin+'%':''),'ok');
+      updated++;
+    }catch(e){log('ERROR Job #'+jobNum+': '+e.message,'err');}
+  }
+  log('Done! Updated:'+updated+' Skipped:'+skipped+' No data:'+noData,'ok');
+}
+</script>
+</body>
+</html>

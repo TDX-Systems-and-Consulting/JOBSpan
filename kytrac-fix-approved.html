@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>KYTRAC — Fix Contract Values from Approved Orders</title>
+<style>
+  body { font-family: monospace; background: #0a1628; color: #eaf0fb; padding: 20px; }
+  h2 { color: #d97706; }
+  .btn { background: #d97706; color: #fff; border: none; padding: 10px 24px; border-radius: 8px; font-size: 1rem; cursor: pointer; margin: 8px 4px; }
+  .btn-google { background: #fff; color: #333; }
+  .log { background: #0d1f3c; border: 1px solid #1e3a5f; border-radius: 8px; padding: 16px; margin-top: 16px; max-height: 500px; overflow-y: auto; font-size: .85rem; line-height: 1.8; }
+  .ok { color: #34d399; }
+  .err { color: #f87171; }
+  .info { color: #60a5fa; }
+  p.sub { color: #94a3b8; font-size: .9rem; }
+</style>
+</head>
+<body>
+<h2>⚡ KYTRAC — Fix Contract Values</h2>
+<p class="sub">Updates jobs in Firestore with their approved proposal totals from JobTread.<br>
+Only updates jobs where contractValue is 0 or missing. Will not overwrite existing values.</p>
+
+<div id="authSection">
+  <button class="btn btn-google" onclick="signIn()">Sign in with Google</button>
+</div>
+<div id="mainSection" style="display:none">
+  <p>Signed in as: <span id="userEmail"></span></p>
+  <button class="btn" onclick="runFix()">▶ Run Contract Value Fix</button>
+  <button class="btn" onclick="runForce()">⚠ Force Update All (overwrite existing)</button>
+  <div class="log" id="log"><span class="info">Ready. Click "Run Contract Value Fix" to start.</span></div>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script>
+const firebaseConfig = {
+  apiKey: "AIzaSyDoFC2N0rrgwO-vY8SCPb3J-jKgSLYn5BQ",
+  authDomain: "kytrac-72d91.firebaseapp.com",
+  projectId: "kytrac-72d91",
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+const auth = firebase.auth();
+const COMPANY_ID = 'mtOiSAzppjVbxKdHRJBH';
+
+// Approved totals from customer-orders-2026-06-23.csv
+const APPROVED_TOTALS = {
+  "1064": 7232.46, "1065": 117843.21, "1066": 9932.16, "1067": 12137.78,
+  "1070": 3200.0, "1072": 35541.32, "1073": 4127.7, "1074": 5769.25,
+  "1088": 28012.05, "1094": 3405.18, "1095": 3000.0, "1097": 5821.1,
+  "1099": 1505.68, "1106": 47832.71, "1107": 874.6, "1109": 519.53,
+  "1112": 6200.0, "1113": 16150.0, "1114": 1375.44, "1117": 1056.59,
+  "1119": 6424.63, "1123": 1598.95, "1126": 832.6, "1127": 1000.0,
+  "1132": 1878.72, "1144": 9000.0, "1146": 1653.05, "1147": 49022.34,
+  "1149": 45980.57, "1150": 2929.78, "1153": 11719.72, "1156": 4344.75,
+  "1159": 1780.0, "1160": 13700.0, "1161": 20495.26, "1163": 6017.52,
+  "1164": 10840.37, "1166": 45972.15, "1168": 237.38, "1172": 1300.0,
+  "1175": 1483.68, "1180": 905.85, "1181": 0.0, "1183": 54117.06,
+  "1192": 3197.76, "1205": 79761.66, "1210": 2047.0, "1213": 9473.69,
+  "1215": 3048.43, "1221": 400.0, "1227": 74240.43, "1258": 1649.23,
+  "1264": 4926.67, "1265": 5294.25, "1269": 839.17, "1270": 3398.71,
+  "1277": 3043.8, "1278": 1752.58
+};
+
+auth.onAuthStateChanged(user => {
+  if (user) {
+    document.getElementById('authSection').style.display = 'none';
+    document.getElementById('mainSection').style.display = 'block';
+    document.getElementById('userEmail').textContent = user.email;
+  }
+});
+
+function signIn() {
+  const provider = new firebase.auth.GoogleAuthProvider();
+  auth.signInWithPopup(provider);
+}
+
+function log(msg, cls) {
+  const el = document.getElementById('log');
+  el.innerHTML += `<div class="${cls||''}">${msg}</div>`;
+  el.scrollTop = el.scrollHeight;
+}
+
+async function runFix(force = false) {
+  document.getElementById('log').innerHTML = '';
+  log(`Starting contract value fix... (force=${force})`, 'info');
+
+  const snap = await db.collection('companies').doc(COMPANY_ID).collection('jobs').get();
+  log(`Found ${snap.size} jobs in Firestore`, 'info');
+
+  let updated = 0, skipped = 0, noData = 0;
+
+  for (const doc of snap.docs) {
+    const data = doc.data();
+    const jobNum = String(data.jobNumber || '').trim();
+    const existingCV = data.contractValue || 0;
+    const approvedTotal = APPROVED_TOTALS[jobNum];
+
+    if (!approvedTotal || approvedTotal === 0) {
+      noData++;
+      continue;
+    }
+
+    if (!force && existingCV > 0) {
+      log(`  ⏭ Job #${jobNum} (${data.name||''}): already has $${existingCV.toLocaleString()} — skipping`, '');
+      skipped++;
+      continue;
+    }
+
+    try {
+      await doc.ref.update({
+        contractValue: approvedTotal,
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+      log(`  ✅ Job #${jobNum} (${(data.name||'').slice(0,40)}): set contractValue = $${approvedTotal.toLocaleString()}`, 'ok');
+      updated++;
+    } catch(e) {
+      log(`  ❌ Job #${jobNum}: ${e.message}`, 'err');
+    }
+  }
+
+  log('', '');
+  log(`Done! Updated: ${updated} | Skipped (had value): ${skipped} | No data in CSV: ${noData}`, 'ok');
+  log(`Total pipeline value from approved orders: $${Object.values(APPROVED_TOTALS).reduce((a,b)=>a+b,0).toLocaleString()}`, 'info');
+}
+
+function runForce() {
+  if (confirm('This will OVERWRITE existing contract values with approved proposal totals. Continue?')) {
+    runFix(true);
+  }
+}
+</script>
+</body>
+</html>
