@@ -1,4 +1,4 @@
-// JOBSpan Application JavaScript v1.9.29 · 08/Jul/2026
+// JOBSpan Application JavaScript v1.9.30 · 08/Jul/2026
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -577,6 +577,17 @@ function saveJob(openEstimate) {
 function openNewJobForCustomer(customerId) {
   const customer = allCustomers.find(c => c.id === customerId);
   if (!customer) return;
+  prefillNewJobForCustomerData(customer);
+}
+window.openNewJobForCustomer = openNewJobForCustomer;
+
+// Pre-fills and opens the New Job modal from a plain customer-like object
+// ({id, name, phone, email, address}). Does not depend on the customer
+// already being present in the allCustomers local cache, so it's safe to
+// call immediately after a Firestore write resolves, before onSnapshot
+// has caught up.
+function prefillNewJobForCustomerData(customer) {
+  if (!customer) return;
   conEditingJobId = null;
   document.getElementById('jobModalTitle').textContent = 'New Job';
   // Pre-fill from customer
@@ -605,7 +616,7 @@ function openNewJobForCustomer(customerId) {
     if (nameEl) { nameEl.focus(); nameEl.setSelectionRange(nameEl.value.length, nameEl.value.length); }
   }, 200);
 }
-window.openNewJobForCustomer = openNewJobForCustomer;
+window.prefillNewJobForCustomerData = prefillNewJobForCustomerData;
 
 function conRenderBoard() {
   const board = document.getElementById('conBoard');
@@ -5611,16 +5622,7 @@ function saveCustomer(goToNewJob) {
       kClose('customerModal');
       if (goToNewJob) {
         const newCustomerId = id || (ref && ref.id);
-        if (newCustomerId) {
-          // Give allCustomers' onSnapshot a moment to pick up the new/updated doc
-          // before we try to find it by id.
-          const tryOpen = (attemptsLeft) => {
-            const found = allCustomers.find(c => c.id === newCustomerId);
-            if (found) { openNewJobForCustomer(newCustomerId); return; }
-            if (attemptsLeft > 0) setTimeout(() => tryOpen(attemptsLeft - 1), 200);
-          };
-          tryOpen(10);
-        }
+        prefillNewJobForCustomerData({ id: newCustomerId, ...data });
       }
     })
     .catch(e => alert('Error: ' + e.message));
