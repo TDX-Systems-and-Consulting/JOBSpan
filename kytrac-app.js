@@ -1,4 +1,4 @@
-// JOBSpan Application JavaScript v1.9.28 · 07/Jul/2026
+// JOBSpan Application JavaScript v1.9.29 · 08/Jul/2026
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -5584,7 +5584,7 @@ function openCustomerModal(id) {
   kOpen('customerModal');
 }
 
-function saveCustomer() {
+function saveCustomer(goToNewJob) {
   if (!conDb) return;
   const name = document.getElementById('custName')?.value.trim();
   if (!name) { alert('Name is required.'); return; }
@@ -5607,7 +5607,22 @@ function saveCustomer() {
     ? col.doc(id).update(data)
     : col.add({ ...data, companyId: currentCompanyId, createdAt: firebase.firestore.FieldValue.serverTimestamp(), createdBy: conCurrentUser?.email || '' });
 
-  promise.then(() => kClose('customerModal'))
+  promise.then((ref) => {
+      kClose('customerModal');
+      if (goToNewJob) {
+        const newCustomerId = id || (ref && ref.id);
+        if (newCustomerId) {
+          // Give allCustomers' onSnapshot a moment to pick up the new/updated doc
+          // before we try to find it by id.
+          const tryOpen = (attemptsLeft) => {
+            const found = allCustomers.find(c => c.id === newCustomerId);
+            if (found) { openNewJobForCustomer(newCustomerId); return; }
+            if (attemptsLeft > 0) setTimeout(() => tryOpen(attemptsLeft - 1), 200);
+          };
+          tryOpen(10);
+        }
+      }
+    })
     .catch(e => alert('Error: ' + e.message));
 }
 
