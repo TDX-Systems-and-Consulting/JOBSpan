@@ -1,4 +1,4 @@
-// JOBSpan Application JavaScript v1.9.35 · 08/Jul/2026
+// JOBSpan Application JavaScript v1.9.36 · 08/Jul/2026
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -4725,15 +4725,74 @@ function deleteInvoice() {
     .then(() => { kClose('addInvoiceModal'); loadAllInvoices(); });
 }
 
-function quickMarkPaid(jobId, invId, total) {
-  if (!confirm('Mark this invoice as Paid in Full?')) return;
-  coll('jobs').doc(jobId).collection('invoices').doc(invId).update({
-    status: 'Paid',
-    amtPaid: total,
-    paidDate: new Date().toISOString().split('T')[0],
-    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-  }).catch(e => alert('Error: ' + e.message));
+async function quickMarkPaid(jobId, invId, total) {
+  if (!confirm('Mark this invoice as Paid in Full? This will also move the job to Approved and prep it for scheduling.')) return;
+
+  try {
+    // 1. Mark the invoice paid
+    await coll('jobs').doc(jobId).collection('invoices').doc(invId).update({
+      status: 'Paid',
+      amtPaid: total,
+      paidDate: new Date().toISOString().split('T')[0],
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+
+    // 2. Auto-advance job status to Approved, but only if it hasn't already
+    // progressed further in the pipeline (never move a job backwards).
+    const job = conJobs.find(j => j.id === jobId);
+    const approvedIdx = CON_JOB_STATUSES.indexOf('Approved');
+    const currentIdx = job ? CON_JOB_STATUSES.indexOf(job.status) : -1;
+    if (job && (currentIdx === -1 || currentIdx < approvedIdx)) {
+      if (conCurrentJobId === jobId && typeof commitJobStatusChange === 'function') {
+        commitJobStatusChange('Approved');
+      } else {
+        await coll('jobs').doc(jobId).update({
+          status: 'Approved',
+          statusDate: new Date().toISOString().split('T')[0],
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+      }
+    }
+
+    // 3. Flag this job's estimate tree as board-ready: every Epic gets
+    // sprintEnabled, every Feature/Task gets a default status if it doesn't
+    // already have one. Never overwrite an existing value.
+    const groupsSnap = await coll('jobs').doc(jobId).collection('estimateGroups').get();
+    const writes = [];
+    for (const groupDoc of groupsSnap.docs) {
+      const groupData = groupDoc.data();
+      if (!groupData.sprintEnabled) {
+        writes.push(groupDoc.ref.update({ sprintEnabled: true }));
+      }
+      const subSnap = await coll('jobs').doc(jobId).collection('estimateGroups')
+        .doc(groupDoc.id).collection('subgroups').get();
+      for (const subDoc of subSnap.docs) {
+        const subData = subDoc.data();
+        if (!subData.status) {
+          writes.push(subDoc.ref.update({ status: 'not-started' }));
+        }
+        const itemSnap = await coll('jobs').doc(jobId).collection('estimateGroups')
+          .doc(groupDoc.id).collection('subgroups').doc(subDoc.id).collection('items').get();
+        for (const itemDoc of itemSnap.docs) {
+          const itemData = itemDoc.data();
+          if (!itemData.taskStatus) {
+            writes.push(itemDoc.ref.update({ taskStatus: 'todo' }));
+          }
+        }
+      }
+    }
+    await Promise.all(writes);
+
+    // 4. Jump straight to the Kanban Board / Schedule tab, ready to schedule
+    if (conCurrentJobId === jobId) {
+      const scheduleBtn = document.querySelector('#jobDetailModal .con-subtab[onclick*="phases"]');
+      if (scheduleBtn) scheduleBtn.click();
+    }
+  } catch (e) {
+    alert('Error marking invoice paid: ' + e.message);
+  }
 }
+window.quickMarkPaid = quickMarkPaid;
 
 // ── Print Invoice ──
 function printInvoiceById(jobId, invId) {
