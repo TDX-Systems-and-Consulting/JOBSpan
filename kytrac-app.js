@@ -1,4 +1,4 @@
-// JOBSpan Application JavaScript v1.9.33 · 08/Jul/2026
+// JOBSpan Application JavaScript v1.9.34 · 08/Jul/2026
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -4053,17 +4053,36 @@ function addCatalogItemToEstimate(catItem) {
   if (!conCurrentJobId) { alert('Open a job first.'); return; }
   const qty = 1;
   const data = {
-    category: catItem.category || 'Labor',
     desc: catItem.desc || '',
     qty,
     unit: catItem.unit || 'ea',
+    costType: catItem.category || 'Materials',
     unitCost: catItem.unitCost || 0,
     markup: catItem.markup || 0,
+    unitPrice: catItem.unitCost ? catItem.unitCost * (1 + (catItem.markup || 0) / 100) : 0,
     notes: catItem.notes || '',
+    order: 0,
     createdAt: firebase.firestore.FieldValue.serverTimestamp()
   };
-  coll('jobs').doc(conCurrentJobId).collection('estimate').add(subDoc(data))
+
+  const groupName = catItem.category || 'General';
+
+  (async () => {
+    let group = estGroups.find(g => g.name.toLowerCase() === groupName.toLowerCase());
+    if (!group) {
+      const ref = await coll('jobs').doc(conCurrentJobId).collection('estimateGroups').add({
+        name: groupName, order: estGroups.length,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+      group = { id: ref.id, name: groupName, order: estGroups.length, subgroups: [], directItems: [] };
+      estGroups.push(group);
+    }
+    return coll('jobs').doc(conCurrentJobId)
+      .collection('estimateGroups').doc(group.id)
+      .collection('items').add(data);
+  })()
     .then(() => {
+      loadEstimate(conCurrentJobId);
       // Brief confirmation
       const btn = event.target;
       if (btn) { const orig = btn.textContent; btn.textContent = '✓ Added'; setTimeout(()=>btn.textContent=orig, 1500); }
@@ -11090,42 +11109,57 @@ async function wizardAddBundleToEstimate() {
 
   kClose('smartAddModal');
 
-  // Find or create a subgroup for this bundle
-  let groupId = estGroups[0]?.id;
-  let subgroupId = null;
+  // Find or create a group (Epic) based on room context, and a subgroup
+  // (Feature) based on trade context — same pattern as wizardAddToEstimate,
+  // so bundle-added items land in the same tree the Board/Estimate views read.
+  const roomName = _wizardRoom || _wizardCategory || 'General';
+  const tradeName = (_wizardTrade || '').split(' ').slice(1).join(' ') || 'General';
 
-  if (groupId) {
-    // Add a subgroup named after the bundle
-    const sgRef = await coll('jobs').doc(conCurrentJobId).collection('estimateSubgroups').add({
-      groupId,
-      name: _wizardBundle.name + (qty > 1 ? ' ×' + qty : '') + ' (' + tier.label + ')',
-      order: Date.now(),
-      companyId: currentCompanyId,
-      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+  let group = estGroups.find(g => g.name.toLowerCase() === roomName.toLowerCase());
+  if (!group) {
+    const ref = await coll('jobs').doc(conCurrentJobId).collection('estimateGroups').add({
+      name: roomName, order: estGroups.length,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
     });
-    subgroupId = sgRef.id;
+    group = { id: ref.id, name: roomName, order: estGroups.length, subgroups: [], directItems: [] };
+    estGroups.push(group);
   }
+  const groupId = group.id;
+
+  const subgroupName = _wizardBundle.name + (qty > 1 ? ' ×' + qty : '') + ' (' + tier.label + ')';
+  const subRef = await coll('jobs').doc(conCurrentJobId).collection('estimateGroups')
+    .doc(groupId).collection('subgroups').add({
+      name: subgroupName, order: group.subgroups?.length || 0,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+  const subgroup = { id: subRef.id, name: subgroupName, order: group.subgroups?.length || 0, items: [] };
+  if (!group.subgroups) group.subgroups = [];
+  group.subgroups.push(subgroup);
+  const subgroupId = subgroup.id;
 
   // Add each line × qty
+  let order = 0;
   for (const line of tier.lines) {
     const lineQty = parseFloat((line.qty * qty).toFixed(4));
     const data = {
       desc: line.desc,
       qty: lineQty,
       unit: line.unit || 'ea',
+      costType: line.type === 'labor' ? 'Labor' : 'Materials',
       unitCost: line.unitCost || 0,
       unitPrice: line.unitPrice || 0,
       markup: line.unitCost > 0 ? Math.round((line.unitPrice / line.unitCost - 1) * 100) : 0,
-      type: line.type || 'material',
-      groupId: groupId || '',
-      subgroupId: subgroupId || '',
-      companyId: currentCompanyId,
-      addedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      notes: '',
+      order: order++,
       source: 'smartadd-bundle',
       bundleName: _wizardBundle.name,
       bundleTier: _wizardTier,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
     };
-    await coll('jobs').doc(conCurrentJobId).collection('estimate').add(data);
+    await coll('jobs').doc(conCurrentJobId)
+      .collection('estimateGroups').doc(groupId)
+      .collection('subgroups').doc(subgroupId)
+      .collection('items').add(data);
   }
 
   // Refresh estimate
@@ -11311,27 +11345,54 @@ async function wizAddTemplateToEstimate(templateId) {
   document.getElementById('wizTemplateOverlay')?.remove();
   kClose('smartAddModal');
 
+  const roomName = _wizardRoom || _wizardCategory || 'General';
+  const tradeName = t.name || (_wizardTrade || '').split(' ').slice(1).join(' ') || 'General';
+
+  let group = estGroups.find(g => g.name.toLowerCase() === roomName.toLowerCase());
+  if (!group) {
+    const ref = await coll('jobs').doc(conCurrentJobId).collection('estimateGroups').add({
+      name: roomName, order: estGroups.length,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    group = { id: ref.id, name: roomName, order: estGroups.length, subgroups: [], directItems: [] };
+    estGroups.push(group);
+  }
+  const groupId = group.id;
+
+  const subRef = await coll('jobs').doc(conCurrentJobId).collection('estimateGroups')
+    .doc(groupId).collection('subgroups').add({
+      name: tradeName, order: group.subgroups?.length || 0,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+  const subgroup = { id: subRef.id, name: tradeName, order: group.subgroups?.length || 0, items: [] };
+  if (!group.subgroups) group.subgroups = [];
+  group.subgroups.push(subgroup);
+  const subgroupId = subgroup.id;
+
   const lines = t.lines || [];
+  let order = 0;
   for (const line of lines) {
     const lineQty = (line.qty || 1) * qty;
     const data = {
       desc: line.desc || '',
-      category: line.category || t.trade || '',
+      qty: lineQty,
+      unit: line.unit || 'ea',
+      costType: line.type === 'labor' ? 'Labor' : 'Materials',
       unitCost: line.unitCost || 0,
       unitPrice: line.unitPrice || 0,
       markup: line.markup || 0,
-      qty: lineQty,
-      unit: line.unit || 'ea',
-      type: line.type || 'material',
-      companyId: currentCompanyId,
-      addedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      notes: '',
+      order: order++,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
     };
-    await coll('jobs').doc(conCurrentJobId).collection('estimate').add(data);
+    await coll('jobs').doc(conCurrentJobId)
+      .collection('estimateGroups').doc(groupId)
+      .collection('subgroups').doc(subgroupId)
+      .collection('items').add(data);
   }
 
   // Refresh estimate
-  if (typeof conLoadJobDetail === 'function') conLoadJobDetail(conCurrentJobId);
-  if (typeof renderEstimateTab === 'function') renderEstimateTab();
+  if (typeof loadEstimate === 'function') loadEstimate(conCurrentJobId);
 }
 
 function wizOpenCreateTemplate(trade) {
