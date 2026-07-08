@@ -920,7 +920,7 @@
     <div class="kt-logo">
       <div class="kt-logo-mark">JOBSpan</div>
       <div class="kt-logo-tag" id="ktCompanyTag">7 Pillars Contracting</div>
-      <div class="kt-logo-version" id="ktVersionTag">Version 1.9.31 · 08/Jul/2026</div>
+      <div class="kt-logo-version" id="ktVersionTag">Version 1.9.32 · 08/Jul/2026</div>
     </div>
 
     <nav class="kt-nav">
@@ -1139,8 +1139,14 @@
           <div style="overflow:auto">
             <table class="kt-table">
               <thead><tr>
-                <th>Job #</th><th>Job Name</th><th>Client</th><th>Status</th>
-                <th style="text-align:right">Contract</th><th>Status Date</th><th>Sales Rep</th><th></th>
+                <th class="kt-sortable" data-sort="jobNumber" onclick="sortJobsList('jobNumber')" style="cursor:pointer;user-select:none">Job # <span class="kt-sort-arrow" id="sortArrow_jobNumber"></span></th>
+                <th class="kt-sortable" data-sort="name" onclick="sortJobsList('name')" style="cursor:pointer;user-select:none">Job Name <span class="kt-sort-arrow" id="sortArrow_name"></span></th>
+                <th class="kt-sortable" data-sort="client" onclick="sortJobsList('client')" style="cursor:pointer;user-select:none">Client <span class="kt-sort-arrow" id="sortArrow_client"></span></th>
+                <th class="kt-sortable" data-sort="status" onclick="sortJobsList('status')" style="cursor:pointer;user-select:none">Status <span class="kt-sort-arrow" id="sortArrow_status"></span></th>
+                <th class="kt-sortable" data-sort="contractValue" onclick="sortJobsList('contractValue')" style="text-align:right;cursor:pointer;user-select:none">Contract <span class="kt-sort-arrow" id="sortArrow_contractValue"></span></th>
+                <th class="kt-sortable" data-sort="statusDate" onclick="sortJobsList('statusDate')" style="cursor:pointer;user-select:none">Status Date <span class="kt-sort-arrow" id="sortArrow_statusDate"></span></th>
+                <th class="kt-sortable" data-sort="salesRep" onclick="sortJobsList('salesRep')" style="cursor:pointer;user-select:none">Sales Rep <span class="kt-sort-arrow" id="sortArrow_salesRep"></span></th>
+                <th></th>
               </tr></thead>
               <tbody id="conListBody"></tbody>
             </table>
@@ -3147,6 +3153,7 @@
         <button class="btn" onclick="addJobActivity('note')" style="font-size:.78rem;padding:6px 12px">📝 Log Note</button>
         <button class="btn" onclick="openJobPhotos()" style="font-size:.78rem;padding:6px 12px">📷 Photos</button>
         <button class="btn" onclick="editCurrentJob()" style="font-size:.78rem;padding:6px 12px">✏️ Edit</button>
+        <button class="btn btn-danger" onclick="openArchiveJobModal()" style="font-size:.78rem;padding:6px 12px">🗑️ Delete</button>
         <button class="btn" onclick="shareCustomerPortal()" style="background:linear-gradient(135deg,#0d9488,#0891b2);color:#fff;border:none;font-size:.78rem;padding:6px 12px">🔗 Portal</button>
         <button class="btn" onclick="kClose('jobDetailModal')" style="font-size:.78rem;padding:6px 12px">Close</button>
       </div>
@@ -3680,6 +3687,31 @@
   </div>
 </div><!-- end jobDetailModal -->
 
-<script src="kytrac-app.js?v=202607081610"></script>
+<div id="archiveJobModal" class="modal-overlay" style="z-index:9500">
+  <div class="modal-box" style="max-width:480px">
+    <div class="modal-head">
+      <h3 style="margin:0">Delete Job</h3>
+      <button class="btn" onclick="kClose('archiveJobModal')">Close</button>
+    </div>
+    <div style="padding:20px">
+      <p class="muted small" style="margin-top:0">
+        This removes the job from your boards and lists. The record is kept for reporting, not permanently erased.
+      </p>
+      <label style="font-size:.82rem;font-weight:700;display:block;margin-bottom:6px">Reason</label>
+      <select id="archiveJobReason" onchange="document.getElementById('archiveJobOtherWrap').style.display = (this.value === 'Other') ? 'block' : 'none'"
+        style="width:100%;padding:10px;border-radius:8px;margin-bottom:14px"></select>
+      <div id="archiveJobOtherWrap" style="display:none;margin-bottom:14px">
+        <label style="font-size:.82rem;font-weight:700;display:block;margin-bottom:6px">Details</label>
+        <textarea id="archiveJobOtherText" rows="2" style="width:100%;padding:10px;border-radius:8px" placeholder="Briefly describe why..."></textarea>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="kClose('archiveJobModal')">Cancel</button>
+      <button class="btn btn-danger" onclick="confirmArchiveJob()">Delete Job</button>
+    </div>
+  </div>
+</div>
+
+<script src="kytrac-app.js?v=202607081645"></script>
 </body>
 </html>

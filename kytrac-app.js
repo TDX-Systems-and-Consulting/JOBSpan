@@ -1,4 +1,4 @@
-// JOBSpan Application JavaScript v1.9.31 · 08/Jul/2026
+// JOBSpan Application JavaScript v1.9.32 · 08/Jul/2026
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -656,11 +656,74 @@ function conRenderBoard() {
   });
 }
 
+let _jobsListSortCol = null;
+let _jobsListSortDir = 'asc'; // 'asc' or 'desc'
+
+function sortJobsList(col) {
+  if (_jobsListSortCol === col) {
+    _jobsListSortDir = (_jobsListSortDir === 'asc') ? 'desc' : 'asc';
+  } else {
+    _jobsListSortCol = col;
+    _jobsListSortDir = 'asc';
+  }
+  conRenderList();
+}
+window.sortJobsList = sortJobsList;
+
+function _jobsListSortValue(job, col) {
+  switch (col) {
+    case 'jobNumber': {
+      // Job numbers are often like "1065" or "JOB-2026-123" or "TEST_Job".
+      // Try numeric compare first (strip non-digits), fall back to string.
+      const raw = job.jobNumber || '';
+      const numMatch = raw.match(/\d+/);
+      return numMatch ? parseInt(numMatch[0], 10) : raw.toLowerCase();
+    }
+    case 'name': return (job.name || '').toLowerCase();
+    case 'client': return (job.client || '').toLowerCase();
+    case 'status': {
+      const idx = CON_JOB_STATUSES.indexOf(job.status);
+      return idx === -1 ? 999 : idx;
+    }
+    case 'contractValue': return getJobValue(job);
+    case 'statusDate': return job.statusDate || job.startDate || '';
+    case 'salesRep': return (job.superintendent || job.pm || '').toLowerCase();
+    default: return '';
+  }
+}
+
+function _updateSortArrows() {
+  ['jobNumber','name','client','status','contractValue','statusDate','salesRep'].forEach(col => {
+    const el = document.getElementById('sortArrow_' + col);
+    if (!el) return;
+    if (_jobsListSortCol === col) {
+      el.textContent = _jobsListSortDir === 'asc' ? '▲' : '▼';
+    } else {
+      el.textContent = '';
+    }
+  });
+}
+
 function conRenderList() {
   const tbody = document.getElementById('conListBody');
   if (!tbody) return;
   tbody.innerHTML = '';
-  conJobs.forEach(job => {
+
+  let jobsToRender = conJobs.slice();
+  if (_jobsListSortCol) {
+    const col = _jobsListSortCol;
+    const dir = _jobsListSortDir === 'asc' ? 1 : -1;
+    jobsToRender.sort((a, b) => {
+      const va = _jobsListSortValue(a, col);
+      const vb = _jobsListSortValue(b, col);
+      if (va < vb) return -1 * dir;
+      if (va > vb) return 1 * dir;
+      return 0;
+    });
+  }
+  _updateSortArrows();
+
+  jobsToRender.forEach(job => {
     const tr = document.createElement('tr');
     const val = getJobValue(job) ? '$' + Math.round(getJobValue(job)).toLocaleString() : '—';
     tr.innerHTML = `
@@ -3471,6 +3534,72 @@ function conInitFirebase() {
 // conLoadJobs view patch consolidated below
 
 // Expose everything
+// Reason options adapt to the job's current pipeline stage group.
+const JOB_ARCHIVE_REASONS = {
+  sales: [
+    'Customer went with another contractor',
+    'Customer cancelled — project on hold indefinitely',
+    'Company declined — not a good fit',
+    'Duplicate lead entry',
+    'Other'
+  ],
+  active: [
+    'Contract cancelled by customer',
+    'Contract cancelled by company',
+    'Duplicate / test entry',
+    'Other'
+  ],
+  finance: [
+    'Contract cancelled by customer',
+    'Contract cancelled by company',
+    'Duplicate / test entry',
+    'Other'
+  ],
+  closed: [
+    'Entered in error',
+    'Duplicate of another job',
+    'Other'
+  ]
+};
+
+function openArchiveJobModal() {
+  if (!conCurrentJobId) return;
+  const job = conJobs.find(j => j.id === conCurrentJobId);
+  const statusDef = job ? KYTRAC_STATUSES.find(s => s.name === job.status) : null;
+  const group = statusDef ? statusDef.group : 'sales';
+  const reasons = JOB_ARCHIVE_REASONS[group] || JOB_ARCHIVE_REASONS.sales;
+
+  const sel = document.getElementById('archiveJobReason');
+  sel.innerHTML = reasons.map(r => `<option value="${esc(r)}">${esc(r)}</option>`).join('');
+  document.getElementById('archiveJobOtherWrap').style.display = (reasons[0] === 'Other') ? 'block' : 'none';
+  document.getElementById('archiveJobOtherText').value = '';
+  kOpen('archiveJobModal');
+}
+window.openArchiveJobModal = openArchiveJobModal;
+
+function confirmArchiveJob() {
+  if (!conCurrentJobId || !conDb) return;
+  const reasonSel = document.getElementById('archiveJobReason').value;
+  const otherText = document.getElementById('archiveJobOtherText').value.trim();
+  const reason = (reasonSel === 'Other' && otherText) ? otherText : reasonSel;
+  if (!reason) { alert('Please select a reason.'); return; }
+  if (!confirm('Delete this job? It will be removed from your boards and lists.')) return;
+
+  coll('jobs').doc(conCurrentJobId).update({
+      archived: true,
+      archivedReason: reason,
+      archivedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      archivedBy: conCurrentUser ? conCurrentUser.email : 'unknown'
+    })
+    .then(() => {
+      kClose('archiveJobModal');
+      kClose('jobDetailModal');
+      conCurrentJobId = null;
+    })
+    .catch(e => alert('Error deleting: ' + e.message));
+}
+window.confirmArchiveJob = confirmArchiveJob;
+
 function deleteCurrentJob() {
   if (!conCurrentJobId || !conDb) return;
   if (!confirm('Delete this job? This cannot be undone.')) return;
@@ -4626,7 +4755,10 @@ function conLoadJobs() {
   if (!conDb) return;
   coll('jobs').orderBy('createdAt','desc').onSnapshot(snap => {
     conJobs = [];
-    snap.forEach(doc => conJobs.push({ id: doc.id, ...doc.data() }));
+    snap.forEach(doc => {
+      const job = { id: doc.id, ...doc.data() };
+      if (!job.archived) conJobs.push(job);
+    });
     conRenderBoard();
     conRenderList();
     conRenderStats();
