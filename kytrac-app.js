@@ -1,4 +1,4 @@
-// JobSpan Application JavaScript v1.9.25 · 06/Jul/2026
+// JOBSpan Application JavaScript v1.9.28 · 07/Jul/2026
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -256,7 +256,7 @@ function ktFilterJobs(q) {
   });
 }
 
-// ── OVERRIDE conShowMain to use new JobSpan UI ──
+// ── OVERRIDE conShowMain to use new JOBSpan UI ──
 function conShowMain(user) {
   document.getElementById('ktAuthWall').style.display = 'none';
   document.getElementById('ktApp').style.display = 'flex';
@@ -471,14 +471,14 @@ function conLoadFirebase() {
       console.error('Failed to load Firebase script:', scripts[i]);
       // Show error to user
       const loader = document.getElementById('conSignInLoading');
-      if (loader) loader.innerHTML = '<div style="color:#ef5350;font-size:.9rem">⚠️ Could not connect to JobSpan.<br>Check your internet connection and reload.</div>';
+      if (loader) loader.innerHTML = '<div style="color:#ef5350;font-size:.9rem">⚠️ Could not connect to JOBSpan.<br>Check your internet connection and reload.</div>';
     };
     document.head.appendChild(s);
   }
   loadNext(0);
 }
 
-// conShowAuthWall and conShowMain overridden by JobSpan UI versions below
+// conShowAuthWall and conShowMain overridden by JOBSpan UI versions below
 
 function conSignIn() {
   if (!conFirebaseReady) {
@@ -933,7 +933,7 @@ async function handleImportFiles(fileList, resultId) {
     html += '<div style="margin-top:12px"><button class="btn-amber" onclick="commitImport()" style="padding:9px 18px;font-weight:700">✓ Apply to ' + updates.length + ' job(s)</button>'
           + '<button class="btn" onclick="document.getElementById(_importResultId).innerHTML=\'\';_pendingImport=null" style="margin-left:8px;padding:9px 18px">Cancel</button></div>';
   } else {
-    html += '<div class="small" style="color:#fca5a5">No matching jobs. Confirm job numbers in JobSpan match your estimates.</div>';
+    html += '<div class="small" style="color:#fca5a5">No matching jobs. Confirm job numbers in JOBSpan match your estimates.</div>';
   }
   html += '</div>';
   out.innerHTML = html;
@@ -1731,6 +1731,7 @@ function conLoadPhases(jobId) {
       renderPhaseKanban();
       renderPhaseList();
       updatePhaseHoursSummary();
+      if (typeof renderEpicBoard === 'function') renderEpicBoard();
     });
   }, () => {
     coll('jobs').doc(jobId).collection('phases').onSnapshot(snap => {
@@ -1739,6 +1740,7 @@ function conLoadPhases(jobId) {
       renderPhaseKanban();
       renderPhaseList();
       updatePhaseHoursSummary();
+      if (typeof renderEpicBoard === 'function') renderEpicBoard();
     });
   });
 }
@@ -4912,7 +4914,7 @@ function printInvoiceData(inv, job) {
 
     '<div style="margin-top:32px;padding-top:16px;border-top:1px solid #e5e7eb;text-align:center;color:#9ca3af;font-size:.75rem">' +
     (co.companyName||'') + (co.phone?' · '+co.phone:'') + (co.email?' · '+co.email:'') +
-    '<br>Powered by JobSpan Construction Tracking' +
+    '<br>Powered by JOBSpan Construction Tracking' +
     '</div>' +
     '<script>window.print();<\/script></body></html>');
   win.document.close();
@@ -4948,7 +4950,7 @@ function resolveCompany(user, callback) {
         // Found their company — they are the ownerEmail, so definitionally Owner
         currentCompanyId = snap.docs[0].id;
         isCompanyOwnerByEmail = true;
-        console.log('JobSpan: Loaded company', currentCompanyId);
+        console.log('JOBSpan: Loaded company', currentCompanyId);
         if (callback) callback();
         return;
       }
@@ -4958,7 +4960,7 @@ function resolveCompany(user, callback) {
         .then(snap2 => {
           if (!snap2.empty) {
             currentCompanyId = snap2.docs[0].id;
-            console.log('JobSpan: Joined company as member', currentCompanyId);
+            console.log('JOBSpan: Joined company as member', currentCompanyId);
             if (callback) callback();
             return;
           }
@@ -4986,7 +4988,7 @@ function showCompanyOnboarding(user, callback) {
     onboarding.style.cssText = 'position:fixed;inset:0;background:#060e1e;display:flex;align-items:center;justify-content:center;z-index:99999;padding:20px';
     onboarding.innerHTML = `
       <div style="background:rgba(8,18,36,.95);border:1px solid rgba(217,119,6,.4);border-radius:20px;padding:36px;max-width:480px;width:100%">
-        <div style="font-size:1.8rem;font-weight:900;color:#f59e0b;margin-bottom:6px">Welcome to JobSpan</div>
+        <div style="font-size:1.8rem;font-weight:900;color:#f59e0b;margin-bottom:6px">Welcome to JOBSpan</div>
         <div style="color:#94a3b8;font-size:.88rem;margin-bottom:28px">Let's set up your company to get started.</div>
         <label style="display:block;font-size:.78rem;color:#94a3b8;margin-bottom:5px">Company Name *</label>
         <input id="onboardCompanyName" placeholder="Jason Hudson Construction" style="width:100%;padding:12px 14px;background:rgba(8,19,37,.8);border:1px solid rgba(217,119,6,.3);border-radius:10px;color:#eaf0fb;font-size:.95rem;margin-bottom:16px;box-sizing:border-box" />
@@ -5033,7 +5035,7 @@ function createCompany(ownerEmail) {
   conDb.collection('companies').add(companyData)
     .then(ref => {
       currentCompanyId = ref.id;
-      console.log('JobSpan: Created company', currentCompanyId);
+      console.log('JOBSpan: Created company', currentCompanyId);
 
       // Also set up the settings/company doc with company profile
       return coll('settings').doc('company').set({
@@ -6750,7 +6752,7 @@ async function handleDocUpload(input, context) {
 
       if (file.size > DOC_SIZE_LIMIT) {
         // Too large for Firestore — store metadata only with a warning
-        if (!confirm(`"${file.name}" is ${formatFileSize(file.size)}. Files over 500KB cannot be stored in JobSpan yet. Store metadata only (no download)?`)) continue;
+        if (!confirm(`"${file.name}" is ${formatFileSize(file.size)}. Files over 500KB cannot be stored in JOBSpan yet. Store metadata only (no download)?`)) continue;
         dataUrl = null;
       } else {
         dataUrl = await fileToBase64(file);
@@ -12243,7 +12245,7 @@ checkPortalMode();
 
 
 // ═══════════════════════════════════════════════════════════════════════
-// JobSpan Schedule Redesign — Epic/Feature/Task/Sprint data-model layer
+// JOBSpan Schedule Redesign — Epic/Feature/Task/Sprint data-model layer
 // Added: 06/Jul/2026 · v1.9.17-prep
 //
 // STATUS: Additive only. Nothing in this file is called by existing UI yet.
@@ -12476,7 +12478,7 @@ function flattenFeaturesById(epics) {
 window.flattenFeaturesById = flattenFeaturesById;
 
 // ═══════════════════════════════════════════════════════════════════════
-// JobSpan Board View — Epic/Feature/Task Kanban
+// JOBSpan Board View — Epic/Feature/Task Kanban
 // Added: 06/Jul/2026 · v1.9.19
 //
 // Renders the estimateGroups→subgroups tree as Epic/Feature cards in the
@@ -12516,15 +12518,43 @@ function renderEpicBoard() {
     const counts = { 'not-started':0, 'in-progress':0, 'complete':0, 'blocked':0 };
     Object.values(lanes).forEach(l => { if (l) l.innerHTML = ''; });
 
-    if (!epics.length || !epics.some(e => e.features.length)) {
+    const hasFeatures = epics.some(e => e.features.length);
+    const hasPhases = (conPhases || []).length > 0;
+
+    if (!hasFeatures && !hasPhases) {
       const emptyLane = lanes['not-started'];
-      if (emptyLane) emptyLane.innerHTML = '<div class="small muted" style="padding:8px">No Features yet. Add items to the Estimate tab — each estimate group becomes an Epic, each subgroup a Feature here.</div>';
+      if (emptyLane) emptyLane.innerHTML = '<div class="small muted" style="padding:8px">Nothing on the board yet. Add items to the Estimate tab, or use + Add Phase.</div>';
       Object.entries(BOARD_LANES).forEach(([status, ids]) => {
         const el = document.getElementById(ids.count); if (el) el.textContent = '0';
       });
       return;
     }
 
+    // ── Legacy Phase cards (older jobs / manually-added phases) ──
+    (conPhases || []).forEach(phase => {
+      const status = phase.status || 'not-started';
+      counts[status] = (counts[status] || 0) + 1;
+      const lane = lanes[status];
+      if (!lane) return;
+      const color = phase.color || '#d97706';
+      const estH = phase.estHours || 0;
+      const actH = phase._actualHours || 0;
+
+      const card = document.createElement('div');
+      card.className = 'phase-card';
+      card.onclick = () => openEditPhaseModal(phase.id);
+      card.innerHTML =
+        '<div class="phase-card-accent" style="background:' + color + '"></div>' +
+        '<div class="phase-card-name">' + esc(phase.name) + '</div>' +
+        '<div class="phase-card-meta">' +
+          (phase.assigned ? '👤 ' + esc(phase.assigned) + '<br>' : '') +
+          (phase.trade ? '🔧 ' + esc(phase.trade) + '<br>' : '') +
+          '⏱️ ' + actH.toFixed(1) + 'h / ' + estH.toFixed(1) + 'h est' +
+        '</div>';
+      lane.appendChild(card);
+    });
+
+    // ── Feature cards (Estimate-driven Epic/Feature/Task model) ──
     epics.forEach(epic => {
       epic.features.forEach(feature => {
         const status = feature.status || 'not-started';
