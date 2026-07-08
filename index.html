@@ -920,7 +920,7 @@
     <div class="kt-logo">
       <div class="kt-logo-mark">JOBSpan</div>
       <div class="kt-logo-tag" id="ktCompanyTag">7 Pillars Contracting</div>
-      <div class="kt-logo-version" id="ktVersionTag">Version 1.9.37 · 08/Jul/2026</div>
+      <div class="kt-logo-version" id="ktVersionTag">Version 1.9.38 · 08/Jul/2026</div>
     </div>
 
     <nav class="kt-nav">
@@ -3046,7 +3046,7 @@
 
 <!-- ── Add Change Order Modal ── -->
   <div id="addCOModal" class="modal-overlay">
-    <div class="modal-box" style="max-width:560px">
+    <div class="modal-box" style="max-width:640px">
       <div class="modal-head"><h3 style="margin:0" id="coModalTitle">New Change Order</h3><button class="btn" onclick="kClose('addCOModal')">Close</button></div>
       <div class="modal-body">
         <div class="form-grid">
@@ -3054,17 +3054,38 @@
           <div class="full"><label class="small muted">Title *</label><input id="coTitle" placeholder="e.g. Owner-directed drywall upgrade" /></div>
           <div><label class="small muted">Date</label><input id="coDate" type="date" /></div>
           <div><label class="small muted">Status</label>
-            <select id="coStatus">
-              <option value="Pending">Pending</option>
-              <option value="Approved">Approved</option>
-              <option value="Rejected">Rejected</option>
+            <select id="coStatus" onchange="onCOStatusManualChange()">
+              <option value="Submitted">Submitted — Awaiting Pricing</option>
+              <option value="Priced">Priced — Awaiting Customer</option>
+              <option value="Customer Approved">Customer Approved</option>
+              <option value="Customer Declined">Customer Declined</option>
+              <option value="Invoiced">Invoiced</option>
+              <option value="Paid">Paid</option>
               <option value="Void">Void</option>
             </select>
           </div>
-          <div><label class="small muted">CO Amount ($)</label><input id="coAmount" type="number" step="0.01" placeholder="0.00" /></div>
           <div><label class="small muted">Days Added to Schedule</label><input id="coDays" type="number" placeholder="0" /></div>
-          <div class="full"><label class="small muted">Reason / Scope</label><textarea id="coReason" rows="3" placeholder="Describe the scope change and reason..."></textarea></div>
-          <div class="full"><label class="small muted">Approved By</label><input id="coApprovedBy" placeholder="Owner name or signature reference" /></div>
+          <div class="full"><label class="small muted">Reason / Scope (what the customer is asking for)</label><textarea id="coReason" rows="2" placeholder="Describe the scope change and reason..."></textarea></div>
+        </div>
+
+        <div style="margin-top:16px;padding-top:14px;border-top:1px solid rgba(110,145,210,.14)">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <label class="small muted" style="margin:0">Line Items (materials + labor for this change)</label>
+            <button class="btn" id="coAddLineBtn" style="padding:3px 10px;font-size:.76rem" onclick="addCOLineItem()">+ Add Line</button>
+          </div>
+          <div id="coLineItemsContainer"></div>
+          <div style="display:flex;justify-content:flex-end;margin-top:8px;padding-top:8px;border-top:1px solid rgba(110,145,210,.1)">
+            <div style="font-weight:800;font-size:1rem" id="coTotalDisplay">Total: $0.00</div>
+          </div>
+          <div class="small muted" id="coPricingLockedNote" style="display:none;margin-top:6px;font-style:italic">
+            Pricing is locked to Owner/PM. You can describe the scope and add rough line-item descriptions — the office will fill in cost/price.
+          </div>
+        </div>
+
+        <div class="form-grid" style="margin-top:14px">
+          <div><label class="small muted">Submitted By</label><input id="coSubmittedBy" placeholder="Team Lead name" /></div>
+          <div><label class="small muted">Priced By</label><input id="coPricedBy" placeholder="Owner/PM name" /></div>
+          <div class="full"><label class="small muted">Customer Decision Relayed By</label><input id="coCustomerDecisionBy" placeholder="Whoever got the customer's answer" /></div>
         </div>
       </div>
       <div class="modal-foot">
@@ -3712,6 +3733,6 @@
   </div>
 </div>
 
-<script src="kytrac-app.js?v=202607081915"></script>
+<script src="kytrac-app.js?v=202607082000"></script>
 </body>
 </html>

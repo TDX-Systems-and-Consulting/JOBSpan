@@ -1,4 +1,4 @@
-// JOBSpan Application JavaScript v1.9.37 · 08/Jul/2026
+// JOBSpan Application JavaScript v1.9.38 · 08/Jul/2026
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -3064,25 +3064,70 @@ function conLoadCOs(jobId) {
     });
 }
 
+const CO_STATUS_COLORS = {
+  'Submitted': 'co-pending',
+  'Priced': 'co-pending',
+  'Customer Approved': 'co-approved',
+  'Customer Declined': 'co-rejected',
+  'Invoiced': 'co-approved',
+  'Paid': 'co-approved',
+  'Void': 'co-void',
+  // legacy values from before the pipeline existed
+  'Pending': 'co-pending',
+  'Approved': 'co-approved',
+  'Rejected': 'co-rejected'
+};
+
+// Maps old flat statuses (from before this pipeline existed) onto the new
+// lifecycle so existing Change Order records still display sensibly.
+function normalizeCOStatus(s) {
+  const map = { Pending: 'Submitted', Approved: 'Customer Approved', Rejected: 'Customer Declined' };
+  return map[s] || s || 'Submitted';
+}
+
 function renderCOList() {
   const el = document.getElementById('coList');
   const sumEl = document.getElementById('coSummaryLine');
   if (!el) return;
   if (!conCOs.length) { el.innerHTML = '<p class="muted">No change orders yet.</p>'; if(sumEl)sumEl.textContent=''; return; }
 
-  const approvedTotal = conCOs.filter(c => c.status === 'Approved').reduce((s, c) => s + Number(c.amount || 0), 0);
-  const pendingTotal = conCOs.filter(c => c.status === 'Pending').reduce((s, c) => s + Number(c.amount || 0), 0);
+  const approvedTotal = conCOs.filter(c => ['Customer Approved','Invoiced','Paid'].includes(normalizeCOStatus(c.status))).reduce((s, c) => s + Number(c.amount || 0), 0);
+  const pendingTotal = conCOs.filter(c => ['Submitted','Priced'].includes(normalizeCOStatus(c.status))).reduce((s, c) => s + Number(c.amount || 0), 0);
   if (sumEl) sumEl.textContent = `${conCOs.length} CO${conCOs.length!==1?'s':''} · Approved: $${approvedTotal.toLocaleString()} · Pending: $${pendingTotal.toLocaleString()}`;
 
+  const canPrice = isOwnerOrAdmin();
+
   el.innerHTML = conCOs.map(co => {
-    const badgeClass = { Pending:'co-pending', Approved:'co-approved', Rejected:'co-rejected', Void:'co-void' }[co.status] || 'co-pending';
+    const status = normalizeCOStatus(co.status);
+    const badgeClass = CO_STATUS_COLORS[status] || 'co-pending';
     const amt = Number(co.amount || 0);
+
+    // Contextual action buttons — what happens next depends on where this CO
+    // currently sits in the real-world workflow.
+    let actions = `<button class="btn" style="padding:4px 10px;font-size:.76rem" onclick="openEditCO('${co.id}')">Edit</button>`;
+    if (status === 'Submitted' && canPrice) {
+      actions += `<button class="btn btn-amber" style="padding:4px 10px;font-size:.76rem" onclick="openEditCO('${co.id}')">💲 Price This CO</button>`;
+    }
+    if (status === 'Priced') {
+      actions += `<button class="btn btn-green" style="padding:4px 10px;font-size:.76rem" onclick="markCOCustomerApproved('${co.id}')">✅ Customer Approved</button>`;
+      actions += `<button class="btn btn-danger" style="padding:4px 10px;font-size:.76rem" onclick="markCODeclined('${co.id}')">❌ Customer Declined</button>`;
+    }
+    if (status === 'Customer Approved' && canPrice) {
+      actions += `<button class="btn btn-amber" style="padding:4px 10px;font-size:.76rem" onclick="createInvoiceFromCO('${co.id}')">🧾 Create Invoice</button>`;
+    }
+    if (status === 'Invoiced') {
+      actions += `<span class="small muted" style="align-self:center">Waiting on payment — mark the linked invoice Paid to apply this to the job.</span>`;
+    }
+    if (status === 'Paid') {
+      actions += `<span class="small" style="align-self:center;color:#1dbb87;font-weight:700">✓ Applied to estimate &amp; punch list</span>`;
+    }
+
     return `<div class="co-card">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
         <div>
           <div style="font-weight:700;margin-bottom:4px">${esc(co.title || 'Untitled CO')}</div>
           <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
-            <span class="co-badge ${badgeClass}">${co.status}</span>
+            <span class="co-badge ${badgeClass}">${esc(status)}</span>
             <span class="small muted">${co.date || ''}</span>
             ${co.days ? `<span class="small muted">+${co.days} day${co.days!=1?'s':''}</span>` : ''}
           </div>
@@ -3092,13 +3137,74 @@ function renderCOList() {
         </div>
       </div>
       ${co.reason ? `<div style="font-size:.84rem;color:var(--muted);margin-bottom:8px">${esc(co.reason)}</div>` : ''}
-      ${co.approvedBy ? `<div class="small muted">Approved by: ${esc(co.approvedBy)}</div>` : ''}
-      <div style="display:flex;gap:6px;margin-top:10px">
-        <button class="btn" style="padding:4px 10px;font-size:.76rem" onclick="openEditCO('${co.id}')">Edit</button>
-        ${co.status==='Pending' ? `<button class="btn btn-green" style="padding:4px 10px;font-size:.76rem" onclick="quickApproveCO('${co.id}')">✓ Approve</button>` : ''}
+      <div class="small muted" style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:6px">
+        ${co.submittedBy ? `<span>Submitted: ${esc(co.submittedBy)}</span>` : ''}
+        ${co.pricedBy ? `<span>Priced: ${esc(co.pricedBy)}</span>` : ''}
+        ${co.customerDecisionBy ? `<span>Customer answer relayed by: ${esc(co.customerDecisionBy)}</span>` : ''}
       </div>
+      <div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap">${actions}</div>
     </div>`;
   }).join('');
+}
+
+let _coLineItems = [];
+
+function renderCOLineItems() {
+  const container = document.getElementById('coLineItemsContainer');
+  if (!container) return;
+  const canPrice = isOwnerOrAdmin();
+
+  if (!_coLineItems.length) {
+    container.innerHTML = '<div class="small muted" style="padding:10px 0;font-style:italic">No line items yet.</div>';
+  } else {
+    container.innerHTML = _coLineItems.map((item, i) => `
+      <div style="display:grid;grid-template-columns:2fr 55px 60px 90px 80px 80px 22px;gap:6px;align-items:center;margin-bottom:6px">
+        <input value="${esc(item.desc||'')}" placeholder="Description" style="font-size:.8rem;padding:6px;background:rgba(8,19,37,.8);border:1px solid rgba(110,145,210,.15);border-radius:6px;color:#eaf0fb"
+          onchange="_coLineItems[${i}].desc=this.value" />
+        <input type="number" value="${item.qty||1}" min="0" step="any" style="font-size:.8rem;padding:6px;text-align:right;background:rgba(8,19,37,.8);border:1px solid rgba(110,145,210,.15);border-radius:6px;color:#eaf0fb"
+          onchange="_coLineItems[${i}].qty=parseFloat(this.value)||1;calcCOTotal()" />
+        <input value="${esc(item.unit||'ea')}" placeholder="unit" style="font-size:.8rem;padding:6px;background:rgba(8,19,37,.8);border:1px solid rgba(110,145,210,.15);border-radius:6px;color:#eaf0fb"
+          onchange="_coLineItems[${i}].unit=this.value" />
+        <input value="${esc(item.costType||'Materials')}" placeholder="type" style="font-size:.8rem;padding:6px;background:rgba(8,19,37,.8);border:1px solid rgba(110,145,210,.15);border-radius:6px;color:#eaf0fb"
+          onchange="_coLineItems[${i}].costType=this.value" />
+        <input type="number" value="${item.unitCost||0}" min="0" step="0.01" style="font-size:.8rem;padding:6px;text-align:right;background:rgba(8,19,37,.8);border:1px solid rgba(110,145,210,.15);border-radius:6px;color:#eaf0fb" ${canPrice?'':'disabled title="Owner/PM only"'}
+          onchange="_coLineItems[${i}].unitCost=parseFloat(this.value)||0;calcCOTotal()" />
+        <input type="number" value="${item.unitPrice||0}" min="0" step="0.01" style="font-size:.8rem;padding:6px;text-align:right;background:rgba(8,19,37,.8);border:1px solid rgba(110,145,210,.15);border-radius:6px;color:#eaf0fb" ${canPrice?'':'disabled title="Owner/PM only"'}
+          onchange="_coLineItems[${i}].unitPrice=parseFloat(this.value)||0;calcCOTotal()" />
+        <button onclick="_coLineItems.splice(${i},1);renderCOLineItems();calcCOTotal()" style="background:none;border:none;color:#ef5350;cursor:pointer;font-size:1rem;padding:0">✕</button>
+      </div>`).join('');
+  }
+  const lockNote = document.getElementById('coPricingLockedNote');
+  if (lockNote) lockNote.style.display = canPrice ? 'none' : 'block';
+  const addBtn = document.getElementById('coAddLineBtn');
+  if (addBtn) addBtn.style.display = 'inline-flex';
+}
+
+function addCOLineItem() {
+  _coLineItems.push({ desc: '', qty: 1, unit: 'ea', costType: 'Materials', unitCost: 0, unitPrice: 0 });
+  renderCOLineItems();
+  calcCOTotal();
+}
+window.addCOLineItem = addCOLineItem;
+
+function calcCOTotal() {
+  const total = _coLineItems.reduce((s, i) => s + (i.qty||1) * (i.unitPrice||0), 0);
+  const el = document.getElementById('coTotalDisplay');
+  if (el) el.textContent = 'Total: $' + total.toFixed(2);
+  return total;
+}
+window.calcCOTotal = calcCOTotal;
+
+function onCOStatusManualChange() { /* reserved for future validation */ }
+window.onCOStatusManualChange = onCOStatusManualChange;
+
+function _applyCOModalPermissionLock(lockToStatus) {
+  const statusSel = document.getElementById('coStatus');
+  if (!statusSel) return;
+  const canPrice = isOwnerOrAdmin();
+  Array.from(statusSel.options).forEach(o => {
+    o.disabled = !canPrice && o.value !== lockToStatus;
+  });
 }
 
 function openAddCOModal() {
@@ -3107,12 +3213,17 @@ function openAddCOModal() {
   document.getElementById('coId').value = '';
   document.getElementById('coTitle').value = '';
   document.getElementById('coDate').value = new Date().toISOString().split('T')[0];
-  document.getElementById('coStatus').value = 'Pending';
-  document.getElementById('coAmount').value = '';
+  document.getElementById('coStatus').value = 'Submitted';
   document.getElementById('coDays').value = '';
   document.getElementById('coReason').value = '';
-  document.getElementById('coApprovedBy').value = '';
+  document.getElementById('coSubmittedBy').value = conCurrentUser ? (conCurrentUser.displayName || conCurrentUser.email) : '';
+  document.getElementById('coPricedBy').value = '';
+  document.getElementById('coCustomerDecisionBy').value = '';
   document.getElementById('deleteCOBtn').style.display = 'none';
+  _coLineItems = [];
+  renderCOLineItems();
+  calcCOTotal();
+  _applyCOModalPermissionLock('Submitted');
   kOpen('addCOModal');
 }
 
@@ -3120,16 +3231,22 @@ function openEditCO(id) {
   const co = conCOs.find(c => c.id === id);
   if (!co) return;
   conEditingCOId = id;
+  const status = normalizeCOStatus(co.status);
   document.getElementById('coModalTitle').textContent = 'Edit Change Order';
   document.getElementById('coId').value = id;
   document.getElementById('coTitle').value = co.title || '';
   document.getElementById('coDate').value = co.date || '';
-  document.getElementById('coStatus').value = co.status || 'Pending';
-  document.getElementById('coAmount').value = co.amount || '';
+  document.getElementById('coStatus').value = status;
   document.getElementById('coDays').value = co.days || '';
   document.getElementById('coReason').value = co.reason || '';
-  document.getElementById('coApprovedBy').value = co.approvedBy || '';
+  document.getElementById('coSubmittedBy').value = co.submittedBy || '';
+  document.getElementById('coPricedBy').value = co.pricedBy || '';
+  document.getElementById('coCustomerDecisionBy').value = co.customerDecisionBy || '';
   document.getElementById('deleteCOBtn').style.display = 'inline-flex';
+  _coLineItems = co.lineItems ? JSON.parse(JSON.stringify(co.lineItems)) : [];
+  renderCOLineItems();
+  calcCOTotal();
+  _applyCOModalPermissionLock(status);
   kOpen('addCOModal');
 }
 
@@ -3137,17 +3254,30 @@ function saveCO() {
   if (!conCurrentJobId || !conDb) return;
   const title = document.getElementById('coTitle').value.trim();
   if (!title) { alert('Title is required.'); return; }
+
+  const canPrice = isOwnerOrAdmin();
+  const total = calcCOTotal();
+  let status = document.getElementById('coStatus').value;
+  // Non-owners can only ever submit — even if the select was somehow changed client-side.
+  if (!canPrice) status = 'Submitted';
+  // If line items now have real pricing and status is still Submitted, auto-advance to Priced.
+  if (canPrice && status === 'Submitted' && total > 0) status = 'Priced';
+
   const data = {
     title,
     date: document.getElementById('coDate').value,
-    status: document.getElementById('coStatus').value,
-    amount: parseFloat(document.getElementById('coAmount').value) || 0,
+    status,
+    lineItems: _coLineItems,
+    amount: total,
     days: parseInt(document.getElementById('coDays').value) || 0,
     reason: document.getElementById('coReason').value.trim(),
-    approvedBy: document.getElementById('coApprovedBy').value.trim(),
+    submittedBy: document.getElementById('coSubmittedBy').value.trim(),
+    customerDecisionBy: document.getElementById('coCustomerDecisionBy').value.trim(),
     updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
     updatedBy: conCurrentUser ? conCurrentUser.email : 'unknown'
   };
+  if (canPrice) data.pricedBy = document.getElementById('coPricedBy').value.trim();
+
   const col = coll('jobs').doc(conCurrentJobId).collection('changeorders');
   if (conEditingCOId) {
     col.doc(conEditingCOId).update(data)
@@ -3170,13 +3300,50 @@ function deleteCO() {
     .catch(e => alert('Error: ' + e.message));
 }
 
-function quickApproveCO(id) {
+// Team lead or owner relays the customer's verbal decision on a priced CO.
+function markCOCustomerApproved(id) {
+  if (!confirm('Confirm: the customer said YES to this change order price?')) return;
   coll('jobs').doc(conCurrentJobId).collection('changeorders').doc(id).update({
-    status: 'Approved',
-    approvedBy: conCurrentUser ? conCurrentUser.displayName || conCurrentUser.email : 'Unknown',
+    status: 'Customer Approved',
+    customerDecisionBy: conCurrentUser ? (conCurrentUser.displayName || conCurrentUser.email) : 'Unknown',
     updatedAt: firebase.firestore.FieldValue.serverTimestamp()
   }).catch(e => alert('Error: ' + e.message));
 }
+window.markCOCustomerApproved = markCOCustomerApproved;
+
+function markCODeclined(id) {
+  if (!confirm('Confirm: the customer said NO to this change order?')) return;
+  coll('jobs').doc(conCurrentJobId).collection('changeorders').doc(id).update({
+    status: 'Customer Declined',
+    customerDecisionBy: conCurrentUser ? (conCurrentUser.displayName || conCurrentUser.email) : 'Unknown',
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+  }).catch(e => alert('Error: ' + e.message));
+}
+window.markCODeclined = markCODeclined;
+
+// Owner/PM turns an approved Change Order directly into an invoice, so the
+// price never has to be manually retyped.
+function createInvoiceFromCO(coId) {
+  if (!isOwnerOrAdmin()) { alert('Only Owner/PM can create invoices.'); return; }
+  const co = conCOs.find(c => c.id === coId);
+  if (!co) return;
+
+  openAddInvoiceModal(conCurrentJobId);
+  document.getElementById('invType').value = 'Change Order';
+  document.getElementById('invNotes').value = 'Change Order: ' + (co.title || '') + (co.reason ? ' — ' + co.reason : '');
+
+  if (co.lineItems && co.lineItems.length) {
+    _invLineItems = co.lineItems.map(li => ({ desc: li.desc, qty: li.qty||1, rate: li.unitPrice||0 }));
+  } else {
+    _invLineItems = [{ desc: 'Change Order: ' + (co.title || ''), qty: 1, rate: co.amount || 0 }];
+  }
+  renderInvLineItems();
+  calcInvTotals();
+
+  window._pendingCOIdForInvoice = coId;
+}
+window.createInvoiceFromCO = createInvoiceFromCO;
+window.quickApproveCO = markCOCustomerApproved; // legacy alias, in case anything still calls the old name
 
 // ════════════════════════════════════════════════════
 // ── PHASE 2: SUBS & VENDORS ──
@@ -4269,6 +4436,7 @@ function renderJobInvoiceList(jobId, invs) {
 
 // ── Open Add Invoice Modal ──
 function openAddInvoiceModal(jobId) {
+  window._pendingCOIdForInvoice = null;
   const jid = jobId || conCurrentJobId;
   if (!jid) { alert('Open a job first.'); return; }
   const job = conJobs.find(j => j.id === jid);
@@ -4701,6 +4869,10 @@ function saveInvoice() {
     updatedBy: conCurrentUser?.email || 'unknown'
   };
 
+  // Link back to the Change Order this invoice was created from, if any.
+  const pendingCOId = window._pendingCOIdForInvoice || null;
+  if (pendingCOId) data.changeOrderId = pendingCOId;
+
   // Auto-set overdue
   const today = new Date().toISOString().split('T')[0];
   if (data.status !== 'Paid' && data.dueDate && data.dueDate < today) data.status = 'Overdue';
@@ -4710,10 +4882,20 @@ function saveInvoice() {
   const col = coll('jobs').doc(jobId).collection('invoices');
   const promise = invId ? col.doc(invId).update(data) : col.add({ ...data, companyId: currentCompanyId, createdAt: firebase.firestore.FieldValue.serverTimestamp(), createdBy: conCurrentUser?.email || 'unknown' });
 
-  promise.then(() => {
+  promise.then((ref) => {
     kClose('addInvoiceModal');
     switchDetailTab('invoices', null);
     loadAllInvoices();
+
+    if (pendingCOId) {
+      const newInvId = invId || (ref && ref.id);
+      coll('jobs').doc(jobId).collection('changeorders').doc(pendingCOId).update({
+        status: 'Invoiced',
+        invoiceId: newInvId || '',
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+      }).catch(() => {});
+      window._pendingCOIdForInvoice = null;
+    }
   }).catch(e => alert('Error saving invoice: ' + e.message));
 }
 
@@ -4729,6 +4911,11 @@ async function quickMarkPaid(jobId, invId, total) {
   if (!confirm('Mark this invoice as Paid in Full? This will also move the job to Approved and prep it for scheduling.')) return;
 
   try {
+    // 0. Read the invoice first so we know if it's tied to a Change Order.
+    const invSnap = await coll('jobs').doc(jobId).collection('invoices').doc(invId).get();
+    const invData = invSnap.exists ? invSnap.data() : {};
+    const linkedCOId = invData.changeOrderId || null;
+
     // 1. Mark the invoice paid
     await coll('jobs').doc(jobId).collection('invoices').doc(invId).update({
       status: 'Paid',
@@ -4782,6 +4969,55 @@ async function quickMarkPaid(jobId, invId, total) {
       }
     }
     await Promise.all(writes);
+
+    // 3b. If this invoice was for an approved Change Order, push its line
+    // items into a brand new estimate group — its own Epic, which means its
+    // own fresh page the next time the Punch List gets printed.
+    if (linkedCOId) {
+      const coSnap = await coll('jobs').doc(jobId).collection('changeorders').doc(linkedCOId).get();
+      if (coSnap.exists) {
+        const co = coSnap.data();
+        if (!co.appliedToEstimate) {
+          const groupRef = await coll('jobs').doc(jobId).collection('estimateGroups').add({
+            name: 'CO: ' + (co.title || 'Change Order'),
+            order: groupsSnap.size,
+            sprintEnabled: true,
+            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+          });
+          const subRef = await coll('jobs').doc(jobId).collection('estimateGroups')
+            .doc(groupRef.id).collection('subgroups').add({
+              name: co.title || 'Change Order Work',
+              order: 0,
+              status: 'not-started',
+              createdAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+          const coItemWrites = (co.lineItems || []).map((li, i) =>
+            coll('jobs').doc(jobId).collection('estimateGroups').doc(groupRef.id)
+              .collection('subgroups').doc(subRef.id).collection('items').add({
+                desc: li.desc || '',
+                qty: li.qty || 1,
+                unit: li.unit || 'ea',
+                costType: li.costType || 'Materials',
+                unitCost: li.unitCost || 0,
+                unitPrice: li.unitPrice || 0,
+                markup: li.unitCost > 0 ? Math.round((li.unitPrice / li.unitCost - 1) * 100) : 0,
+                taskStatus: 'todo',
+                order: i,
+                createdAt: firebase.firestore.FieldValue.serverTimestamp()
+              })
+          );
+          await Promise.all(coItemWrites);
+
+          await coll('jobs').doc(jobId).collection('changeorders').doc(linkedCOId).update({
+            status: 'Paid',
+            appliedToEstimate: true,
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+          });
+
+          if (conCurrentJobId === jobId && typeof loadEstimate === 'function') loadEstimate(jobId);
+        }
+      }
+    }
 
     // 4. Jump straight to the Kanban Board / Schedule tab, ready to schedule
     if (conCurrentJobId === jobId) {
