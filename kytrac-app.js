@@ -1,4 +1,4 @@
-// JOBSpan Application JavaScript v1.9.30 · 08/Jul/2026
+// JOBSpan Application JavaScript v1.9.31 · 08/Jul/2026
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -11586,11 +11586,11 @@ window.jobOpenAddCustomer = jobOpenAddCustomer;
 
 // Patch saveCustomer to re-open New Job modal after adding from job picker
 const _origSaveCustomer = window.saveCustomer;
-window.saveCustomer = function() {
+window.saveCustomer = function(goToNewJob) {
   const forJob = window._afterCustomerSaveForJob;
   window._afterCustomerSaveForJob = false;
   if (typeof _origSaveCustomer === 'function') {
-    _origSaveCustomer();
+    _origSaveCustomer(goToNewJob);
   }
   if (forJob) {
     // Wait for Firestore to update allCustomers, then re-open New Job
