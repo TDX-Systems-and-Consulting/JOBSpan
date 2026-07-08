@@ -1,4 +1,4 @@
-// JOBSpan Application JavaScript v1.9.32 · 08/Jul/2026
+// JOBSpan Application JavaScript v1.9.33 · 08/Jul/2026
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -11751,7 +11751,7 @@ window.openNewJobModal = function() {
 };
 
 // Full saveJob override to include customerId
-window.saveJob = function() {
+window.saveJob = function(openEstimate) {
   const name = document.getElementById('jobName').value.trim();
   const client = document.getElementById('jobClient').value.trim();
   if (!name || !client) { alert('Job name and client name are required.'); return; }
@@ -11788,8 +11788,21 @@ window.saveJob = function() {
     data.createdAt = firebase.firestore.FieldValue.serverTimestamp();
     data.createdBy = conCurrentUser ? conCurrentUser.email : 'unknown';
     data.actualCost = 0;
-    coll('jobs').add(data)
-      .then(() => kClose('newJobModal'))
+    coll('jobs').add(subDoc(data))
+      .then(ref => {
+        kClose('newJobModal');
+        // Auto-open job detail to estimate tab
+        setTimeout(() => {
+          openJobDetail(ref.id);
+          setTimeout(() => {
+            if (openEstimate) {
+              document.querySelectorAll('#jobDetailModal .con-subtab').forEach(btn => {
+                if (btn.textContent.includes('Estimate')) btn.click();
+              });
+            }
+          }, 400);
+        }, 300);
+      })
       .catch(e => alert('Error saving: ' + e.message));
   }
 };
