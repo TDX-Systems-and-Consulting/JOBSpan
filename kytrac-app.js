@@ -1,4 +1,4 @@
-// JOBSpan Application JavaScript v1.9.39 · 08/Jul/2026
+// JOBSpan Application JavaScript v2.0.0 · 08/Jul/2026
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -5255,13 +5255,13 @@ window.printInvoiceById = printInvoiceById;
 // ════════════════════════════════════════════════════
 let companyProfile = {};
 
-// Default profile for Durbin Leadership Group (test tenant)
+// Default profile — used only if no company settings doc exists yet in Firestore
 const DEFAULT_COMPANY_PROFILE = {
-  companyName: 'Durbin Leadership Group',
-  phone: '314-714-8277',
-  email: 'travis@durbinleadershipgroup.com',
-  website: 'http://5stonesleadership.com',
-  address: 'St. Louis, MO',
+  companyName: '7 Pillars Contracting',
+  phone: '',
+  email: '',
+  website: '',
+  address: '',
   license: '',
   insurance: '',
   logo: '',
