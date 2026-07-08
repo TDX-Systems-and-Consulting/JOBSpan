@@ -1,4 +1,4 @@
-// JOBSpan Application JavaScript v1.9.38 · 08/Jul/2026
+// JOBSpan Application JavaScript v1.9.39 · 08/Jul/2026
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -1617,7 +1617,122 @@ function refreshJobFinancials(job) {
   if (varEl) { varEl.textContent = (variance >= 0 ? '+' : '') + fmt(variance); varEl.style.color = variance >= 0 ? '#a3f2d2' : '#ef5350'; }
   const aciEl = document.getElementById('actualCostInput');
   if (aciEl) aciEl.value = ac || '';
+
+  // Payment Milestones panel — completion %, and Progress/Final invoice triggers
+  renderPaymentMilestones(job.id, balance);
 }
+
+// Counts done vs total tasks across every Epic/Feature in this job's estimate
+// tree, so we have a real completion percentage to drive payment milestones.
+async function computeJobCompletionPct(jobId) {
+  if (!conDb || !jobId) return { done: 0, total: 0, pct: 0 };
+  const groupsSnap = await coll('jobs').doc(jobId).collection('estimateGroups').get();
+  let done = 0, total = 0;
+  for (const groupDoc of groupsSnap.docs) {
+    const subSnap = await coll('jobs').doc(jobId).collection('estimateGroups')
+      .doc(groupDoc.id).collection('subgroups').get();
+    for (const subDoc of subSnap.docs) {
+      const itemSnap = await coll('jobs').doc(jobId).collection('estimateGroups')
+        .doc(groupDoc.id).collection('subgroups').doc(subDoc.id).collection('items').get();
+      itemSnap.forEach(itemDoc => {
+        total++;
+        if (itemDoc.data().taskStatus === 'done') done++;
+      });
+    }
+  }
+  const pct = total > 0 ? Math.round(done / total * 100) : 0;
+  return { done, total, pct };
+}
+
+async function renderPaymentMilestones(jobId, balanceDue) {
+  const pctEl = document.getElementById('dashCompletionPct');
+  const barEl = document.getElementById('dashCompletionBar');
+  const progressBtn = document.getElementById('dashProgressPayBtn');
+  const finalBtn = document.getElementById('dashFinalPayBtn');
+  if (!pctEl || !barEl) return;
+
+  const { done, total, pct } = await computeJobCompletionPct(jobId);
+  pctEl.textContent = total > 0 ? `${pct}% (${done}/${total} tasks)` : 'No tasks yet';
+  barEl.style.width = pct + '%';
+
+  const job = conJobs.find(j => j.id === jobId);
+
+  if (progressBtn) {
+    const alreadySent = !!job?.progressPaymentInvoiced;
+    progressBtn.disabled = false;
+    if (alreadySent) {
+      progressBtn.textContent = '✓ Progress Payment Sent';
+      progressBtn.style.opacity = '.6';
+    } else if (pct >= 75) {
+      progressBtn.textContent = '📄 Progress Payment Invoice (25%) — Ready';
+      progressBtn.style.background = 'linear-gradient(135deg,var(--amber),var(--amber2))';
+      progressBtn.style.color = '#fff';
+      progressBtn.style.opacity = '1';
+    } else {
+      progressBtn.textContent = '📄 Progress Payment Invoice (25%)';
+      progressBtn.style.background = '';
+      progressBtn.style.color = '';
+      progressBtn.style.opacity = '1';
+    }
+  }
+
+  if (finalBtn) {
+    const alreadySent = !!job?.finalPaymentInvoiced;
+    finalBtn.disabled = false;
+    if (alreadySent) {
+      finalBtn.textContent = '✓ Final Payment Sent';
+      finalBtn.style.opacity = '.6';
+    } else if (pct >= 100 && total > 0) {
+      finalBtn.textContent = '📄 Final Payment Invoice — Job Complete';
+      finalBtn.style.background = 'linear-gradient(135deg,var(--amber),var(--amber2))';
+      finalBtn.style.color = '#fff';
+      finalBtn.style.opacity = '1';
+    } else {
+      finalBtn.textContent = '📄 Final Payment Invoice';
+      finalBtn.style.background = '';
+      finalBtn.style.color = '';
+      finalBtn.style.opacity = '1';
+    }
+  }
+}
+window.renderPaymentMilestones = renderPaymentMilestones;
+
+// 25% progress payment, calculated the same way the 50/25/25 schedule does.
+function triggerProgressPaymentInvoice() {
+  if (!conCurrentJobId) return;
+  const job = conJobs.find(j => j.id === conCurrentJobId);
+  const total = getJobValue(job) || 0;
+  if (!total) { alert('This job has no contract value or estimate total yet.'); return; }
+  const rate = Math.round(total * 25 / 100 * 100) / 100;
+
+  openAddInvoiceModal(conCurrentJobId);
+  document.getElementById('invType').value = 'Progress Billing';
+  _invLineItems = [{ desc: 'Progress Payment (25%)', qty: 1, rate }];
+  renderInvLineItems();
+  calcInvTotals();
+  window._pendingMilestoneForInvoice = 'progress';
+}
+window.triggerProgressPaymentInvoice = triggerProgressPaymentInvoice;
+
+// Final payment = whatever balance remains, not a blind 25% — this correctly
+// accounts for any Change Orders added along the way.
+function triggerFinalPaymentInvoice() {
+  if (!conCurrentJobId) return;
+  const job = conJobs.find(j => j.id === conCurrentJobId);
+  const total = getJobValue(job) || 0;
+  const jobInvs = (window._allInvoices || []).filter(i => i.jobId === conCurrentJobId);
+  const collected = jobInvs.reduce((s,i) => s + (i.amtPaid||0), 0);
+  const remaining = Math.round((total - collected) * 100) / 100;
+  if (remaining <= 0) { alert('This job shows a $0 or negative remaining balance — check the Financials tab before invoicing.'); return; }
+
+  openAddInvoiceModal(conCurrentJobId);
+  document.getElementById('invType').value = 'Final Billing';
+  _invLineItems = [{ desc: 'Final Payment — Balance Due', qty: 1, rate: remaining }];
+  renderInvLineItems();
+  calcInvTotals();
+  window._pendingMilestoneForInvoice = 'final';
+}
+window.triggerFinalPaymentInvoice = triggerFinalPaymentInvoice;
 
 
 let _geoCache = {}; // address -> {lat, lon}
@@ -4437,6 +4552,7 @@ function renderJobInvoiceList(jobId, invs) {
 // ── Open Add Invoice Modal ──
 function openAddInvoiceModal(jobId) {
   window._pendingCOIdForInvoice = null;
+  window._pendingMilestoneForInvoice = null;
   const jid = jobId || conCurrentJobId;
   if (!jid) { alert('Open a job first.'); return; }
   const job = conJobs.find(j => j.id === jid);
@@ -4873,6 +4989,10 @@ function saveInvoice() {
   const pendingCOId = window._pendingCOIdForInvoice || null;
   if (pendingCOId) data.changeOrderId = pendingCOId;
 
+  // Track which payment milestone this invoice represents, if it was
+  // created via the Progress/Final Payment triggers on the Dashboard.
+  const pendingMilestone = window._pendingMilestoneForInvoice || null;
+
   // Auto-set overdue
   const today = new Date().toISOString().split('T')[0];
   if (data.status !== 'Paid' && data.dueDate && data.dueDate < today) data.status = 'Overdue';
@@ -4895,6 +5015,14 @@ function saveInvoice() {
         updatedAt: firebase.firestore.FieldValue.serverTimestamp()
       }).catch(() => {});
       window._pendingCOIdForInvoice = null;
+    }
+
+    if (pendingMilestone === 'progress') {
+      coll('jobs').doc(jobId).update({ progressPaymentInvoiced: true }).catch(() => {});
+      window._pendingMilestoneForInvoice = null;
+    } else if (pendingMilestone === 'final') {
+      coll('jobs').doc(jobId).update({ finalPaymentInvoiced: true }).catch(() => {});
+      window._pendingMilestoneForInvoice = null;
     }
   }).catch(e => alert('Error saving invoice: ' + e.message));
 }

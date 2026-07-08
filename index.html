@@ -920,7 +920,7 @@
     <div class="kt-logo">
       <div class="kt-logo-mark">JOBSpan</div>
       <div class="kt-logo-tag" id="ktCompanyTag">7 Pillars Contracting</div>
-      <div class="kt-logo-version" id="ktVersionTag">Version 1.9.38 · 08/Jul/2026</div>
+      <div class="kt-logo-version" id="ktVersionTag">Version 1.9.39 · 08/Jul/2026</div>
     </div>
 
     <nav class="kt-nav">
@@ -3288,6 +3288,20 @@
               <div id="detailWeather"><div class="small muted">Loading weather...</div></div>
             </div>
 
+            <!-- Payment Milestones -->
+            <div class="kt-card" style="margin-bottom:16px;padding:14px">
+              <div style="font-weight:700;font-size:.82rem;margin-bottom:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">Payment Milestones</div>
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+                <span class="small muted">Job Completion</span>
+                <span id="dashCompletionPct" style="font-weight:800;color:var(--amber)">—</span>
+              </div>
+              <div style="height:8px;background:rgba(110,145,210,.12);border-radius:999px;overflow:hidden;margin-bottom:12px">
+                <div id="dashCompletionBar" style="height:100%;width:0%;background:linear-gradient(90deg,var(--amber),var(--amber2));transition:width .3s"></div>
+              </div>
+              <button id="dashProgressPayBtn" class="btn" style="width:100%;margin-bottom:6px;padding:8px;font-size:.8rem;font-weight:700" onclick="triggerProgressPaymentInvoice()">📄 Progress Payment Invoice (25%)</button>
+              <button id="dashFinalPayBtn" class="btn" style="width:100%;padding:8px;font-size:.8rem;font-weight:700" onclick="triggerFinalPaymentInvoice()">📄 Final Payment Invoice</button>
+            </div>
+
             <!-- Quick Financials -->
             <div class="kt-card" style="padding:14px">
               <div style="font-weight:700;font-size:.82rem;margin-bottom:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">Financial Summary</div>
@@ -3733,6 +3747,6 @@
   </div>
 </div>
 
-<script src="kytrac-app.js?v=202607082000"></script>
+<script src="kytrac-app.js?v=202607082045"></script>
 </body>
 </html>
