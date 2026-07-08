@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>JOBSpan — Bulk Archive All Jobs (Fresh Start)</title>
+<style>
+  body { font-family: monospace; background: #0a1628; color: #eaf0fb; padding: 20px; max-width: 800px; margin: 0 auto; }
+  h2 { color: #d97706; }
+  .warn-box { background: rgba(239,83,80,.12); border: 1px solid rgba(239,83,80,.4); border-radius: 8px; padding: 14px 16px; margin: 16px 0; color: #ffb4b0; }
+  .btn { background: #d97706; color: #fff; border: none; padding: 10px 24px; border-radius: 8px; font-size: 1rem; cursor: pointer; margin: 8px 4px; }
+  .btn-google { background: #fff; color: #333; }
+  .btn-danger { background: #ef5350; }
+  .btn:disabled { background: #555; cursor: not-allowed; opacity: .6; }
+  .log { background: #0d1f3c; border: 1px solid #1e3a5f; border-radius: 8px; padding: 16px; margin-top: 16px; max-height: 500px; overflow-y: auto; font-size: .85rem; line-height: 1.8; }
+  .ok { color: #34d399; }
+  .err { color: #f87171; }
+  .info { color: #60a5fa; }
+  p.sub { color: #94a3b8; font-size: .9rem; }
+  input[type=text] { font-family: monospace; padding: 8px; border-radius: 6px; border: 1px solid #1e3a5f; background: #0d1f3c; color: #eaf0fb; font-size: 1rem; width: 320px; }
+</style>
+</head>
+<body>
+<h2>⚠ JOBSpan — Bulk Archive All Jobs</h2>
+<p class="sub">
+  Archives every existing job (soft-delete — same mechanism as the Delete Job button in the app).
+  Archived jobs disappear from the Kanban board, List view, and Home dashboard, but the underlying
+  data (estimates, invoices, change orders, daily logs, everything) stays in Firestore untouched
+  for historical reference. Nothing is permanently deleted. Customers and Vendors are NOT touched.
+</p>
+
+<div class="warn-box">
+  <strong>This affects every job currently in the system</strong> — the legacy JobTread/Red Maples
+  import data used to build and validate this app. After running this, your boards and dashboard
+  will show zero active jobs, and only jobs created going forward will count.
+</div>
+
+<div id="authSection">
+  <button class="btn btn-google" onclick="signIn()">Sign in with Google</button>
+</div>
+
+<div id="mainSection" style="display:none">
+  <p>Signed in as: <span id="userEmail"></span></p>
+  <button class="btn" onclick="previewJobs()">🔍 Preview — Count Jobs to Archive</button>
+  <div id="confirmSection" style="display:none;margin-top:16px">
+    <p>Type <strong>ARCHIVE ALL JOBS</strong> below to enable the archive button:</p>
+    <input type="text" id="confirmInput" oninput="checkConfirm()" placeholder="Type confirmation phrase here" />
+    <br>
+    <button class="btn btn-danger" id="runBtn" onclick="runArchive()" disabled>⚠ Archive All Jobs Now</button>
+  </div>
+  <div class="log" id="log"><span class="info">Ready. Click "Preview" to see how many jobs will be archived.</span></div>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script>
+const firebaseConfig = {
+  apiKey: "AIzaSyDoFC2N0rrgwO-vY8SCPb3J-jKgSLYn5BQ",
+  authDomain: "kytrac-72d91.firebaseapp.com",
+  projectId: "kytrac-72d91",
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+const auth = firebase.auth();
+const COMPANY_ID = 'mtOiSAzppjVbxKdHRJBH';
+
+let _jobsToArchive = [];
+
+auth.onAuthStateChanged(user => {
+  if (user) {
+    document.getElementById('authSection').style.display = 'none';
+    document.getElementById('mainSection').style.display = 'block';
+    document.getElementById('userEmail').textContent = user.email;
+  }
+});
+
+function signIn() {
+  const provider = new firebase.auth.GoogleAuthProvider();
+  auth.signInWithPopup(provider);
+}
+
+function log(msg, cls) {
+  const el = document.getElementById('log');
+  const line = document.createElement('div');
+  if (cls) line.className = cls;
+  line.textContent = msg;
+  el.appendChild(line);
+  el.scrollTop = el.scrollHeight;
+}
+
+function clearLog() {
+  document.getElementById('log').innerHTML = '';
+}
+
+async function previewJobs() {
+  clearLog();
+  log('Scanning jobs collection...', 'info');
+  try {
+    const snap = await db.collection('companies').doc(COMPANY_ID).collection('jobs').get();
+    _jobsToArchive = [];
+    let alreadyArchived = 0;
+    snap.forEach(doc => {
+      const job = doc.data();
+      if (job.archived) { alreadyArchived++; return; }
+      _jobsToArchive.push({ id: doc.id, name: job.name || '(unnamed)', jobNumber: job.jobNumber || '' });
+    });
+    log(`Found ${snap.size} total job(s) in Firestore.`, 'info');
+    log(`${alreadyArchived} already archived (will be skipped).`, 'info');
+    log(`${_jobsToArchive.length} job(s) will be archived by this tool:`, 'ok');
+    _jobsToArchive.slice(0, 25).forEach(j => log(`  • ${j.jobNumber ? '#' + j.jobNumber + ' — ' : ''}${j.name}`));
+    if (_jobsToArchive.length > 25) log(`  ... and ${_jobsToArchive.length - 25} more`);
+
+    if (_jobsToArchive.length > 0) {
+      document.getElementById('confirmSection').style.display = 'block';
+    } else {
+      log('Nothing to archive — all jobs are already archived or none exist.', 'ok');
+    }
+  } catch (e) {
+    log('Error: ' + e.message, 'err');
+  }
+}
+
+function checkConfirm() {
+  const val = document.getElementById('confirmInput').value.trim();
+  document.getElementById('runBtn').disabled = (val !== 'ARCHIVE ALL JOBS');
+}
+
+async function runArchive() {
+  if (!_jobsToArchive.length) { log('Nothing to archive. Run Preview first.', 'err'); return; }
+  document.getElementById('runBtn').disabled = true;
+  log('---', 'info');
+  log(`Archiving ${_jobsToArchive.length} job(s)...`, 'info');
+
+  const user = auth.currentUser;
+  let success = 0, failed = 0;
+
+  for (const job of _jobsToArchive) {
+    try {
+      await db.collection('companies').doc(COMPANY_ID).collection('jobs').doc(job.id).update({
+        archived: true,
+        archivedReason: 'Bulk archive — legacy Red Maples/JobTread import data, fresh start for 7 Pillars',
+        archivedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        archivedBy: user ? user.email : 'unknown'
+      });
+      success++;
+      log(`✓ Archived: ${job.jobNumber ? '#' + job.jobNumber + ' — ' : ''}${job.name}`, 'ok');
+    } catch (e) {
+      failed++;
+      log(`✗ Failed: ${job.name} — ${e.message}`, 'err');
+    }
+  }
+
+  log('---', 'info');
+  log(`Done. ${success} archived, ${failed} failed.`, success > 0 ? 'ok' : 'err');
+  log('Customers and Vendors were not touched. Refresh JOBSpan to see the reset boards.', 'info');
+}
+</script>
+</body>
+</html>
