@@ -1,4 +1,4 @@
-// JOBSpan Application JavaScript v1.9.34 · 08/Jul/2026
+// JOBSpan Application JavaScript v1.9.35 · 08/Jul/2026
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -4488,7 +4488,21 @@ function invPickerSelectType(typeId) {
 function getEstimateTotal() {
   const jobId = document.getElementById('invJobId')?.value;
   const job = conJobs.find(j => j.id === jobId);
-  return job?.contractValue || job?.approvedOrders || 0;
+  const contractAmt = job?.contractValue || job?.approvedOrders || 0;
+  if (contractAmt > 0) return contractAmt;
+
+  // No signed contract value yet (e.g. job still in Estimating status) —
+  // fall back to the live running estimate total so deposit/percentage
+  // payments have something real to calculate against.
+  if (jobId === conCurrentJobId && estGroups.length) {
+    let totalPrice = 0;
+    estGroups.forEach(g => {
+      const items = getAllItemsInGroup(g);
+      totalPrice += calcGroupTotals(items).price;
+    });
+    return totalPrice;
+  }
+  return 0;
 }
 
 function updateCustomPayPreview() {
