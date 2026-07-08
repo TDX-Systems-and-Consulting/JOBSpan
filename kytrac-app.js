@@ -1,4 +1,4 @@
-// JOBSpan Application JavaScript v1.9.36 · 08/Jul/2026
+// JOBSpan Application JavaScript v1.9.37 · 08/Jul/2026
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -10086,9 +10086,16 @@ function printPunchList() {
   const co = companyProfile;
   const win = window.open('', '_blank');
 
-  const groupSections = estGroups.map(group => {
+  const groupSections = estGroups.map((group, idx) => {
     const allItems = getAllItemsInGroup(group);
     if (!allItems.length) return '';
+
+    // Total estimated install/labor time for this room — summed from any
+    // line item billed by the hour (Labor cost type or unit === 'hr').
+    const totalHours = allItems.reduce((sum, item) => {
+      const isLabor = item.costType === 'Labor' || (item.unit||'').toLowerCase() === 'hr';
+      return isLabor ? sum + (item.qty||0) : sum;
+    }, 0);
 
     const subSections = (group.subgroups||[]).map(sub => {
       if (!(sub.items||[]).length) return '';
@@ -10112,8 +10119,13 @@ function printPunchList() {
       </tr>`
     ).join('');
 
-    return `<div style="page-break-inside:avoid;margin-bottom:28px;border:2px solid #d97706;border-radius:8px;overflow:hidden">
-      <div style="background:#d97706;color:#fff;padding:10px 14px;font-size:1.1rem;font-weight:900">${esc(group.name)}</div>
+    const isLast = idx === estGroups.length - 1;
+
+    return `<div style="${isLast ? '' : 'page-break-after:always;'}margin-bottom:28px;border:2px solid #d97706;border-radius:8px;overflow:hidden">
+      <div style="background:#d97706;color:#fff;padding:10px 14px;display:flex;justify-content:space-between;align-items:center">
+        <div style="font-size:1.1rem;font-weight:900">${esc(group.name)}</div>
+        ${totalHours > 0 ? `<div style="font-size:.85rem;font-weight:700;background:rgba(255,255,255,.2);padding:4px 10px;border-radius:6px">⏱ Est. Install Time: ${totalHours} hr${totalHours!==1?'s':''}</div>` : ''}
+      </div>
       <table style="width:100%;border-collapse:collapse">
         <thead><tr style="background:#f3f4f6">
           <th style="padding:7px 8px;text-align:left;font-size:.75rem;color:#6b7280;font-weight:700">✓</th>
