@@ -920,7 +920,7 @@
     <div class="kt-logo">
       <div class="kt-logo-mark">JOBSpan</div>
       <div class="kt-logo-tag" id="ktCompanyTag">7 Pillars Contracting</div>
-      <div class="kt-logo-version" id="ktVersionTag">Version 2.1.0 · 10/Jul/2026</div>
+      <div class="kt-logo-version" id="ktVersionTag">Version 2.1.1 · 10/Jul/2026</div>
     </div>
 
     <nav class="kt-nav">
@@ -2836,6 +2836,11 @@
         <div class="small muted" style="margin-bottom:8px;font-weight:700">Quick pick:</div>
         <div style="display:flex;flex-wrap:wrap;gap:6px" id="subgroupQuickPicks"></div>
       </div>
+      <div style="margin-top:16px">
+        <label class="small muted" style="display:block;margin-bottom:6px">Scope Notes <span style="color:#9ca3af;font-weight:400">(internal only — for the crew/punch list, never shown to the customer)</span></label>
+        <textarea id="subgroupScopeNotes" rows="3" placeholder="e.g. Single-handle pull-down faucet, new — not reusing existing. Or: Replace one outlet on north wall, cover plates on all outlets."
+          style="width:100%;padding:10px;border-radius:8px;font-size:.9rem"></textarea>
+      </div>
     </div>
     <div class="modal-foot">
       <button class="btn" onclick="kClose('subgroupNameModal')">Cancel</button>
@@ -3496,7 +3501,8 @@
             <button class="btn" onclick="openAddSubgroupModal()" style="padding:6px 14px;font-size:.82rem">+ Subgroup</button>
             <button class="btn" onclick="openAddEstItemModal(null)" style="padding:6px 14px;font-size:.82rem">+ Item</button>
             <div style="margin-left:auto;display:flex;gap:8px">
-              <button class="btn" onclick="printEstimate()" style="padding:6px 14px;font-size:.82rem">🖨 Print</button>
+              <button class="btn" onclick="printEstimate()" style="padding:6px 14px;font-size:.82rem" title="Shows itemized cost/price/margin - for your own reference only">🖨 Print (Internal)</button>
+              <button class="btn-amber" onclick="printProposal()" style="padding:6px 14px;font-size:.82rem">📄 Print Proposal (Customer)</button>
               <button class="btn" onclick="printPunchList()" style="padding:6px 14px;font-size:.82rem;background:linear-gradient(135deg,rgba(29,187,135,.2),rgba(13,148,136,.15));color:#a3f2d2;border-color:rgba(29,187,135,.3)">📋 Punch List</button>
             </div>
           </div>
@@ -3806,6 +3812,6 @@
   </div>
 </div>
 
-<script src="kytrac-app.js?v=202607101430"></script>
+<script src="kytrac-app.js?v=202607101530"></script>
 </body>
 </html>

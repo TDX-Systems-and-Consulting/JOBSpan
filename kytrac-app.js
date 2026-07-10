@@ -1,4 +1,4 @@
-// JOBSpan Application JavaScript v2.1.0 · 10/Jul/2026
+// JOBSpan Application JavaScript v2.1.1 · 10/Jul/2026
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -10108,6 +10108,8 @@ function openAddSubgroupModal(groupId, editSubId) {
 
   document.getElementById('subgroupNameTitle').textContent = editSubId ? 'Edit Subgroup' : 'Add Subgroup';
   document.getElementById('subgroupNameInput').value = existingSub?.name || '';
+  const scopeNotesEl = document.getElementById('subgroupScopeNotes');
+  if (scopeNotesEl) scopeNotesEl.value = existingSub?.scopeNotes || '';
   const parentEl = document.getElementById('subgroupParentName');
   if (parentEl) parentEl.textContent = group?.name || '';
 
@@ -10144,6 +10146,7 @@ let _pendingSubgroupEditId = null;
 function saveSubgroupName() {
   const name = document.getElementById('subgroupNameInput')?.value.trim();
   if (!name) { alert('Please enter a subgroup name.'); return; }
+  const scopeNotes = document.getElementById('subgroupScopeNotes')?.value.trim() || '';
   kClose('subgroupNameModal');
   const groupId = _pendingSubgroupForGroup;
   const editSubId = _pendingSubgroupEditId;
@@ -10151,21 +10154,21 @@ function saveSubgroupName() {
 
   if (editSubId) {
     coll('jobs').doc(conCurrentJobId).collection('estimateGroups')
-      .doc(groupId).collection('subgroups').doc(editSubId).update({ name })
+      .doc(groupId).collection('subgroups').doc(editSubId).update({ name, scopeNotes })
       .then(function() {
         const sub = group?.subgroups?.find(s => s.id === editSubId);
-        if (sub) sub.name = name;
+        if (sub) { sub.name = name; sub.scopeNotes = scopeNotes; }
         renderEstimateTree();
       }).catch(function(e) { alert('Error: ' + e.message); });
   } else {
     const order = group?.subgroups?.length || 0;
     coll('jobs').doc(conCurrentJobId).collection('estimateGroups')
       .doc(groupId).collection('subgroups').add({
-        name: name, order: order, createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        name: name, scopeNotes: scopeNotes, order: order, createdAt: firebase.firestore.FieldValue.serverTimestamp()
       }).then(function(ref) {
         if (group) {
           if (!group.subgroups) group.subgroups = [];
-          group.subgroups.push({ id: ref.id, name: name, order: order, items: [] });
+          group.subgroups.push({ id: ref.id, name: name, scopeNotes: scopeNotes, order: order, items: [] });
         }
         renderEstimateTree();
       }).catch(function(e) { alert('Error: ' + e.message); });
@@ -10387,6 +10390,84 @@ function showCatalogPicker(groupId) {
 }
 
 // ── PRINT ESTIMATE ──
+// ── PRINT PROPOSAL (Customer-facing — totals only, no itemized costs, no scope notes) ──
+function printProposal() {
+  const job = conJobs.find(j => j.id === conCurrentJobId);
+  const co = companyProfile;
+  const win = window.open('', '_blank');
+
+  let grandTotal = 0;
+
+  const groupRows = estGroups.map(group => {
+    const subRows = (group.subgroups || []).map(sub => {
+      const st = calcGroupTotals(sub.items || []);
+      if (st.price <= 0) return '';
+      return `<tr>
+        <td style="padding:10px 8px 10px 24px;border-bottom:1px solid #e5e7eb">${esc(sub.name)}</td>
+        <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;text-align:right;font-weight:700">$${st.price.toFixed(2)}</td>
+      </tr>`;
+    }).join('');
+
+    const directRows = (group.directItems || []).map(item => {
+      const price = (item.qty || 1) * (item.unitPrice || item.unitCost || 0);
+      if (price <= 0) return '';
+      return `<tr>
+        <td style="padding:10px 8px 10px 24px;border-bottom:1px solid #e5e7eb">${esc(item.desc || '')}</td>
+        <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;text-align:right;font-weight:700">$${price.toFixed(2)}</td>
+      </tr>`;
+    }).join('');
+
+    const allItems = getAllItemsInGroup(group);
+    const totals = calcGroupTotals(allItems);
+    if (totals.price <= 0) return '';
+    grandTotal += totals.price;
+
+    return `<tr style="background:#f3f4f6">
+      <td style="padding:10px 8px;font-weight:900">${esc(group.name)}</td>
+      <td style="padding:10px 8px;text-align:right;font-weight:900">$${totals.price.toFixed(2)}</td>
+    </tr>${subRows}${directRows}`;
+  }).join('');
+
+  win.document.write(`<!DOCTYPE html><html><head><title>Proposal — ${esc(job?.name||'')}</title>
+  <style>body{font-family:Arial,sans-serif;max-width:800px;margin:40px auto;padding:0 20px;color:#111}
+  table{width:100%;border-collapse:collapse}
+  .header{display:flex;justify-content:space-between;border-bottom:3px solid #d97706;padding-bottom:16px;margin-bottom:20px}
+  @media print{body{margin:10px}}</style></head><body>
+  <div class="header">
+    <div>
+      ${co.logo?`<img src="${co.logo}" style="height:48px;object-fit:contain;margin-bottom:4px"><br>`:''}
+      <strong style="font-size:1.2rem">${esc(co.companyName||'')}</strong><br>
+      <span style="color:#6b7280;font-size:.85rem">${esc(co.phone||'')} · ${esc(co.email||'')}</span>
+    </div>
+    <div style="text-align:right">
+      <div style="font-size:1.4rem;font-weight:900;color:#d97706">PROPOSAL</div>
+      <div style="font-size:1rem;font-weight:700">${esc(job?.name||'')}</div>
+      <div style="color:#6b7280;font-size:.85rem">${esc(job?.address||'')}</div>
+      <div style="color:#6b7280;font-size:.85rem">Date: ${new Date().toLocaleDateString()}</div>
+    </div>
+  </div>
+  <table>
+    <thead><tr style="background:#1f2937;color:#fff">
+      <th style="padding:10px 8px;text-align:left">Description</th>
+      <th style="padding:10px 8px;text-align:right">Total</th>
+    </tr></thead>
+    <tbody>${groupRows}</tbody>
+    <tfoot>
+      <tr style="background:#1f2937;color:#fff;font-weight:900;font-size:1.1rem">
+        <td style="padding:14px 8px">TOTAL</td>
+        <td style="padding:14px 8px;text-align:right">$${grandTotal.toFixed(2)}</td>
+      </tr>
+    </tfoot>
+  </table>
+  <div style="margin-top:32px;padding-top:16px;border-top:1px solid #e5e7eb;color:#9ca3af;font-size:.75rem;text-align:center">
+    ${esc(co.companyName||'')} · ${esc(co.phone||'')} · ${esc(co.email||'')}
+    ${co.license?'<br>License #'+esc(co.license):''}
+  </div>
+  <script>window.print();<\/script></body></html>`);
+  win.document.close();
+}
+window.printProposal = printProposal;
+
 function printEstimate() {
   const job = conJobs.find(j => j.id === conCurrentJobId);
   const co = companyProfile;
@@ -10519,11 +10600,14 @@ function printPunchList() {
       const materialItems = (sub.items||[]).filter(i => i.costType !== 'Labor' && (i.unit||'').toLowerCase() !== 'hr');
       if (!(sub.items||[]).length) return '';
       const qtyDisplay = materialItems.length === 1 ? `${materialItems[0].qty||1} ${materialItems[0].unit||''}`.trim() : '';
+      const notesCell = sub.scopeNotes
+        ? `<span style="color:#374151;font-style:normal;font-weight:600">${esc(sub.scopeNotes)}</span>`
+        : 'Notes: ________________';
       return `<tr>
         <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;width:24px"><div style="width:18px;height:18px;border:2px solid #374151;border-radius:3px;display:inline-block"></div></td>
         <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;font-weight:600">${esc(toGenericLabel(sub.name))}</td>
         <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;white-space:nowrap;color:#6b7280">${esc(qtyDisplay)}</td>
-        <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;width:200px;color:#9ca3af;font-style:italic;font-size:.82rem">Notes: ________________</td>
+        <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;width:220px;color:#9ca3af;font-style:italic;font-size:.82rem">${notesCell}</td>
       </tr>`;
     }).join('');
 
