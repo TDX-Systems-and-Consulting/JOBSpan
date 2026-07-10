@@ -1,4 +1,4 @@
-// JOBSpan Application JavaScript v2.2.0 · 10/Jul/2026
+// JOBSpan Application JavaScript v2.2.1 · 10/Jul/2026
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -10444,7 +10444,7 @@ function printProposal() {
       const st = calcGroupTotals(sub.items || []);
       if (st.price <= 0) return '';
       return `<tr>
-        <td style="padding:8px 8px 8px 24px;border-bottom:1px solid #e5e7eb;color:#374151">${esc(sub.name)}</td>
+        <td style="padding:8px 8px 8px 24px;border-bottom:1px solid #e5e7eb;color:#374151">${esc(customerSafeLabel(sub))}</td>
       </tr>`;
     }).join('');
 
@@ -10452,8 +10452,10 @@ function printProposal() {
       if (item.visibleToCustomer === false) return '';
       const price = (item.qty || 1) * (item.unitPrice || item.unitCost || 0);
       if (price <= 0) return '';
+      const gradeWord = item.bundleTier ? ({ low: 'Low Grade', med: 'Medium Grade', high: 'High Grade' }[item.bundleTier] || '') : '';
+      const label = gradeWord ? toGenericLabel(item.desc) + ' — ' + gradeWord : toGenericLabel(item.desc);
       return `<tr>
-        <td style="padding:8px 8px 8px 24px;border-bottom:1px solid #e5e7eb;color:#374151">${esc(item.desc || '')}</td>
+        <td style="padding:8px 8px 8px 24px;border-bottom:1px solid #e5e7eb;color:#374151">${esc(label)}</td>
       </tr>`;
     }).join('');
 
@@ -10602,6 +10604,31 @@ function printEstimate() {
 }
 
 // ── PUNCH LIST PRINT ──
+// Strips tier/product specifics off a bundle-generated name, leaving a
+// generic trade label — "Ceiling Fan Install (High Grade — 52in...) ×1"
+// becomes "Ceiling Fan Install". Used anywhere the customer or crew should
+// see the task, not the specific product/brand/size (the customer picks
+// the actual fixture in Selections).
+function toGenericLabel(name) {
+  return (name || '').split(' (')[0].replace(/\s*×\d+$/, '').trim() || 'Work';
+}
+
+// Finds the Low/Medium/High grade word for a subgroup, derived from any
+// item inside it tagged with bundleTier (set when added via Smart Add).
+function subgroupGradeLabel(sub) {
+  const item = (sub.items || []).find(i => i.bundleTier);
+  if (!item) return '';
+  return { low: 'Low Grade', med: 'Medium Grade', high: 'High Grade' }[item.bundleTier] || '';
+}
+
+// Combines the two into the one string customers/crew should see:
+// "Ceiling Fan Install — Medium Grade" — no brand, no size, no model.
+function customerSafeLabel(sub) {
+  const generic = toGenericLabel(sub.name);
+  const grade = subgroupGradeLabel(sub);
+  return grade ? generic + ' — ' + grade : generic;
+}
+
 function printPunchList() {
   const job = conJobs.find(j => j.id === conCurrentJobId);
   const co = companyProfile;
@@ -10610,8 +10637,7 @@ function printPunchList() {
   // Strips tier/product specifics off a bundle-generated name, leaving a
   // generic trade label — "Ceiling Fan Install (High Grade — 52in...) ×1"
   // becomes "Ceiling Fan Install". Crew doesn't need the product spec on
-  // the punch list, just what the task is.
-  const toGenericLabel = (name) => (name || '').split(' (')[0].replace(/\s*×\d+$/, '').trim() || 'Work';
+  // the punch list, just what the task is. (toGenericLabel is now shared/global.)
 
   // Job-wide labor hours (used only for the day-estimate footer — never
   // shown per room or per item on the printed sheet itself).
@@ -10641,19 +10667,22 @@ function printPunchList() {
         : 'Notes: ________________';
       return `<tr>
         <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;width:24px"><div style="width:18px;height:18px;border:2px solid #374151;border-radius:3px;display:inline-block"></div></td>
-        <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;font-weight:600">${esc(toGenericLabel(sub.name))}</td>
+        <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;font-weight:600">${esc(customerSafeLabel(sub))}</td>
         <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;white-space:nowrap;color:#6b7280">${esc(qtyDisplay)}</td>
         <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;width:220px;color:#9ca3af;font-style:italic;font-size:.82rem">${notesCell}</td>
       </tr>`;
     }).join('');
 
-    const directRows = (group.directItems||[]).filter(i => i.costType !== 'Labor' && (i.unit||'').toLowerCase() !== 'hr').map(item =>
-      `<tr>
+    const directRows = (group.directItems||[]).filter(i => i.costType !== 'Labor' && (i.unit||'').toLowerCase() !== 'hr').map(item => {
+      const gradeWord = item.bundleTier ? ({ low: 'Low Grade', med: 'Medium Grade', high: 'High Grade' }[item.bundleTier] || '') : '';
+      const label = gradeWord ? toGenericLabel(item.desc) + ' — ' + gradeWord : toGenericLabel(item.desc);
+      return `<tr>
         <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;width:24px"><div style="width:18px;height:18px;border:2px solid #374151;border-radius:3px;display:inline-block"></div></td>
-        <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;font-weight:600">${esc(toGenericLabel(item.desc))}</td>
+        <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;font-weight:600">${esc(label)}</td>
         <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;white-space:nowrap;color:#6b7280">${(item.qty||1)} ${item.unit||''}</td>
         <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;width:200px;color:#9ca3af;font-style:italic;font-size:.82rem">Notes: ________________</td>
-      </tr>`
+      </tr>`;
+    }
     ).join('');
 
     const isLast = idx === estGroups.length - 1;
