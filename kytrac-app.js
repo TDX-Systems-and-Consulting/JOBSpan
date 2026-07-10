@@ -1,4 +1,4 @@
-// JOBSpan Application JavaScript v2.1.1 · 10/Jul/2026
+// JOBSpan Application JavaScript v2.1.2 · 10/Jul/2026
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -9902,6 +9902,7 @@ function renderSubgroupHTML(groupId, sub) {
     <div class="est-subgroup-head" onclick="toggleGroupCollapse('${sub.id}')">
       <span class="est-group-toggle ${isCollapsed?'':'open'}" style="font-size:.75rem">▶</span>
       <span class="est-subgroup-name">${esc(sub.name)}</span>
+      ${sub.scopeNotes ? `<span title="${esc(sub.scopeNotes)}" style="font-size:.85rem;cursor:help" onclick="event.stopPropagation()">📝</span>` : ''}
       <span style="font-size:.74rem;color:var(--muted)">${(sub.items||[]).length} items · Cost $${Math.round(totals.cost).toLocaleString()} · Price $${Math.round(totals.price).toLocaleString()}</span>
       <span style="font-size:.74rem;color:${marginColor}">${Math.round(totals.margin)}%</span>
       <div style="display:flex;gap:4px" onclick="event.stopPropagation()">
