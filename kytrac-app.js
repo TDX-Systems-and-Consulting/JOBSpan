@@ -1,4 +1,4 @@
-// JOBSpan Application JavaScript v2.1.2 · 10/Jul/2026
+// JOBSpan Application JavaScript v2.1.3 · 10/Jul/2026
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -10601,8 +10601,12 @@ function printPunchList() {
       const materialItems = (sub.items||[]).filter(i => i.costType !== 'Labor' && (i.unit||'').toLowerCase() !== 'hr');
       if (!(sub.items||[]).length) return '';
       const qtyDisplay = materialItems.length === 1 ? `${materialItems[0].qty||1} ${materialItems[0].unit||''}`.trim() : '';
-      const notesCell = sub.scopeNotes
-        ? `<span style="color:#374151;font-style:normal;font-weight:600">${esc(sub.scopeNotes)}</span>`
+      // Combine the subgroup's Scope Notes with any item-level notes —
+      // both are internal, crew-facing context that shouldn't get lost.
+      const itemNotes = (sub.items||[]).map(i => i.notes).filter(Boolean);
+      const allNotes = [sub.scopeNotes, ...itemNotes].filter(Boolean);
+      const notesCell = allNotes.length
+        ? `<span style="color:#374151;font-style:normal;font-weight:600">${esc(allNotes.join(' — '))}</span>`
         : 'Notes: ________________';
       return `<tr>
         <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;width:24px"><div style="width:18px;height:18px;border:2px solid #374151;border-radius:3px;display:inline-block"></div></td>
