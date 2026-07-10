@@ -1,4 +1,4 @@
-// JOBSpan Application JavaScript v2.1.3 · 10/Jul/2026
+// JOBSpan Application JavaScript v2.1.4 · 10/Jul/2026
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -10404,8 +10404,7 @@ function printProposal() {
       const st = calcGroupTotals(sub.items || []);
       if (st.price <= 0) return '';
       return `<tr>
-        <td style="padding:10px 8px 10px 24px;border-bottom:1px solid #e5e7eb">${esc(sub.name)}</td>
-        <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;text-align:right;font-weight:700">$${st.price.toFixed(2)}</td>
+        <td style="padding:8px 8px 8px 24px;border-bottom:1px solid #e5e7eb;color:#374151">${esc(sub.name)}</td>
       </tr>`;
     }).join('');
 
@@ -10413,8 +10412,7 @@ function printProposal() {
       const price = (item.qty || 1) * (item.unitPrice || item.unitCost || 0);
       if (price <= 0) return '';
       return `<tr>
-        <td style="padding:10px 8px 10px 24px;border-bottom:1px solid #e5e7eb">${esc(item.desc || '')}</td>
-        <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;text-align:right;font-weight:700">$${price.toFixed(2)}</td>
+        <td style="padding:8px 8px 8px 24px;border-bottom:1px solid #e5e7eb;color:#374151">${esc(item.desc || '')}</td>
       </tr>`;
     }).join('');
 
@@ -10425,7 +10423,6 @@ function printProposal() {
 
     return `<tr style="background:#f3f4f6">
       <td style="padding:10px 8px;font-weight:900">${esc(group.name)}</td>
-      <td style="padding:10px 8px;text-align:right;font-weight:900">$${totals.price.toFixed(2)}</td>
     </tr>${subRows}${directRows}`;
   }).join('');
 
@@ -10449,14 +10446,12 @@ function printProposal() {
   </div>
   <table>
     <thead><tr style="background:#1f2937;color:#fff">
-      <th style="padding:10px 8px;text-align:left">Description</th>
-      <th style="padding:10px 8px;text-align:right">Total</th>
+      <th style="padding:10px 8px;text-align:left">Scope of Work</th>
     </tr></thead>
     <tbody>${groupRows}</tbody>
     <tfoot>
-      <tr style="background:#1f2937;color:#fff;font-weight:900;font-size:1.1rem">
-        <td style="padding:14px 8px">TOTAL</td>
-        <td style="padding:14px 8px;text-align:right">$${grandTotal.toFixed(2)}</td>
+      <tr style="background:#1f2937;color:#fff;font-weight:900;font-size:1.2rem">
+        <td style="padding:16px 8px;text-align:right">TOTAL: $${grandTotal.toFixed(2)}</td>
       </tr>
     </tfoot>
   </table>
