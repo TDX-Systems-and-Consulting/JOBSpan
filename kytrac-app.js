@@ -1,4 +1,4 @@
-// JOBSpan Application JavaScript v2.3.0 · 10/Jul/2026
+// JOBSpan Application JavaScript v2.3.1 · 10/Jul/2026
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -5494,11 +5494,13 @@ function printInvoiceData(inv, job, otherInvoices) {
 
   win.document.write('<!DOCTYPE html><html><head><title>Invoice ' + (inv.number||'') + '</title>' +
     '<style>' +
-    'body{font-family:Inter,Arial,sans-serif;color:#1a1a1a;max-width:740px;margin:40px auto;padding:0 28px}' +
+    '@import url(\'https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap\');' +
+    '* { box-sizing: border-box; }' +
+    'body{font-family:\'Inter\',Arial,sans-serif;color:#1f2937;max-width:820px;margin:0 auto;padding:48px 40px;line-height:1.5}' +
     'table{width:100%;border-collapse:collapse}' +
-    '.header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #d97706;padding-bottom:20px;margin-bottom:24px}' +
-    '.label{font-size:.7rem;text-transform:uppercase;letter-spacing:.07em;color:#6b7280;font-weight:700}' +
-    '@media print{body{margin:16px}}' +
+    '.header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:4px solid #d97706;padding-bottom:24px;margin-bottom:24px}' +
+    '.label{font-size:.7rem;text-transform:uppercase;letter-spacing:.07em;color:#9ca3af;font-weight:700}' +
+    '@media print{body{padding:20px 30px}}' +
     '</style></head><body>' +
 
     // Header
@@ -5517,13 +5519,14 @@ function printInvoiceData(inv, job, otherInvoices) {
     '</div></div>' +
 
     // Bill to / Invoice details
-    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-bottom:24px">' +
-    '<div><div class="label" style="margin-bottom:6px">Bill To</div>' +
-    '<div style="font-weight:800;font-size:1.05rem">' + esc(job?.client||'') + '</div>' +
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:28px">' +
+    '<div style="padding:16px 20px;background:#f9fafb;border-radius:10px;border:1px solid #e5e7eb">' +
+    '<div class="label" style="margin-bottom:6px">Bill To</div>' +
+    '<div style="font-weight:700;font-size:1.05rem;color:#111827">' + esc(job?.client||'') + '</div>' +
     '<div style="color:#374151;font-size:.9rem;margin-top:2px">' + esc(job?.name||'') + '</div>' +
     '<div style="color:#6b7280;font-size:.84rem">' + esc(job?.address||'') + '</div>' +
     '</div>' +
-    '<div style="text-align:right">' +
+    '<div style="text-align:right;padding:16px 4px">' +
     '<div style="margin-bottom:5px"><span class="label">Invoice Date: </span>' + (inv.date||'') + '</div>' +
     '<div style="margin-bottom:5px"><span class="label">Due Date: </span><strong>' + (inv.dueDate||'') + '</strong></div>' +
     '<div><span class="label">Type: </span>' + (inv.type||'') + '</div>' +
