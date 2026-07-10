@@ -1,4 +1,4 @@
-// JOBSpan Application JavaScript v2.0.1 · 08/Jul/2026
+// JOBSpan Application JavaScript v2.0.2 · 10/Jul/2026
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -10494,46 +10494,52 @@ function printPunchList() {
   const co = companyProfile;
   const win = window.open('', '_blank');
 
+  // Strips tier/product specifics off a bundle-generated name, leaving a
+  // generic trade label — "Ceiling Fan Install (High Grade — 52in...) ×1"
+  // becomes "Ceiling Fan Install". Crew doesn't need the product spec on
+  // the punch list, just what the task is.
+  const toGenericLabel = (name) => (name || '').split(' (')[0].replace(/\s*×\d+$/, '').trim() || 'Work';
+
+  // Job-wide labor hours (used only for the day-estimate footer — never
+  // shown per room or per item on the printed sheet itself).
+  let totalLaborHours = 0;
+
   const groupSections = estGroups.map((group, idx) => {
     const allItems = getAllItemsInGroup(group);
     if (!allItems.length) return '';
 
-    // Total estimated install/labor time for this room — summed from any
-    // line item billed by the hour (Labor cost type or unit === 'hr').
-    const totalHours = allItems.reduce((sum, item) => {
+    allItems.forEach(item => {
       const isLabor = item.costType === 'Labor' || (item.unit||'').toLowerCase() === 'hr';
-      return isLabor ? sum + (item.qty||0) : sum;
-    }, 0);
+      if (isLabor) totalLaborHours += (item.qty || 0);
+    });
 
-    const subSections = (group.subgroups||[]).map(sub => {
+    // One row per subgroup (Feature) — generic label only, materials qty
+    // if there's a clean single quantity, no labor rows, no cost/price.
+    const subRows = (group.subgroups||[]).map(sub => {
+      const materialItems = (sub.items||[]).filter(i => i.costType !== 'Labor' && (i.unit||'').toLowerCase() !== 'hr');
       if (!(sub.items||[]).length) return '';
-      const itemRows = (sub.items||[]).map(item =>
-        `<tr>
-          <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;width:24px"><div style="width:18px;height:18px;border:2px solid #374151;border-radius:3px;display:inline-block"></div></td>
-          <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb">${esc(item.desc||'')}</td>
-          <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;white-space:nowrap;color:#6b7280">${(item.qty||1)} ${item.unit||''}</td>
-          <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;width:200px;color:#9ca3af;font-style:italic;font-size:.82rem">${item.notes||'Notes: ________________'}</td>
-        </tr>`
-      ).join('');
-      return `<tr><td colspan="4" style="padding:8px 8px 4px 16px;background:#f9fafb;font-weight:700;color:#374151;font-size:.88rem">${esc(sub.name)}</td></tr>${itemRows}`;
+      const qtyDisplay = materialItems.length === 1 ? `${materialItems[0].qty||1} ${materialItems[0].unit||''}`.trim() : '';
+      return `<tr>
+        <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;width:24px"><div style="width:18px;height:18px;border:2px solid #374151;border-radius:3px;display:inline-block"></div></td>
+        <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;font-weight:600">${esc(toGenericLabel(sub.name))}</td>
+        <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;white-space:nowrap;color:#6b7280">${esc(qtyDisplay)}</td>
+        <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;width:200px;color:#9ca3af;font-style:italic;font-size:.82rem">Notes: ________________</td>
+      </tr>`;
     }).join('');
 
-    const directRows = (group.directItems||[]).map(item =>
+    const directRows = (group.directItems||[]).filter(i => i.costType !== 'Labor' && (i.unit||'').toLowerCase() !== 'hr').map(item =>
       `<tr>
         <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;width:24px"><div style="width:18px;height:18px;border:2px solid #374151;border-radius:3px;display:inline-block"></div></td>
-        <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb">${esc(item.desc||'')}</td>
+        <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;font-weight:600">${esc(toGenericLabel(item.desc))}</td>
         <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;white-space:nowrap;color:#6b7280">${(item.qty||1)} ${item.unit||''}</td>
-        <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;width:200px;color:#9ca3af;font-style:italic;font-size:.82rem">${item.notes||'Notes: ________________'}</td>
+        <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;width:200px;color:#9ca3af;font-style:italic;font-size:.82rem">Notes: ________________</td>
       </tr>`
     ).join('');
 
     const isLast = idx === estGroups.length - 1;
 
     return `<div style="${isLast ? '' : 'page-break-after:always;'}margin-bottom:28px;border:2px solid #d97706;border-radius:8px;overflow:hidden">
-      <div style="background:#d97706;color:#fff;padding:10px 14px;display:flex;justify-content:space-between;align-items:center">
-        <div style="font-size:1.1rem;font-weight:900">${esc(group.name)}</div>
-        ${totalHours > 0 ? `<div style="font-size:.85rem;font-weight:700;background:rgba(255,255,255,.2);padding:4px 10px;border-radius:6px">⏱ Est. Install Time: ${totalHours} hr${totalHours!==1?'s':''}</div>` : ''}
-      </div>
+      <div style="background:#d97706;color:#fff;padding:10px 14px;font-size:1.1rem;font-weight:900">${esc(group.name)}</div>
       <table style="width:100%;border-collapse:collapse">
         <thead><tr style="background:#f3f4f6">
           <th style="padding:7px 8px;text-align:left;font-size:.75rem;color:#6b7280;font-weight:700">✓</th>
@@ -10541,7 +10547,7 @@ function printPunchList() {
           <th style="padding:7px 8px;text-align:left;font-size:.75rem;color:#6b7280;font-weight:700">QTY</th>
           <th style="padding:7px 8px;text-align:left;font-size:.75rem;color:#6b7280;font-weight:700">NOTES</th>
         </tr></thead>
-        <tbody>${subSections}${directRows}</tbody>
+        <tbody>${subRows}${directRows}</tbody>
       </table>
       <div style="padding:10px 14px;background:#fffbeb;border-top:1px solid #fde68a">
         <div style="font-size:.78rem;color:#92400e;font-weight:700">Field Notes:</div>
@@ -10550,6 +10556,18 @@ function printPunchList() {
       </div>
     </div>`;
   }).join('');
+
+  // Job-wide crew day estimate — the ONLY place labor time appears on this
+  // sheet, and only as a whole-job estimate, not per room or per item.
+  const days2Man = totalLaborHours > 0 ? Math.ceil(totalLaborHours / (2 * 8)) : 0;
+  const days3Man = totalLaborHours > 0 ? Math.ceil(totalLaborHours / (3 * 8)) : 0;
+  const dayEstimateBlock = totalLaborHours > 0 ? `
+    <div style="margin-top:20px;padding:16px;background:#1a1a1a;color:#fff;border-radius:8px;text-align:center">
+      <div style="font-size:.75rem;text-transform:uppercase;letter-spacing:.06em;color:#d97706;font-weight:700;margin-bottom:6px">Estimated Job Duration</div>
+      <div style="font-size:1.3rem;font-weight:900">
+        2-Man Crew: ~${days2Man} day${days2Man!==1?'s':''} &nbsp;|&nbsp; 3-Man Crew: ~${days3Man} day${days3Man!==1?'s':''}
+      </div>
+    </div>` : '';
 
   win.document.write(`<!DOCTYPE html><html><head><title>Punch List — ${esc(job?.name||'')}</title>
   <style>
@@ -10570,6 +10588,7 @@ function printPunchList() {
     </div>
   </div>
   ${groupSections}
+  ${dayEstimateBlock}
   <div style="margin-top:20px;padding:14px;border:1px solid #e5e7eb;border-radius:8px">
     <div style="font-weight:700;margin-bottom:6px">General Notes:</div>
     <div style="height:60px;border-bottom:1px solid #d1d5db"></div>
