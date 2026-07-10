@@ -1,4 +1,4 @@
-// JOBSpan Application JavaScript v2.1.4 · 10/Jul/2026
+// JOBSpan Application JavaScript v2.2.0 · 10/Jul/2026
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -9867,7 +9867,7 @@ function renderGroupHTML(group) {
   const totals = calcGroupTotals(allItems);
   const marginColor = totals.margin >= 20 ? '#1dbb87' : totals.margin >= 10 ? '#f59e0b' : '#ef5350';
 
-  return `<div class="est-group" id="estGroup_${group.id}">
+  return `<div class="est-group" id="estGroup_${group.id}" style="${group.visibleToCustomer===false?'opacity:.55':''}">
     <div class="est-group-head" onclick="toggleGroupCollapse('${group.id}')">
       <span class="est-group-toggle ${isCollapsed?'':'open'}">▶</span>
       <span class="est-group-name">${esc(group.name)}</span>
@@ -9876,6 +9876,7 @@ function renderGroupHTML(group) {
       <span class="est-group-total-val" style="color:var(--amber)">Price: $${Math.round(totals.price).toLocaleString()}</span>
       <span class="est-group-total-val" style="color:${marginColor}">${Math.round(totals.margin)}%</span>
       <div style="display:flex;gap:6px;margin-left:8px" onclick="event.stopPropagation()">
+        <button onclick="toggleGroupVisibility('${group.id}')" class="btn" style="padding:2px 8px;font-size:.7rem" title="${group.visibleToCustomer===false?'Hidden from customer - click to show':'Visible to customer - click to hide'}">${group.visibleToCustomer===false?'🚫':'👁️'}</button>
         <button onclick="openAddSubgroupModal('${group.id}')" class="btn" style="padding:2px 8px;font-size:.7rem">+ Sub</button>
         <button onclick="openAddEstItemModal(null,'${group.id}')" class="btn" style="padding:2px 8px;font-size:.7rem">+ Item</button>
         <button onclick="openEditGroupModal('${group.id}')" class="btn" style="padding:2px 8px;font-size:.7rem">✏️</button>
@@ -9898,7 +9899,7 @@ function renderSubgroupHTML(groupId, sub) {
   const totals = calcGroupTotals(sub.items||[]);
   const marginColor = totals.margin >= 20 ? '#1dbb87' : totals.margin >= 10 ? '#f59e0b' : '#ef5350';
 
-  return `<div class="est-subgroup" id="estSub_${sub.id}">
+  return `<div class="est-subgroup" id="estSub_${sub.id}" style="${sub.visibleToCustomer===false?'opacity:.55':''}">
     <div class="est-subgroup-head" onclick="toggleGroupCollapse('${sub.id}')">
       <span class="est-group-toggle ${isCollapsed?'':'open'}" style="font-size:.75rem">▶</span>
       <span class="est-subgroup-name">${esc(sub.name)}</span>
@@ -9906,6 +9907,7 @@ function renderSubgroupHTML(groupId, sub) {
       <span style="font-size:.74rem;color:var(--muted)">${(sub.items||[]).length} items · Cost $${Math.round(totals.cost).toLocaleString()} · Price $${Math.round(totals.price).toLocaleString()}</span>
       <span style="font-size:.74rem;color:${marginColor}">${Math.round(totals.margin)}%</span>
       <div style="display:flex;gap:4px" onclick="event.stopPropagation()">
+        <button onclick="toggleSubgroupVisibility('${groupId}','${sub.id}')" class="btn" style="padding:1px 6px;font-size:.68rem" title="${sub.visibleToCustomer===false?'Hidden from customer - click to show':'Visible to customer - click to hide'}">${sub.visibleToCustomer===false?'🚫':'👁️'}</button>
         <button onclick="openAddEstItemModal(null,'${groupId}','${sub.id}')" class="btn" style="padding:1px 6px;font-size:.68rem">+ Item</button>
         <button onclick="openEditSubgroupModal('${groupId}','${sub.id}')" class="btn" style="padding:1px 6px;font-size:.68rem">✏️</button>
         <button onclick="deleteSubgroup('${groupId}','${sub.id}')" class="btn btn-danger" style="padding:1px 6px;font-size:.68rem">✕</button>
@@ -10008,6 +10010,32 @@ function updateEstimateSummary() {
     if (job) { job.estCost = rounded; refreshJobFinancials(job); }
   }
 }
+
+// Toggles whether a Room (Group) and everything under it appears on the
+// customer-facing Proposal. Missing/undefined = visible (default), matches
+// how JobTread's eyeball defaults for existing data.
+function toggleGroupVisibility(groupId) {
+  const group = estGroups.find(g => g.id === groupId);
+  if (!group) return;
+  const newVal = group.visibleToCustomer === false ? true : false;
+  coll('jobs').doc(conCurrentJobId).collection('estimateGroups').doc(groupId)
+    .update({ visibleToCustomer: newVal })
+    .then(() => { group.visibleToCustomer = newVal; renderEstimateTree(); })
+    .catch(e => alert('Error: ' + e.message));
+}
+window.toggleGroupVisibility = toggleGroupVisibility;
+
+function toggleSubgroupVisibility(groupId, subId) {
+  const group = estGroups.find(g => g.id === groupId);
+  const sub = group?.subgroups?.find(s => s.id === subId);
+  if (!sub) return;
+  const newVal = sub.visibleToCustomer === false ? true : false;
+  coll('jobs').doc(conCurrentJobId).collection('estimateGroups').doc(groupId)
+    .collection('subgroups').doc(subId).update({ visibleToCustomer: newVal })
+    .then(() => { sub.visibleToCustomer = newVal; renderEstimateTree(); })
+    .catch(e => alert('Error: ' + e.message));
+}
+window.toggleSubgroupVisibility = toggleSubgroupVisibility;
 
 function toggleGroupCollapse(id) {
   _estCollapsed[id] = !_estCollapsed[id];
@@ -10400,7 +10428,19 @@ function printProposal() {
   let grandTotal = 0;
 
   const groupRows = estGroups.map(group => {
+    const allItems = getAllItemsInGroup(group);
+    const totals = calcGroupTotals(allItems);
+    if (totals.price <= 0) return '';
+    // Price always counts toward the total, whether or not this scope is
+    // shown to the customer — hiding it only hides the description line,
+    // it doesn't mean the work (and its cost) isn't happening.
+    grandTotal += totals.price;
+
+    // A hidden Room/Group suppresses itself AND everything under it.
+    if (group.visibleToCustomer === false) return '';
+
     const subRows = (group.subgroups || []).map(sub => {
+      if (sub.visibleToCustomer === false) return '';
       const st = calcGroupTotals(sub.items || []);
       if (st.price <= 0) return '';
       return `<tr>
@@ -10409,17 +10449,13 @@ function printProposal() {
     }).join('');
 
     const directRows = (group.directItems || []).map(item => {
+      if (item.visibleToCustomer === false) return '';
       const price = (item.qty || 1) * (item.unitPrice || item.unitCost || 0);
       if (price <= 0) return '';
       return `<tr>
         <td style="padding:8px 8px 8px 24px;border-bottom:1px solid #e5e7eb;color:#374151">${esc(item.desc || '')}</td>
       </tr>`;
     }).join('');
-
-    const allItems = getAllItemsInGroup(group);
-    const totals = calcGroupTotals(allItems);
-    if (totals.price <= 0) return '';
-    grandTotal += totals.price;
 
     return `<tr style="background:#f3f4f6">
       <td style="padding:10px 8px;font-weight:900">${esc(group.name)}</td>
