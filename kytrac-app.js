@@ -1,4 +1,4 @@
-// JOBSpan Application JavaScript v2.0.2 · 10/Jul/2026
+// JOBSpan Application JavaScript v2.1.0 · 10/Jul/2026
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -11313,6 +11313,259 @@ let _wizardRoom = null;
 let _wizardTrade = null;
 let _wizardSelectedItems = new Set();
 let _wizardCurrentItems = [];
+
+// ══════════════════════════════════════════════════════════════════
+// TEMPLATES — Room-by-Room Rehab (alongside Smart Add)
+// Paint is the first fully-built item. Every other category is a
+// placeholder for now — "paint only right now, then we'll build out."
+// ══════════════════════════════════════════════════════════════════
+
+const TPL_ROOMS = [
+  'Global', 'Mechanicals', 'Exterior', 'Basement', 'Entry', 'Dining Room',
+  'Living Room', 'Kitchen', 'Hallway', 'Stairwell', 'Bedroom 1', 'Bedroom 2',
+  'Bedroom 3', 'Bedroom 4', 'Bedroom 5', 'Full Bath 1', 'Full Bath 2',
+  'Half Bath', 'Laundry', 'Bonus Room', 'Garage'
+];
+
+const TPL_CATEGORIES = [
+  'Framing', 'Electrical: rough', 'HVAC: Rough', 'Plumbing: rough',
+  'Insulation', 'Drywall', 'Doors', 'Trim', 'Painting', 'Flooring',
+  'Cabinets', 'Plumbing: final', 'HVAC: final', 'Electrical: final', 'Appliances'
+];
+
+// Only Painting has real items right now.
+const TPL_ITEMS_BY_CATEGORY = {
+  'Painting': [{ key: 'paint', label: 'Paint — 1 Coat Per Sq Ft' }]
+};
+
+// Paint formula constants — sourced directly from the real cost catalog.
+const PAINT_PACKAGE_COST = 76.27;   // brush + tape + paper + roller covers, flat per package
+const PAINT_PACKAGE_PRICE = 95.34;
+const PAINT_PRODUCT = {
+  low:  { cost: 0.60, price: 0.75 },
+  med:  { cost: 0.60, price: 0.75 },
+  high: { cost: 1.80, price: 2.25 }
+};
+const PAINT_LABOR = {
+  low:  { cost: 3.00, price: 3.45 },
+  med:  { cost: 3.00, price: 3.45 },
+  high: { cost: 4.50, price: 5.18 }  // 1.5x the low/med rate
+};
+const PAINT_GRADE_LABELS = { low: 'Low', med: 'Medium', high: 'High' };
+
+function paintPackagesForSqft(sqft) {
+  if (sqft <= 0) return 0;
+  return Math.ceil(sqft / 1000);
+}
+
+let _tplSelectedRoom = null;
+let _tplSelectedCategory = null;
+let _tplSelectedGrade = 'low';
+
+function openTemplatePicker() {
+  _tplSelectedRoom = null;
+  _tplSelectedCategory = null;
+  _tplSelectedGrade = 'low';
+  tplGoToRooms();
+  kOpen('templatePickerModal');
+}
+window.openTemplatePicker = openTemplatePicker;
+
+function tplUpdateBreadcrumb() {
+  const el = document.getElementById('tplBreadcrumb');
+  if (!el) return;
+  let html = '<span onclick="tplGoToRooms()">Rooms</span>';
+  if (_tplSelectedRoom) html += ' › <span onclick="tplGoToCategories()">' + esc(_tplSelectedRoom) + '</span>';
+  if (_tplSelectedCategory) html += ' › <span onclick="tplGoToItems()">' + esc(_tplSelectedCategory) + '</span>';
+  el.innerHTML = html;
+}
+
+function tplGoToRooms() {
+  _tplSelectedRoom = null;
+  _tplSelectedCategory = null;
+  document.getElementById('tplStepRooms').style.display = 'block';
+  document.getElementById('tplStepCategories').style.display = 'none';
+  document.getElementById('tplStepItems').style.display = 'none';
+  document.getElementById('tplStepPaintForm').style.display = 'none';
+  const grid = document.getElementById('tplRoomGrid');
+  grid.innerHTML = TPL_ROOMS.map(r =>
+    `<div class="wizard-category-card" onclick="tplSelectRoom('${esc(r)}')">${esc(r)}</div>`
+  ).join('');
+  tplUpdateBreadcrumb();
+}
+window.tplGoToRooms = tplGoToRooms;
+
+function tplSelectRoom(room) {
+  _tplSelectedRoom = room;
+  tplGoToCategories();
+}
+window.tplSelectRoom = tplSelectRoom;
+
+function tplGoToCategories() {
+  _tplSelectedCategory = null;
+  document.getElementById('tplStepRooms').style.display = 'none';
+  document.getElementById('tplStepCategories').style.display = 'block';
+  document.getElementById('tplStepItems').style.display = 'none';
+  document.getElementById('tplStepPaintForm').style.display = 'none';
+  document.getElementById('tplCategoryRoomTitle').textContent = _tplSelectedRoom;
+  const grid = document.getElementById('tplCategoryGrid');
+  grid.innerHTML = TPL_CATEGORIES.map(c =>
+    `<div class="wizard-category-card" onclick="tplSelectCategory('${esc(c)}')">${esc(c)}</div>`
+  ).join('');
+  tplUpdateBreadcrumb();
+}
+window.tplGoToCategories = tplGoToCategories;
+
+function tplSelectCategory(cat) {
+  _tplSelectedCategory = cat;
+  tplGoToItems();
+}
+window.tplSelectCategory = tplSelectCategory;
+
+function tplGoToItems() {
+  document.getElementById('tplStepRooms').style.display = 'none';
+  document.getElementById('tplStepCategories').style.display = 'none';
+  document.getElementById('tplStepItems').style.display = 'block';
+  document.getElementById('tplStepPaintForm').style.display = 'none';
+  document.getElementById('tplItemCategoryTitle').textContent = _tplSelectedCategory;
+  const items = TPL_ITEMS_BY_CATEGORY[_tplSelectedCategory] || [];
+  const grid = document.getElementById('tplItemGrid');
+  if (!items.length) {
+    grid.innerHTML = '<div class="small muted" style="padding:20px;text-align:center;grid-column:1/-1">Coming soon — only Painting is built out right now.</div>';
+  } else {
+    grid.innerHTML = items.map(it =>
+      `<div class="wizard-category-card" onclick="tplSelectItem('${esc(it.key)}')">${esc(it.label)}</div>`
+    ).join('');
+  }
+  tplUpdateBreadcrumb();
+}
+window.tplGoToItems = tplGoToItems;
+
+function tplSelectItem(key) {
+  if (key === 'paint') {
+    document.getElementById('tplStepRooms').style.display = 'none';
+    document.getElementById('tplStepCategories').style.display = 'none';
+    document.getElementById('tplStepItems').style.display = 'none';
+    document.getElementById('tplStepPaintForm').style.display = 'block';
+    document.getElementById('tplPaintSqft').value = '';
+    _tplSelectedGrade = 'low';
+    tplRefreshGradeButtons();
+    tplUpdatePaintPreview();
+  }
+}
+window.tplSelectItem = tplSelectItem;
+
+function tplRefreshGradeButtons() {
+  document.querySelectorAll('.tpl-grade-btn').forEach(btn => {
+    const active = btn.getAttribute('data-grade') === _tplSelectedGrade;
+    btn.style.background = active ? 'linear-gradient(135deg,#1dbb87,#0d9488)' : '';
+    btn.style.color = active ? '#fff' : '';
+    btn.style.borderColor = active ? '#1dbb87' : '';
+  });
+}
+
+function tplSelectPaintGrade(grade) {
+  _tplSelectedGrade = grade;
+  tplRefreshGradeButtons();
+  tplUpdatePaintPreview();
+}
+window.tplSelectPaintGrade = tplSelectPaintGrade;
+
+function tplComputePaint() {
+  const sqft = parseFloat(document.getElementById('tplPaintSqft')?.value) || 0;
+  const grade = _tplSelectedGrade;
+  const numPackages = paintPackagesForSqft(sqft);
+  const pkgCost = numPackages * PAINT_PACKAGE_COST;
+  const pkgPrice = numPackages * PAINT_PACKAGE_PRICE;
+  const paintCost = sqft * PAINT_PRODUCT[grade].cost;
+  const paintPrice = sqft * PAINT_PRODUCT[grade].price;
+  const laborCost = sqft * PAINT_LABOR[grade].cost;
+  const laborPrice = sqft * PAINT_LABOR[grade].price;
+  return {
+    sqft, grade, numPackages,
+    pkgCost, pkgPrice, paintCost, paintPrice, laborCost, laborPrice,
+    totalCost: pkgCost + paintCost + laborCost,
+    totalPrice: pkgPrice + paintPrice + laborPrice
+  };
+}
+
+function tplUpdatePaintPreview() {
+  const r = tplComputePaint();
+  const el = document.getElementById('tplPaintPreview');
+  if (!el) return;
+  if (r.sqft <= 0) { el.innerHTML = '<span class="muted">Enter square footage to see pricing.</span>'; return; }
+  el.innerHTML = `
+    <div style="display:flex;justify-content:space-between;margin-bottom:6px"><span>Materials Package × ${r.numPackages} (per 1000 sqft)</span><strong>$${r.pkgPrice.toFixed(2)}</strong></div>
+    <div style="display:flex;justify-content:space-between;margin-bottom:6px"><span>Paint (${r.sqft} sqft @ $${PAINT_PRODUCT[r.grade].price.toFixed(2)}/sqft)</span><strong>$${r.paintPrice.toFixed(2)}</strong></div>
+    <div style="display:flex;justify-content:space-between;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid rgba(29,187,135,.25)"><span>Labor (${r.sqft} sqft @ $${PAINT_LABOR[r.grade].price.toFixed(2)}/sqft)</span><strong>$${r.laborPrice.toFixed(2)}</strong></div>
+    <div style="display:flex;justify-content:space-between;font-size:1rem;font-weight:800"><span>Total (${PAINT_GRADE_LABELS[r.grade]} Grade)</span><span>$${r.totalPrice.toFixed(2)}</span></div>
+  `;
+}
+window.tplUpdatePaintPreview = tplUpdatePaintPreview;
+
+async function tplAddPaintToEstimate() {
+  if (!conCurrentJobId) { alert('Open a job first.'); return; }
+  const r = tplComputePaint();
+  if (r.sqft <= 0) { alert('Enter a square footage greater than 0.'); return; }
+
+  // Find or create the Room (Epic/Group)
+  let group = estGroups.find(g => g.name.toLowerCase() === _tplSelectedRoom.toLowerCase());
+  if (!group) {
+    const ref = await coll('jobs').doc(conCurrentJobId).collection('estimateGroups').add({
+      name: _tplSelectedRoom, order: estGroups.length,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    group = { id: ref.id, name: _tplSelectedRoom, order: estGroups.length, subgroups: [], directItems: [] };
+    estGroups.push(group);
+  }
+
+  // Find or create the Category (Feature/Subgroup) under that room
+  let subgroup = (group.subgroups || []).find(s => s.name.toLowerCase() === _tplSelectedCategory.toLowerCase());
+  if (!subgroup) {
+    const subRef = await coll('jobs').doc(conCurrentJobId).collection('estimateGroups')
+      .doc(group.id).collection('subgroups').add({
+        name: _tplSelectedCategory, order: group.subgroups?.length || 0,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+    subgroup = { id: subRef.id, name: _tplSelectedCategory, order: group.subgroups?.length || 0, items: [] };
+    if (!group.subgroups) group.subgroups = [];
+    group.subgroups.push(subgroup);
+  }
+
+  const gradeLabel = PAINT_GRADE_LABELS[r.grade];
+  const itemsToAdd = [
+    {
+      desc: 'Paint Materials Package (brush, tape, paper, roller covers)',
+      qty: r.numPackages, unit: 'ea', costType: 'Materials',
+      unitCost: PAINT_PACKAGE_COST, unitPrice: PAINT_PACKAGE_PRICE,
+      markup: Math.round((PAINT_PACKAGE_PRICE / PAINT_PACKAGE_COST - 1) * 100)
+    },
+    {
+      desc: 'Paint — 1 Coat (' + gradeLabel + ' Grade)',
+      qty: r.sqft, unit: 'sqft', costType: 'Materials',
+      unitCost: PAINT_PRODUCT[r.grade].cost, unitPrice: PAINT_PRODUCT[r.grade].price,
+      markup: Math.round((PAINT_PRODUCT[r.grade].price / PAINT_PRODUCT[r.grade].cost - 1) * 100)
+    },
+    {
+      desc: 'Paint Labor — 1 Coat Per Sqft (' + gradeLabel + ' Grade)',
+      qty: r.sqft, unit: 'hr', costType: 'Labor',
+      unitCost: PAINT_LABOR[r.grade].cost, unitPrice: PAINT_LABOR[r.grade].price,
+      markup: Math.round((PAINT_LABOR[r.grade].price / PAINT_LABOR[r.grade].cost - 1) * 100)
+    }
+  ];
+
+  let order = 0;
+  for (const item of itemsToAdd) {
+    await coll('jobs').doc(conCurrentJobId)
+      .collection('estimateGroups').doc(group.id)
+      .collection('subgroups').doc(subgroup.id)
+      .collection('items').add({ ...item, order: order++, createdAt: firebase.firestore.FieldValue.serverTimestamp() });
+  }
+
+  kClose('templatePickerModal');
+  if (typeof loadEstimate === 'function') loadEstimate(conCurrentJobId);
+}
+window.tplAddPaintToEstimate = tplAddPaintToEstimate;
 
 function openSmartAdd() {
   if (!estGroups.length) {

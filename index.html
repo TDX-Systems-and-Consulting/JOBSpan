@@ -920,7 +920,7 @@
     <div class="kt-logo">
       <div class="kt-logo-mark">JOBSpan</div>
       <div class="kt-logo-tag" id="ktCompanyTag">7 Pillars Contracting</div>
-      <div class="kt-logo-version" id="ktVersionTag">Version 2.0.2 · 10/Jul/2026</div>
+      <div class="kt-logo-version" id="ktVersionTag">Version 2.1.0 · 10/Jul/2026</div>
     </div>
 
     <nav class="kt-nav">
@@ -2740,7 +2740,62 @@
   </div>
 </div>
 
-<!-- ══ GROUP NAME MODAL ══ -->
+<!-- ══ TEMPLATE PICKER MODAL (Room-by-Room Rehab) ══ -->
+<div id="templatePickerModal" class="modal-overlay">
+  <div class="modal-box" style="max-width:680px;max-height:92vh;display:flex;flex-direction:column">
+    <div class="modal-head" style="flex-shrink:0">
+      <div>
+        <h3 style="margin:0">📐 Templates</h3>
+        <div class="wizard-breadcrumb" id="tplBreadcrumb"><span onclick="tplGoToRooms()">Rooms</span></div>
+      </div>
+      <button class="btn" onclick="kClose('templatePickerModal')">Close</button>
+    </div>
+    <div class="modal-body" style="flex:1;overflow-y:auto">
+
+      <!-- Step 1: Room list -->
+      <div id="tplStepRooms">
+        <div style="font-weight:700;margin-bottom:4px">Which room?</div>
+        <div class="small muted" style="margin-bottom:12px">Rehab Template — room by room breakdown</div>
+        <div id="tplRoomGrid" class="wizard-category-grid"></div>
+      </div>
+
+      <!-- Step 2: Category list within a room -->
+      <div id="tplStepCategories" style="display:none">
+        <div style="font-weight:700;margin-bottom:4px" id="tplCategoryRoomTitle"></div>
+        <div class="small muted" style="margin-bottom:12px">Select a category</div>
+        <div id="tplCategoryGrid" class="wizard-category-grid"></div>
+      </div>
+
+      <!-- Step 3: Item list within a category -->
+      <div id="tplStepItems" style="display:none">
+        <div style="font-weight:700;margin-bottom:4px" id="tplItemCategoryTitle"></div>
+        <div class="small muted" style="margin-bottom:12px">Select an item</div>
+        <div id="tplItemGrid" class="wizard-category-grid"></div>
+      </div>
+
+      <!-- Step 4: Paint formula form -->
+      <div id="tplStepPaintForm" style="display:none">
+        <div style="font-weight:700;margin-bottom:12px">Paint — 1 coat per sq ft</div>
+        <label class="small muted">Square Footage</label>
+        <input type="number" id="tplPaintSqft" min="1" placeholder="e.g. 2600" style="width:100%;padding:10px;border-radius:8px;margin-bottom:14px" oninput="tplUpdatePaintPreview()" />
+        <label class="small muted" style="display:block;margin-bottom:6px">Grade</label>
+        <div style="display:flex;gap:8px;margin-bottom:16px">
+          <button class="btn tpl-grade-btn" data-grade="low" onclick="tplSelectPaintGrade('low')" style="flex:1;padding:10px">Low</button>
+          <button class="btn tpl-grade-btn" data-grade="med" onclick="tplSelectPaintGrade('med')" style="flex:1;padding:10px">Medium</button>
+          <button class="btn tpl-grade-btn" data-grade="high" onclick="tplSelectPaintGrade('high')" style="flex:1;padding:10px">High</button>
+        </div>
+        <div id="tplPaintPreview" style="background:rgba(29,187,135,.08);border:1px solid rgba(29,187,135,.25);border-radius:10px;padding:14px;margin-bottom:14px;font-size:.86rem"></div>
+        <div style="display:flex;gap:8px">
+          <button class="btn" onclick="tplGoToItems()">← Back</button>
+          <button class="btn-amber" style="flex:1" onclick="tplAddPaintToEstimate()">➕ Add to Estimate</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+
 <div id="groupNameModal" class="modal-overlay">
   <div class="modal-box" style="max-width:420px">
     <div class="modal-head">
@@ -3432,6 +3487,10 @@
             ⚡ Smart Add — Browse by Room &amp; Trade
             <span style="font-size:.74rem;font-weight:400;color:rgba(217,119,6,.7)">Interior · Exterior · Systems</span>
           </button>
+          <button onclick="openTemplatePicker()" style="width:100%;margin-bottom:10px;padding:12px;border-radius:12px;border:1.5px solid rgba(29,187,135,.5);background:linear-gradient(135deg,rgba(29,187,135,.15),rgba(29,187,135,.05));color:#1dbb87;font-size:.9rem;font-weight:800;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px">
+            📐 Templates — Room-by-Room Rehab
+            <span style="font-size:.74rem;font-weight:400;color:rgba(29,187,135,.7)">Formula-driven quantities</span>
+          </button>
           <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
             <button class="btn-amber" onclick="openAddGroupModal()" style="padding:6px 14px;font-size:.82rem">+ Group</button>
             <button class="btn" onclick="openAddSubgroupModal()" style="padding:6px 14px;font-size:.82rem">+ Subgroup</button>
@@ -3747,6 +3806,6 @@
   </div>
 </div>
 
-<script src="kytrac-app.js?v=202607101347"></script>
+<script src="kytrac-app.js?v=202607101430"></script>
 </body>
 </html>
