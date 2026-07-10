@@ -1,4 +1,4 @@
-// JOBSpan Application JavaScript v2.2.1 · 10/Jul/2026
+// JOBSpan Application JavaScript v2.2.2 · 10/Jul/2026
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -10423,9 +10423,14 @@ function showCatalogPicker(groupId) {
 function printProposal() {
   const job = conJobs.find(j => j.id === conCurrentJobId);
   const co = companyProfile;
+  const itemized = !!document.getElementById('proposalItemizedToggle')?.checked;
   const win = window.open('', '_blank');
 
   let grandTotal = 0;
+
+  const priceCell = (price) => itemized
+    ? `<td style="padding:8px 8px;border-bottom:1px solid #e5e7eb;text-align:right;font-weight:700">$${price.toFixed(2)}</td>`
+    : '';
 
   const groupRows = estGroups.map(group => {
     const allItems = getAllItemsInGroup(group);
@@ -10436,7 +10441,9 @@ function printProposal() {
     // it doesn't mean the work (and its cost) isn't happening.
     grandTotal += totals.price;
 
-    // A hidden Room/Group suppresses itself AND everything under it.
+    // A hidden Room/Group suppresses itself AND everything under it,
+    // in both summary and itemized modes — the eyeball reflects a real
+    // decision about what this customer should see, bank request or not.
     if (group.visibleToCustomer === false) return '';
 
     const subRows = (group.subgroups || []).map(sub => {
@@ -10445,6 +10452,7 @@ function printProposal() {
       if (st.price <= 0) return '';
       return `<tr>
         <td style="padding:8px 8px 8px 24px;border-bottom:1px solid #e5e7eb;color:#374151">${esc(customerSafeLabel(sub))}</td>
+        ${priceCell(st.price)}
       </tr>`;
     }).join('');
 
@@ -10456,11 +10464,13 @@ function printProposal() {
       const label = gradeWord ? toGenericLabel(item.desc) + ' — ' + gradeWord : toGenericLabel(item.desc);
       return `<tr>
         <td style="padding:8px 8px 8px 24px;border-bottom:1px solid #e5e7eb;color:#374151">${esc(label)}</td>
+        ${priceCell(price)}
       </tr>`;
     }).join('');
 
     return `<tr style="background:#f3f4f6">
       <td style="padding:10px 8px;font-weight:900">${esc(group.name)}</td>
+      ${priceCell(totals.price)}
     </tr>${subRows}${directRows}`;
   }).join('');
 
@@ -10476,7 +10486,7 @@ function printProposal() {
       <span style="color:#6b7280;font-size:.85rem">${esc(co.phone||'')} · ${esc(co.email||'')}</span>
     </div>
     <div style="text-align:right">
-      <div style="font-size:1.4rem;font-weight:900;color:#d97706">PROPOSAL</div>
+      <div style="font-size:1.4rem;font-weight:900;color:#d97706">${itemized ? 'ITEMIZED PROPOSAL' : 'PROPOSAL'}</div>
       <div style="font-size:1rem;font-weight:700">${esc(job?.name||'')}</div>
       <div style="color:#6b7280;font-size:.85rem">${esc(job?.address||'')}</div>
       <div style="color:#6b7280;font-size:.85rem">Date: ${new Date().toLocaleDateString()}</div>
@@ -10485,11 +10495,12 @@ function printProposal() {
   <table>
     <thead><tr style="background:#1f2937;color:#fff">
       <th style="padding:10px 8px;text-align:left">Scope of Work</th>
+      ${itemized ? '<th style="padding:10px 8px;text-align:right">Price</th>' : ''}
     </tr></thead>
     <tbody>${groupRows}</tbody>
     <tfoot>
       <tr style="background:#1f2937;color:#fff;font-weight:900;font-size:1.2rem">
-        <td style="padding:16px 8px;text-align:right">TOTAL: $${grandTotal.toFixed(2)}</td>
+        <td style="padding:16px 8px;text-align:right" colspan="${itemized ? 2 : 1}">TOTAL: $${grandTotal.toFixed(2)}</td>
       </tr>
     </tfoot>
   </table>
