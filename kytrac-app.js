@@ -1,4 +1,4 @@
-// JOBSpan Application JavaScript v2.2.2 · 10/Jul/2026
+// JOBSpan Application JavaScript v2.3.0 · 10/Jul/2026
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -10428,86 +10428,126 @@ function printProposal() {
 
   let grandTotal = 0;
 
-  const priceCell = (price) => itemized
-    ? `<td style="padding:8px 8px;border-bottom:1px solid #e5e7eb;text-align:right;font-weight:700">$${price.toFixed(2)}</td>`
-    : '';
-
-  const groupRows = estGroups.map(group => {
+  const roomSections = estGroups.map(group => {
     const allItems = getAllItemsInGroup(group);
     const totals = calcGroupTotals(allItems);
     if (totals.price <= 0) return '';
     // Price always counts toward the total, whether or not this scope is
-    // shown to the customer — hiding it only hides the description line,
-    // it doesn't mean the work (and its cost) isn't happening.
+    // shown to the customer — hiding a room/category only hides its
+    // description, it doesn't mean the work (and its cost) isn't happening.
     grandTotal += totals.price;
 
-    // A hidden Room/Group suppresses itself AND everything under it,
-    // in both summary and itemized modes — the eyeball reflects a real
-    // decision about what this customer should see, bank request or not.
     if (group.visibleToCustomer === false) return '';
 
-    const subRows = (group.subgroups || []).map(sub => {
+    const catBlocks = (group.subgroups || []).map(sub => {
       if (sub.visibleToCustomer === false) return '';
       const st = calcGroupTotals(sub.items || []);
       if (st.price <= 0) return '';
-      return `<tr>
-        <td style="padding:8px 8px 8px 24px;border-bottom:1px solid #e5e7eb;color:#374151">${esc(customerSafeLabel(sub))}</td>
-        ${priceCell(st.price)}
-      </tr>`;
+      const label = customerSafeLabel(sub);
+      const priceHtml = itemized ? `<span style="float:right;font-weight:700;color:#1f2937">$${st.price.toFixed(2)}</span>` : '';
+      return `<div class="cat-block">
+        <div class="cat-name">${esc(label)}${priceHtml}</div>
+        ${sub.scopeNotes ? `<div class="cat-scope">${esc(sub.scopeNotes)}</div>` : ''}
+      </div>`;
     }).join('');
 
-    const directRows = (group.directItems || []).map(item => {
+    const directBlocks = (group.directItems || []).map(item => {
       if (item.visibleToCustomer === false) return '';
       const price = (item.qty || 1) * (item.unitPrice || item.unitCost || 0);
       if (price <= 0) return '';
       const gradeWord = item.bundleTier ? ({ low: 'Low Grade', med: 'Medium Grade', high: 'High Grade' }[item.bundleTier] || '') : '';
       const label = gradeWord ? toGenericLabel(item.desc) + ' — ' + gradeWord : toGenericLabel(item.desc);
-      return `<tr>
-        <td style="padding:8px 8px 8px 24px;border-bottom:1px solid #e5e7eb;color:#374151">${esc(label)}</td>
-        ${priceCell(price)}
-      </tr>`;
+      const priceHtml = itemized ? `<span style="float:right;font-weight:700;color:#1f2937">$${price.toFixed(2)}</span>` : '';
+      return `<div class="cat-block">
+        <div class="cat-name">${esc(label)}${priceHtml}</div>
+        ${item.notes ? `<div class="cat-scope">${esc(item.notes)}</div>` : ''}
+      </div>`;
     }).join('');
 
-    return `<tr style="background:#f3f4f6">
-      <td style="padding:10px 8px;font-weight:900">${esc(group.name)}</td>
-      ${priceCell(totals.price)}
-    </tr>${subRows}${directRows}`;
+    if (!catBlocks && !directBlocks) return '';
+
+    return `<div class="room-section">
+      <div class="room-heading">${esc(group.name)}</div>
+      ${catBlocks}${directBlocks}
+    </div>`;
   }).join('');
 
   win.document.write(`<!DOCTYPE html><html><head><title>Proposal — ${esc(job?.name||'')}</title>
-  <style>body{font-family:Arial,sans-serif;max-width:800px;margin:40px auto;padding:0 20px;color:#111}
-  table{width:100%;border-collapse:collapse}
-  .header{display:flex;justify-content:space-between;border-bottom:3px solid #d97706;padding-bottom:16px;margin-bottom:20px}
-  @media print{body{margin:10px}}</style></head><body>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap');
+    * { box-sizing: border-box; }
+    body { font-family: 'Inter', Arial, sans-serif; max-width: 820px; margin: 0 auto; padding: 48px 40px; color: #1f2937; line-height: 1.5; }
+    .header { display: flex; justify-content: space-between; align-items: flex-start; padding-bottom: 24px; margin-bottom: 8px; border-bottom: 4px solid #d97706; }
+    .co-name { font-size: 1.25rem; font-weight: 800; color: #111827; }
+    .co-contact { color: #6b7280; font-size: .82rem; margin-top: 2px; }
+    .doc-title { font-size: 1.7rem; font-weight: 800; color: #d97706; letter-spacing: .03em; text-align: right; }
+    .doc-meta { text-align: right; font-size: .85rem; color: #6b7280; margin-top: 4px; }
+    .prepared-for { margin: 28px 0 32px; padding: 16px 20px; background: #f9fafb; border-radius: 10px; border: 1px solid #e5e7eb; }
+    .prepared-for .label { font-size: .7rem; text-transform: uppercase; letter-spacing: .08em; color: #9ca3af; font-weight: 700; margin-bottom: 4px; }
+    .prepared-for .name { font-size: 1.05rem; font-weight: 700; color: #111827; }
+    .intro { color: #4b5563; font-size: .92rem; margin-bottom: 32px; }
+    .room-section { margin-bottom: 30px; page-break-inside: avoid; }
+    .room-heading { font-size: 1.15rem; font-weight: 800; color: #fff; background: #1f2937; padding: 10px 16px; border-radius: 8px 8px 0 0; }
+    .cat-block { padding: 14px 16px; border: 1px solid #e5e7eb; border-top: none; }
+    .cat-block:last-child { border-radius: 0 0 8px 8px; }
+    .cat-name { font-weight: 700; font-size: .98rem; color: #111827; overflow: hidden; }
+    .cat-scope { color: #4b5563; font-size: .88rem; margin-top: 6px; line-height: 1.55; }
+    .total-box { margin-top: 36px; padding: 20px 24px; background: #1f2937; color: #fff; border-radius: 10px; display: flex; justify-content: space-between; align-items: center; }
+    .total-box .label { font-size: 1rem; font-weight: 700; letter-spacing: .04em; }
+    .total-box .amount { font-size: 1.6rem; font-weight: 800; color: #fbbf24; }
+    .signatures { display: flex; gap: 40px; margin-top: 56px; }
+    .sig-block { flex: 1; }
+    .sig-line { border-bottom: 1.5px solid #9ca3af; height: 42px; margin-bottom: 6px; }
+    .sig-label { font-size: .8rem; color: #6b7280; }
+    .footer { margin-top: 48px; padding-top: 18px; border-top: 1px solid #e5e7eb; color: #9ca3af; font-size: .72rem; text-align: center; line-height: 1.6; }
+    @media print { body { padding: 20px 30px; } }
+  </style></head><body>
+
   <div class="header">
     <div>
-      ${co.logo?`<img src="${co.logo}" style="height:48px;object-fit:contain;margin-bottom:4px"><br>`:''}
-      <strong style="font-size:1.2rem">${esc(co.companyName||'')}</strong><br>
-      <span style="color:#6b7280;font-size:.85rem">${esc(co.phone||'')} · ${esc(co.email||'')}</span>
+      ${co.logo?`<img src="${co.logo}" style="height:52px;object-fit:contain;margin-bottom:8px"><br>`:''}
+      <div class="co-name">${esc(co.companyName||'')}</div>
+      <div class="co-contact">${esc(co.phone||'')} · ${esc(co.email||'')}${co.address?' · '+esc(co.address):''}</div>
+      ${co.license?`<div class="co-contact">License #${esc(co.license)}</div>`:''}
     </div>
-    <div style="text-align:right">
-      <div style="font-size:1.4rem;font-weight:900;color:#d97706">${itemized ? 'ITEMIZED PROPOSAL' : 'PROPOSAL'}</div>
-      <div style="font-size:1rem;font-weight:700">${esc(job?.name||'')}</div>
-      <div style="color:#6b7280;font-size:.85rem">${esc(job?.address||'')}</div>
-      <div style="color:#6b7280;font-size:.85rem">Date: ${new Date().toLocaleDateString()}</div>
+    <div>
+      <div class="doc-title">${itemized ? 'ITEMIZED PROPOSAL' : 'PROPOSAL'}</div>
+      <div class="doc-meta">${esc(job?.jobNumber||'')}</div>
+      <div class="doc-meta">${new Date().toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'})}</div>
     </div>
   </div>
-  <table>
-    <thead><tr style="background:#1f2937;color:#fff">
-      <th style="padding:10px 8px;text-align:left">Scope of Work</th>
-      ${itemized ? '<th style="padding:10px 8px;text-align:right">Price</th>' : ''}
-    </tr></thead>
-    <tbody>${groupRows}</tbody>
-    <tfoot>
-      <tr style="background:#1f2937;color:#fff;font-weight:900;font-size:1.2rem">
-        <td style="padding:16px 8px;text-align:right" colspan="${itemized ? 2 : 1}">TOTAL: $${grandTotal.toFixed(2)}</td>
-      </tr>
-    </tfoot>
-  </table>
-  <div style="margin-top:32px;padding-top:16px;border-top:1px solid #e5e7eb;color:#9ca3af;font-size:.75rem;text-align:center">
-    ${esc(co.companyName||'')} · ${esc(co.phone||'')} · ${esc(co.email||'')}
-    ${co.license?'<br>License #'+esc(co.license):''}
+
+  <div class="prepared-for">
+    <div class="label">Prepared For</div>
+    <div class="name">${esc(job?.client||'')}</div>
+    <div class="co-contact">${esc(job?.address||'')}</div>
   </div>
+
+  <div class="intro">Thank you for the opportunity to work on your project. The following outlines the full scope of work${itemized ? ' with itemized pricing by category' : ''}, organized room by room.</div>
+
+  ${roomSections}
+
+  <div class="total-box">
+    <div class="label">TOTAL PROJECT INVESTMENT</div>
+    <div class="amount">$${grandTotal.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+  </div>
+
+  <div class="signatures">
+    <div class="sig-block">
+      <div class="sig-line"></div>
+      <div class="sig-label">Customer Signature &nbsp;·&nbsp; Date</div>
+    </div>
+    <div class="sig-block">
+      <div class="sig-line"></div>
+      <div class="sig-label">${esc(co.companyName||'Company')} Representative &nbsp;·&nbsp; Date</div>
+    </div>
+  </div>
+
+  <div class="footer">
+    ${esc(co.companyName||'')} · ${esc(co.phone||'')} · ${esc(co.email||'')}${co.license?' · License #'+esc(co.license):''}<br>
+    This proposal is valid for 30 days from the date above. Pricing subject to change if scope changes after signing.
+  </div>
+
   <script>window.print();<\/script></body></html>`);
   win.document.close();
 }
