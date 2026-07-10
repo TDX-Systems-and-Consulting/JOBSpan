@@ -1,4 +1,4 @@
-// JOBSpan Application JavaScript v2.0.0 · 08/Jul/2026
+// JOBSpan Application JavaScript v2.0.1 · 08/Jul/2026
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -1576,7 +1576,7 @@ function refreshJobFinancials(job) {
   const margin = cv ? (profit / cv * 100) : 0;
 
   // Collected: prefer the imported JobTread figure; fall back to in-app invoice payments.
-  const jobInvs = (window._allInvoices || []).filter(i => i.jobId === job.id);
+  const jobInvs = (allInvoices || []).filter(i => i.jobId === job.id);
   const inAppCollected = jobInvs.reduce((s,i) => s + (i.amtPaid||0), 0);
   const collected = (typeof job.collected === 'number') ? job.collected : inAppCollected;
   const balance = cv - collected;
@@ -1720,7 +1720,7 @@ function triggerFinalPaymentInvoice() {
   if (!conCurrentJobId) return;
   const job = conJobs.find(j => j.id === conCurrentJobId);
   const total = getJobValue(job) || 0;
-  const jobInvs = (window._allInvoices || []).filter(i => i.jobId === conCurrentJobId);
+  const jobInvs = (allInvoices || []).filter(i => i.jobId === conCurrentJobId);
   const collected = jobInvs.reduce((s,i) => s + (i.amtPaid||0), 0);
   const remaining = Math.round((total - collected) * 100) / 100;
   if (remaining <= 0) { alert('This job shows a $0 or negative remaining balance — check the Financials tab before invoicing.'); return; }
@@ -4799,7 +4799,10 @@ function updateCustomPayPreview() {
 function pickPaymentSchedule(pct, desc) {
   const total = getEstimateTotal();
   const rate = total > 0 ? Math.round(total * pct / 100 * 100) / 100 : 0;
-  _invLineItems.push({ desc, qty: 1, rate });
+  // A payment-schedule tier replaces whatever's currently in the invoice —
+  // it's a choice of "make this invoice = X% of the project," not an
+  // additional line stacked on top of existing content.
+  _invLineItems = [{ desc, qty: 1, rate }];
   renderInvLineItems();
   calcInvTotals();
   document.getElementById('invLinePicker')?.remove();
@@ -4810,7 +4813,7 @@ function pickCustomPct() {
   if (!pct) { alert('Enter a percentage.'); return; }
   const total = getEstimateTotal();
   const rate = Math.round(total * pct / 100 * 100) / 100;
-  _invLineItems.push({ desc: pct + '% Payment', qty: 1, rate });
+  _invLineItems = [{ desc: pct + '% Payment', qty: 1, rate }];
   renderInvLineItems();
   calcInvTotals();
   document.getElementById('invLinePicker')?.remove();
@@ -4820,7 +4823,7 @@ function pickCustomAmt() {
   const rate = parseFloat(document.getElementById('invCustomAmt')?.value) || 0;
   const desc = document.getElementById('invCustomDesc')?.value.trim() || 'Custom Payment';
   if (!rate) { alert('Enter an amount.'); return; }
-  _invLineItems.push({ desc, qty: 1, rate });
+  _invLineItems = [{ desc, qty: 1, rate }];
   renderInvLineItems();
   calcInvTotals();
   document.getElementById('invLinePicker')?.remove();
@@ -4909,46 +4912,73 @@ function importEstimateToInvoice() {
   if (!jobId || !conDb) return;
 
   const jobRef = coll('jobs').doc(jobId);
-  const allItems = [];
+  const combinedLines = [];
 
-  // Walk the full groups → subgroups → items tree
+  // Walk the full groups → subgroups → items tree, but combine everything
+  // under one Feature (subgroup) into a SINGLE customer-facing line —
+  // customers should see "what" and "how much," not a materials/labor
+  // cost breakdown per part.
   jobRef.collection('estimateGroups').orderBy('order').get()
     .then(async groupSnap => {
       for (const groupDoc of groupSnap.docs) {
         const group = groupDoc.data();
 
-        // Direct items on group
+        // Direct items sitting right on the group (no subgroup) — combine
+        // them all into one line named after the room/group.
         const directSnap = await jobRef.collection('estimateGroups').doc(groupDoc.id).collection('items').get();
+        let directTotal = 0;
         directSnap.forEach(d => {
           const item = d.data();
-          if (item.type === 'labor' || !item.unitCost) return; // skip labor lines
-          const qty = item.qty || 1;
-          const rate = (item.unitCost || 0) * (1 + (item.markup || 0) / 100);
-          if (rate > 0) allItems.push({ desc: item.desc || item.name || group.name || '', qty, rate });
+          directTotal += (item.qty || 1) * (item.unitPrice || 0);
         });
+        if (directTotal > 0) {
+          combinedLines.push({ desc: group.name || 'General', qty: 1, rate: Math.round(directTotal * 100) / 100 });
+        }
 
-        // Subgroups
+        // Subgroups (Features) — one combined line each.
         const subSnap = await jobRef.collection('estimateGroups').doc(groupDoc.id).collection('subgroups').orderBy('order').get();
         for (const subDoc of subSnap.docs) {
           const sub = subDoc.data();
           const itemSnap = await jobRef.collection('estimateGroups').doc(groupDoc.id)
             .collection('subgroups').doc(subDoc.id).collection('items').get();
+
+          let subTotal = 0;
+          let primaryItemDesc = '';
+          let gradeWord = '';
           itemSnap.forEach(d => {
             const item = d.data();
-            if (item.type === 'labor' || !item.unitCost) return; // skip labor
-            const qty = item.qty || 1;
-            const rate = (item.unitCost || 0) * (1 + (item.markup || 0) / 100);
-            if (rate > 0) allItems.push({ desc: item.desc || item.name || sub.name || '', qty, rate });
+            subTotal += (item.qty || 1) * (item.unitPrice || 0);
+            // Prefer the first non-labor (materials) line for the descriptive
+            // detail — that's usually the actual product (with its size/model
+            // baked into the description already).
+            if (!primaryItemDesc && item.costType !== 'Labor' && item.desc) primaryItemDesc = item.desc;
+            // Surface the Low/Medium/High grade tier explicitly, if this
+            // subgroup came from a Smart Add bundle.
+            if (!gradeWord && item.bundleTier) {
+              gradeWord = { low: 'Low Grade', med: 'Medium Grade', high: 'High Grade' }[item.bundleTier] || '';
+            }
           });
+          if (subTotal <= 0) continue;
+
+          let desc = sub.name || group.name || 'Work';
+          if (group.name && sub.name && group.name.toLowerCase() !== sub.name.toLowerCase()) {
+            desc = sub.name + ' — ' + group.name;
+          }
+          const detailParts = [];
+          if (gradeWord) detailParts.push(gradeWord);
+          if (primaryItemDesc && primaryItemDesc.toLowerCase() !== (sub.name||'').toLowerCase()) detailParts.push(primaryItemDesc);
+          if (detailParts.length) desc += ' (' + detailParts.join(' — ') + ')';
+
+          combinedLines.push({ desc, qty: 1, rate: Math.round(subTotal * 100) / 100 });
         }
       }
 
-      if (!allItems.length) {
+      if (!combinedLines.length) {
         alert('No estimate line items found on this job. Add items in the Estimate tab first.');
         return;
       }
 
-      _invLineItems = [..._invLineItems, ...allItems];
+      _invLineItems = [...combinedLines];
       renderInvLineItems();
       calcInvTotals();
     })
@@ -5161,18 +5191,24 @@ window.quickMarkPaid = quickMarkPaid;
 // ── Print Invoice ──
 function printInvoiceById(jobId, invId) {
   if (!conDb) return;
-  coll('jobs').doc(jobId).collection('invoices').doc(invId).get()
-    .then(doc => {
+  const jobRef = coll('jobs').doc(jobId);
+  Promise.all([
+    jobRef.collection('invoices').doc(invId).get(),
+    jobRef.collection('invoices').get()
+  ]).then(([doc, allSnap]) => {
       if (!doc.exists) return;
       const inv = doc.data();
       const job = conJobs.find(j => j.id === jobId);
-      printInvoiceData(inv, job);
+      const otherInvoices = [];
+      allSnap.forEach(d => { if (d.id !== invId) otherInvoices.push(d.data()); });
+      printInvoiceData(inv, job, otherInvoices);
     });
 }
 
 function printInvoice() {
   // Build from current modal state
   const jobId = document.getElementById('invJobId')?.value;
+  const invId = document.getElementById('invId')?.value;
   const job = conJobs.find(j => j.id === jobId);
   const subtotal = _invLineItems.reduce((s,i) => s + (i.qty||1)*(i.rate||0), 0);
   const taxRate = parseFloat(document.getElementById('invTaxRate')?.value) || 0;
@@ -5188,7 +5224,8 @@ function printInvoice() {
     amtPaid: parseFloat(document.getElementById('invAmtPaid')?.value)||0,
     notes: document.getElementById('invNotes')?.value
   };
-  printInvoiceData(inv, job);
+  const otherInvoices = (allInvoices || []).filter(i => i.jobId === jobId && i.id !== invId);
+  printInvoiceData(inv, job, otherInvoices);
 }
 
 // ── Patch openJobDetail to load invoices ──
@@ -5412,7 +5449,7 @@ function updateSidebarUserInfo() {
 
 // ── Patch printInvoiceData to use company profile ──
 const _origPrintInvoiceData = printInvoiceData;
-function printInvoiceData(inv, job) {
+function printInvoiceData(inv, job, otherInvoices) {
   const co = companyProfile;
   const win = window.open('', '_blank');
   const fmt = v => '$' + Number(v||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -5423,6 +5460,13 @@ function printInvoiceData(inv, job) {
 
   // Project total from job
   const projectTotal = job?.contractValue || job?.approvedOrders || 0;
+
+  // True cumulative remaining balance — subtract what's already been paid on
+  // OTHER invoices for this job (e.g. a deposit already collected), not just
+  // this invoice's own total. Without this, a later progress/final invoice
+  // would show an inflated balance as if the deposit had never been paid.
+  const collectedElsewhere = (otherInvoices || []).reduce((s, i) => s + (i.amtPaid || 0), 0);
+  const remainingAfterThis = Math.max(0, projectTotal - collectedElsewhere - (inv.total || 0));
 
   // Build line rows
   const lineRows = (inv.lineItems||[]).map(item => {
@@ -5444,7 +5488,7 @@ function printInvoiceData(inv, job) {
     '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">' +
     '<div><div style="font-size:.7rem;color:#6b7280;text-transform:uppercase;letter-spacing:.05em">Total Project Value</div><div style="font-size:1.1rem;font-weight:900;color:#1a1a1a">' + fmt(projectTotal) + '</div></div>' +
     '<div><div style="font-size:.7rem;color:#6b7280;text-transform:uppercase;letter-spacing:.05em">This Invoice</div><div style="font-size:1.1rem;font-weight:900;color:#d97706">' + fmt(inv.total||0) + '</div></div>' +
-    '<div><div style="font-size:.7rem;color:#6b7280;text-transform:uppercase;letter-spacing:.05em">Remaining Balance</div><div style="font-size:1.1rem;font-weight:900;color:#374151">' + fmt(Math.max(0, projectTotal - (inv.total||0))) + '</div></div>' +
+    '<div><div style="font-size:.7rem;color:#6b7280;text-transform:uppercase;letter-spacing:.05em">Remaining Balance</div><div style="font-size:1.1rem;font-weight:900;color:#374151">' + fmt(remainingAfterThis) + '</div></div>' +
     '</div></div>'
   ) : '';
 
