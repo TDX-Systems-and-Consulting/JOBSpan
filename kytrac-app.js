@@ -1,4 +1,4 @@
-// JOBSpan Application JavaScript v2.3.1 · 10/Jul/2026
+// JOBSpan Application JavaScript v2.4.0 · 11/Jul/2026
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -411,7 +411,7 @@ function isOwnerOrAdmin() {
 // Legacy - kept for auth check but role system handles access
 const CON_APPROVED_EMAILS = [];
 
-let conApp = null, conDb = null, conAuth = null;
+let conApp = null, conDb = null, conAuth = null, conFunctions = null;
 let conCurrentUser = null;
 let currentCompanyId = null; // Set after login — all Firestore paths scoped under companies/{currentCompanyId}/
 let isCompanyOwnerByEmail = false; // true when login email matches the company's ownerEmail
@@ -459,7 +459,8 @@ function conLoadFirebase() {
   const scripts = [
     'https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js',
     'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js',
-    'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js'
+    'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js',
+    'https://www.gstatic.com/firebasejs/10.12.0/firebase-functions-compat.js'
   ];
   if (typeof firebase !== 'undefined' && firebase.apps !== undefined) { conInitFirebase(); return; }
   function loadNext(i) {
@@ -3789,6 +3790,7 @@ function conInitFirebase() {
     }
     conDb = firebase.firestore();
     conAuth = firebase.auth();
+    conFunctions = firebase.functions();
     conFirebaseReady = true;
     ktRevealSignIn();
     conAuth.onAuthStateChanged(user => {
@@ -4544,6 +4546,10 @@ function renderJobInvoiceList(jobId, invs) {
         <button class="btn" style="padding:4px 10px;font-size:.76rem" onclick="openEditInvoice('${jobId}','${inv.id}')">Edit</button>
         <button class="btn" style="padding:4px 10px;font-size:.76rem" onclick="quickMarkPaid('${jobId}','${inv.id}',${inv.total||0})"${inv.status==='Paid'?' disabled':''}>✓ Mark Paid</button>
         <button class="btn" style="padding:4px 10px;font-size:.76rem" onclick="printInvoiceById('${jobId}','${inv.id}')">🖨 Print</button>
+        ${inv.qbInvoiceId
+          ? `<span class="btn" style="padding:4px 10px;font-size:.76rem;opacity:.7;cursor:default">✓ Synced to QuickBooks</span>`
+          : `<button class="btn" style="padding:4px 10px;font-size:.76rem;background:rgba(45,181,110,.15);color:#2db56e;border-color:rgba(45,181,110,.4)" onclick="pushInvoiceToQuickBooks('${jobId}','${inv.id}', this)">📗 Push to QuickBooks</button>`
+        }
       </div>
     </div>`;
   }).join('');
@@ -5064,6 +5070,26 @@ function deleteInvoice() {
   coll('jobs').doc(jobId).collection('invoices').doc(invId).delete()
     .then(() => { kClose('addInvoiceModal'); loadAllInvoices(); });
 }
+
+async function pushInvoiceToQuickBooks(jobId, invId, btnEl) {
+  if (!conFunctions) { alert('QuickBooks connection is still loading — try again in a moment.'); return; }
+  if (btnEl) { btnEl.disabled = true; btnEl.textContent = '⏳ Pushing...'; }
+
+  try {
+    const callable = conFunctions.httpsCallable('qbCreateInvoice');
+    const result = await callable({ jobId, invoiceId: invId });
+    if (result.data && result.data.success) {
+      alert('✓ Invoice pushed to QuickBooks (QB Invoice #' + result.data.qbInvoiceId + ')');
+      loadAllInvoices();
+    } else {
+      throw new Error('Unexpected response from QuickBooks function.');
+    }
+  } catch (e) {
+    alert('Error pushing to QuickBooks: ' + (e.message || e));
+    if (btnEl) { btnEl.disabled = false; btnEl.textContent = '📗 Push to QuickBooks'; }
+  }
+}
+window.pushInvoiceToQuickBooks = pushInvoiceToQuickBooks;
 
 async function quickMarkPaid(jobId, invId, total) {
   if (!confirm('Mark this invoice as Paid in Full? This will also move the job to Approved and prep it for scheduling.')) return;
