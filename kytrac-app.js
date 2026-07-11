@@ -1,4 +1,4 @@
-// JOBSpan Application JavaScript v2.4.0 · 11/Jul/2026
+// JOBSpan Application JavaScript v2.4.1 · 11/Jul/2026
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -5077,7 +5077,7 @@ async function pushInvoiceToQuickBooks(jobId, invId, btnEl) {
 
   try {
     const callable = conFunctions.httpsCallable('qbCreateInvoice');
-    const result = await callable({ jobId, invoiceId: invId });
+    const result = await callable({ companyId: currentCompanyId, jobId, invoiceId: invId });
     if (result.data && result.data.success) {
       alert('✓ Invoice pushed to QuickBooks (QB Invoice #' + result.data.qbInvoiceId + ')');
       loadAllInvoices();
@@ -5353,12 +5353,40 @@ function loadCompanyProfile() {
       }
       populateSettingsForm();
       updateSidebarUserInfo();
+      checkQBConnectionStatus();
     })
     .catch(() => {
       companyProfile = { ...DEFAULT_COMPANY_PROFILE };
       populateSettingsForm();
     });
 }
+
+// Opens the QuickBooks OAuth flow for THIS company specifically — each
+// JOBSpan company connects its own QuickBooks account independently.
+function connectQuickBooks() {
+  if (!currentCompanyId) { alert('Company not loaded yet — try again in a moment.'); return; }
+  const url = 'https://us-central1-kytrac-72d91.cloudfunctions.net/qbOAuthStart?companyId=' + encodeURIComponent(currentCompanyId);
+  window.open(url, '_blank');
+}
+window.connectQuickBooks = connectQuickBooks;
+
+// Shows whether this company currently has a QuickBooks connection.
+function checkQBConnectionStatus() {
+  const el = document.getElementById('qbConnectionStatus');
+  if (!el || !conDb || !currentCompanyId) return;
+  coll('settings').doc('quickbooks').get()
+    .then(doc => {
+      if (doc.exists && doc.data().realmId) {
+        const data = doc.data();
+        el.innerHTML = '<span style="color:#1dbb87;font-weight:700">✓ Connected</span> — Realm ID: ' + esc(data.realmId) +
+          (data.environment === 'sandbox' ? ' <span style="color:#f59e0b">(Sandbox — test mode)</span>' : '');
+      } else {
+        el.innerHTML = '<span style="color:#9ca3af">Not connected yet.</span>';
+      }
+    })
+    .catch(() => { el.innerHTML = '<span style="color:#9ca3af">Not connected yet.</span>'; });
+}
+window.checkQBConnectionStatus = checkQBConnectionStatus;
 
 function populateSettingsForm() {
   const p = companyProfile;
