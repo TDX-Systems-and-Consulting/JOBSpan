@@ -1,4 +1,4 @@
-// JOBSpan Application JavaScript v2.11.0 · 13/Jul/2026
+// JOBSpan Application JavaScript v2.12.0 · 13/Jul/2026
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -10597,6 +10597,23 @@ function printProposal() {
     </div>`;
   }).join('');
 
+  const TERMS_AND_CONDITIONS = [
+    ['Scope of Work &amp; Pricing', `This Proposal reflects the scope of work and pricing outlined above, based on information and site conditions known at the time of preparation. Pricing is based on current material and labor costs; unless otherwise noted, any pending vendor bids or unforeseen site conditions discovered after acceptance may require a revised Change Order before affected work proceeds.`],
+    ['Payments', `Payment is due according to the Payment Schedule outlined above. Deposits are required to schedule and materially begin work. Late payments may result in a pause of work until the account is brought current. Accepted payment methods will be provided at signing.`],
+    ['Alterations &amp; Change Orders', `Any changes, additions, or alterations to the scope of work described in this Proposal — requested by the Customer or required due to unforeseen conditions — will be documented in a written Change Order reflecting any adjustment to price and/or schedule, and must be signed by both parties before the additional work begins.`],
+    ['Acceptance of Proposal', `This Proposal is not a binding contract until signed and dated by the Customer below. Signature constitutes acceptance of the scope of work, pricing, payment schedule, and these Terms &amp; Conditions in full.`],
+    ['Proposal Validity', `This Proposal is valid for thirty (30) days from the date shown above. Pricing is subject to change if not accepted within that window or if the scope of work changes after signing.`]
+  ];
+  const termsHtml = `
+  <div class="terms-block">
+    <div class="payment-heading">Terms &amp; Conditions</div>
+    ${TERMS_AND_CONDITIONS.map(([title, text]) => `
+      <div class="term-item">
+        <div class="term-title">${title}</div>
+        <div class="term-text">${text}</div>
+      </div>`).join('')}
+  </div>`;
+
   const paymentRows = getPaymentScheduleRows(job?.paymentSchedule, grandTotal);
   const paymentTableHtml = paymentRows.length ? `
   <div class="payment-schedule">
@@ -10641,6 +10658,10 @@ function printProposal() {
     .payment-table { width: 100%; border-collapse: collapse; font-size: .88rem; }
     .payment-table th { text-align: left; background: #f3f4f6; padding: 8px 12px; font-weight: 700; color: #4b5563; border-bottom: 2px solid #e5e7eb; }
     .payment-table td { padding: 8px 12px; border-bottom: 1px solid #e5e7eb; color: #1f2937; }
+    .terms-block { margin-top: 32px; padding-top: 20px; border-top: 1px solid #e5e7eb; page-break-inside: avoid; }
+    .term-item { margin-bottom: 12px; }
+    .term-title { font-weight: 700; font-size: .82rem; color: #374151; margin-bottom: 2px; }
+    .term-text { font-size: .76rem; color: #6b7280; line-height: 1.55; }
     .signatures { display: flex; gap: 40px; margin-top: 56px; }
     .sig-block { flex: 1; }
     .sig-line { border-bottom: 1.5px solid #9ca3af; height: 42px; margin-bottom: 6px; }
@@ -10680,6 +10701,8 @@ function printProposal() {
 
   ${paymentTableHtml}
 
+  ${termsHtml}
+
   <div class="signatures">
     <div class="sig-block">
       <div class="sig-line"></div>
@@ -10692,8 +10715,7 @@ function printProposal() {
   </div>
 
   <div class="footer">
-    ${esc(co.companyName||'')} · ${esc(co.phone||'')} · ${esc(co.email||'')}${co.license?' · License #'+esc(co.license):''}<br>
-    This proposal is valid for 30 days from the date above. Pricing subject to change if scope changes after signing.
+    ${esc(co.companyName||'')} · ${esc(co.phone||'')} · ${esc(co.email||'')}${co.license?' · License #'+esc(co.license):''}
   </div>
 
   <script>window.print();<\/script></body></html>`);
