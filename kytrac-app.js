@@ -1,4 +1,4 @@
-// JOBSpan Application JavaScript v2.9.0 · 11/Jul/2026
+// JOBSpan Application JavaScript v2.10.0 · 11/Jul/2026
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -11576,6 +11576,17 @@ const TPL_ITEMS_BY_CATEGORY = {
     { key: 'bathhardwareset', label: 'Bath Hardware Set (Towel Bar, TP Holder, Towel Ring)' },
     { key: 'medicinecabinet', label: 'Medicine Cabinet Install' },
     { key: 'tubsurround', label: 'Tub/Shower Surround Install' }
+  ],
+  'Doors': [
+    { key: 'interiordoor', label: 'Interior Door Replace', tieredRef: { trade: '1500 Doors & Windows', name: 'Interior Door Replace' } },
+    { key: 'deadbolt', label: 'Deadbolt Install', tieredRef: { trade: '1500 Doors & Windows', name: 'Deadbolt Install' } }
+  ],
+  'Drywall': [
+    { key: 'drywallpatch', label: 'Drywall Patch', tieredRef: { trade: '1400 Drywall', name: 'Drywall Patch' } }
+  ],
+  'Flooring': [
+    { key: 'lvpflooring', label: 'LVP Flooring Install', tieredRef: { trade: '1700 Flooring', name: 'LVP Flooring Install' } },
+    { key: 'carpetreplace', label: 'Carpet Remove & Replace', tieredRef: { trade: '1700 Flooring', name: 'Carpet Remove & Replace' } }
   ]
 };
 
@@ -11704,6 +11715,7 @@ function tplGoToRooms() {
   document.getElementById('tplStepItems').style.display = 'none';
   document.getElementById('tplStepPaintForm').style.display = 'none';
   document.getElementById('tplStepLinearForm').style.display = 'none';
+  document.getElementById('tplStepTieredForm').style.display = 'none';
   const grid = document.getElementById('tplRoomGrid');
   grid.innerHTML = TPL_ROOMS.map(r =>
     `<div class="wizard-category-card" onclick="tplSelectRoom('${esc(r)}')">${esc(r)}</div>`
@@ -11725,6 +11737,7 @@ function tplGoToCategories() {
   document.getElementById('tplStepItems').style.display = 'none';
   document.getElementById('tplStepPaintForm').style.display = 'none';
   document.getElementById('tplStepLinearForm').style.display = 'none';
+  document.getElementById('tplStepTieredForm').style.display = 'none';
   document.getElementById('tplCategoryRoomTitle').textContent = _tplSelectedRoom;
   const grid = document.getElementById('tplCategoryGrid');
   grid.innerHTML = TPL_CATEGORIES.map(c =>
@@ -11746,6 +11759,7 @@ function tplGoToItems() {
   document.getElementById('tplStepItems').style.display = 'block';
   document.getElementById('tplStepPaintForm').style.display = 'none';
   document.getElementById('tplStepLinearForm').style.display = 'none';
+  document.getElementById('tplStepTieredForm').style.display = 'none';
   document.getElementById('tplItemCategoryTitle').textContent = _tplSelectedCategory;
   const items = TPL_ITEMS_BY_CATEGORY[_tplSelectedCategory] || [];
   const grid = document.getElementById('tplItemGrid');
@@ -11761,6 +11775,8 @@ function tplGoToItems() {
 window.tplGoToItems = tplGoToItems;
 
 function tplSelectItem(key) {
+  const itemDef = (TPL_ITEMS_BY_CATEGORY[_tplSelectedCategory] || []).find(it => it.key === key);
+
   if (key === 'paint') {
     document.getElementById('tplStepRooms').style.display = 'none';
     document.getElementById('tplStepCategories').style.display = 'none';
@@ -11780,9 +11796,90 @@ function tplSelectItem(key) {
     document.getElementById('tplLinearLabel').textContent = LINEAR_ITEMS[key].unitLabel || 'Quantity';
     document.getElementById('tplLinearFeet').value = '';
     tplUpdateLinearPreview();
+  } else if (itemDef && itemDef.tieredRef) {
+    tplOpenTieredForm(itemDef.tieredRef, itemDef.label);
   }
 }
 window.tplSelectItem = tplSelectItem;
+
+let _tplTieredBundle = null;
+
+// Opens the tier-select form for an existing Smart Add bundle, reused here
+// so Doors/Drywall/Flooring items get properly tagged with the Room
+// selected in Templates, without duplicating their real catalog data.
+function tplOpenTieredForm(tieredRef, label) {
+  const bundles = TIERED_BUNDLES[tieredRef.trade] || [];
+  _tplTieredBundle = bundles.find(b => b.name === tieredRef.name);
+  if (!_tplTieredBundle) { alert('Could not find bundle data for ' + tieredRef.name); return; }
+
+  document.getElementById('tplStepRooms').style.display = 'none';
+  document.getElementById('tplStepCategories').style.display = 'none';
+  document.getElementById('tplStepItems').style.display = 'none';
+  document.getElementById('tplStepTieredForm').style.display = 'block';
+  document.getElementById('tplTieredTitle').textContent = label;
+
+  const tierColors = { low: '#34d399', med: '#f59e0b', high: '#ef4444' };
+  const tierEmoji = { low: '🟢', med: '🟡', high: '🔴' };
+  const grid = document.getElementById('tplTieredTierGrid');
+  grid.innerHTML = Object.entries(_tplTieredBundle.tiers).map(([tierKey, tier]) => {
+    const total = tier.lines.reduce((s, l) => s + (l.qty * l.unitPrice), 0);
+    const color = tierColors[tierKey];
+    return `<div onclick="tplSelectTieredTier('${tierKey}')" style="border:2px solid ${color}22;border-radius:14px;padding:14px 16px;margin-bottom:10px;cursor:pointer;background:${color}08">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <div style="font-weight:800;font-size:.95rem">${tierEmoji[tierKey]} ${esc(tier.label)}</div>
+        <div style="font-weight:900;color:${color}">$${total.toFixed(0)}</div>
+      </div>
+      <div style="font-size:.76rem;color:var(--muted)">${esc(tier.priceRange)}</div>
+    </div>`;
+  }).join('');
+}
+window.tplOpenTieredForm = tplOpenTieredForm;
+
+async function tplSelectTieredTier(tierKey) {
+  if (!conCurrentJobId || !_tplTieredBundle) return;
+  const tier = _tplTieredBundle.tiers[tierKey];
+
+  let group = estGroups.find(g => g.name.toLowerCase() === _tplSelectedRoom.toLowerCase());
+  if (!group) {
+    const ref = await coll('jobs').doc(conCurrentJobId).collection('estimateGroups').add({
+      name: _tplSelectedRoom, order: estGroups.length,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    group = { id: ref.id, name: _tplSelectedRoom, order: estGroups.length, subgroups: [], directItems: [] };
+    estGroups.push(group);
+  }
+
+  let subgroup = (group.subgroups || []).find(s => s.name.toLowerCase() === _tplSelectedCategory.toLowerCase());
+  if (!subgroup) {
+    const subRef = await coll('jobs').doc(conCurrentJobId).collection('estimateGroups')
+      .doc(group.id).collection('subgroups').add({
+        name: _tplSelectedCategory, order: group.subgroups?.length || 0,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+    subgroup = { id: subRef.id, name: _tplSelectedCategory, order: group.subgroups?.length || 0, items: [] };
+    if (!group.subgroups) group.subgroups = [];
+    group.subgroups.push(subgroup);
+  }
+
+  let order = 0;
+  for (const line of tier.lines) {
+    await coll('jobs').doc(conCurrentJobId)
+      .collection('estimateGroups').doc(group.id)
+      .collection('subgroups').doc(subgroup.id)
+      .collection('items').add({
+        desc: line.desc, qty: line.qty, unit: line.unit,
+        costType: line.type === 'labor' ? 'Labor' : 'Materials',
+        unitCost: line.unitCost, unitPrice: line.unitPrice,
+        markup: Math.round((line.unitPrice / line.unitCost - 1) * 100),
+        bundleTier: tierKey,
+        order: order++, createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+  }
+
+  kClose('templatePickerModal');
+  if (typeof loadEstimate === 'function') loadEstimate(conCurrentJobId);
+}
+window.tplSelectTieredTier = tplSelectTieredTier;
 
 let _tplLinearKey = null;
 
