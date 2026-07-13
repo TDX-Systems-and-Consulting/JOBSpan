@@ -1,4 +1,4 @@
-// JOBSpan Application JavaScript v2.17.0 · 13/Jul/2026
+// JOBSpan Application JavaScript v2.18.0 · 13/Jul/2026
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -11639,7 +11639,42 @@ const TIERED_BUNDLES = {
         ]},
       }
     },
+    // Rough-in additions. Wire labor uses the $3.50/$4.03 per-ft rate
+    // Travis and Jason confirmed directly together in a past session —
+    // NOT the catalog's own "Labor To Install Electrical Wire" line
+    // ($2.00/$2.30), which conflicts with that confirmed number and looks
+    // like leftover placeholder data. Circuit breakers and electrical
+    // panels are NOT bundled: breakers only pair with generic filler
+    // labor, and no panel product exists anywhere in the catalog at all —
+    // both are real gaps that need real numbers from Travis, not guesses.
+    {
+      name: 'Rough Wiring / Wire Pull',
+      icon: '🔌',
+      desc: 'Per linear ft — Romex wire pull, rough-in stage',
+      tiers: {
+        low: { label: '14/2 Romex (15-amp circuits)', priceRange: '$1.25/ft + $4.03 labor/ft', lines: [
+          { desc: 'SOUTHWIRE 100 ft. 14/2 Solid Romex SIMpull CU NM-B W/G Wire', qty: 1, unitCost: 1.00, unitPrice: 1.25, unit: 'lf', type: 'material' },
+          { desc: 'Rough Wiring Labor (per linear ft)', qty: 1, unitCost: 3.50, unitPrice: 4.03, unit: 'hr', type: 'labor' },
+        ]},
+        high: { label: '12/2 Romex (20-amp circuits)', priceRange: '$1.25/ft + $4.03 labor/ft', lines: [
+          { desc: 'SOUTHWIRE 100 ft. 12/2 Solid Romex SIMpull CU NM-B W/G Wire', qty: 1, unitCost: 1.00, unitPrice: 1.25, unit: 'lf', type: 'material' },
+          { desc: 'Rough Wiring Labor (per linear ft)', qty: 1, unitCost: 3.50, unitPrice: 4.03, unit: 'hr', type: 'labor' },
+        ]},
+      }
+    },
+    {
+      name: 'Old Work Electrical Box Install',
+      icon: '📦',
+      desc: 'Per box — retrofit outlet/switch box, rough-in stage',
+      tiers: {
+        low: { label: '1-Gang PVC Old Work Box', priceRange: '$2.73 + $57.50 labor', lines: [
+          { desc: 'Carlon 14 cu. in. PVC Old Work Electrical Outlet Box (1-Gang)', qty: 1, unitCost: 2.18, unitPrice: 2.725, unit: 'ea', type: 'material' },
+          { desc: 'Labor to install old work box', qty: 1, unitCost: 50, unitPrice: 57.50, unit: 'hr', type: 'labor' },
+        ]},
+      }
+    },
   ],
+
   '1700 Flooring': [
     {
       name: 'LVP Flooring Install',
