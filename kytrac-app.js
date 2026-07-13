@@ -1,4 +1,4 @@
-// JOBSpan Application JavaScript v2.18.0 · 13/Jul/2026
+// JOBSpan Application JavaScript v2.19.0 · 13/Jul/2026
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -11527,6 +11527,39 @@ const TIERED_BUNDLES = {
           { desc: 'Water heater - 50 gal, tall, natural gas', qty: 1, unitCost: 799, unitPrice: 998.75, unit: 'ea', type: 'material' },
           { desc: 'Water Heater Expansion Tank', qty: 1, unitCost: 29.88, unitPrice: 37.35, unit: 'ea', type: 'material' },
           { desc: 'Water heater - 50 gal, tall, natural gas Install Labor', qty: 3, unitCost: 100, unitPrice: 115, unit: 'hr', type: 'labor' },
+        ]},
+      }
+    },
+    // Rough-in additions. DWV (drain-waste-vent) pipe and fittings are NOT
+    // bundled — real materials exist (couplings, elbows, caps, PVC pipe)
+    // but no distinct rough-in labor rate exists anywhere in this cost
+    // code, only the generic $100/hr filler. Drain/waste rough-in is a
+    // meaningfully different, more labor-intensive task than a supply
+    // line, so that filler rate isn't reused here — flagged for Travis,
+    // needs a real number.
+    {
+      name: 'Supply Line Rough-In (PEX)',
+      icon: '🚰',
+      desc: 'Per 10ft length — color-coded hot/cold PEX-B',
+      tiers: {
+        low: { label: 'Blue PEX (cold)', priceRange: '$0.45 + $57.50 labor', lines: [
+          { desc: 'Apollo 1/2 in. x 10 ft. Blue PEX-B Pipe', qty: 1, unitCost: 0.36, unitPrice: 0.45, unit: 'ea', type: 'material' },
+          { desc: 'Bathroom Supply Line Labor', qty: 1, unitCost: 50, unitPrice: 57.50, unit: 'hr', type: 'labor' },
+        ]},
+        high: { label: 'Red PEX (hot)', priceRange: '$0.45 + $57.50 labor', lines: [
+          { desc: 'Apollo 1/2 in. x 10 ft. Red PEX-B Pipe', qty: 1, unitCost: 0.36, unitPrice: 0.45, unit: 'ea', type: 'material' },
+          { desc: 'Bathroom Supply Line Labor', qty: 1, unitCost: 50, unitPrice: 57.50, unit: 'hr', type: 'labor' },
+        ]},
+      }
+    },
+    {
+      name: 'Shutoff Valve Install',
+      icon: '🔧',
+      desc: 'Per valve — SharkBite push-to-connect angle stop',
+      tiers: {
+        low: { label: 'SharkBite Quarter-Turn Angle Stop', priceRange: '$16.81 + $57.50 labor', lines: [
+          { desc: 'SharkBite 1/2 in. Push-to-Connect x 3/8 in. O.D. Compression Chrome-Plated Brass Quarter-Turn Angle Stop Valve', qty: 1, unitCost: 13.45, unitPrice: 16.813, unit: 'ea', type: 'material' },
+          { desc: 'Sharkbite Shutoff Labor', qty: 1, unitCost: 50, unitPrice: 57.50, unit: 'hr', type: 'labor' },
         ]},
       }
     },
