@@ -1,4 +1,4 @@
-// JOBSpan Application JavaScript v2.7.0 · 11/Jul/2026
+// JOBSpan Application JavaScript v2.8.0 · 11/Jul/2026
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -11520,7 +11520,8 @@ const TPL_ROOMS = [
 const TPL_CATEGORIES = [
   'Framing', 'Electrical: rough', 'HVAC: Rough', 'Plumbing: rough',
   'Insulation', 'Drywall', 'Doors', 'Trim', 'Painting', 'Flooring',
-  'Cabinets', 'Plumbing: final', 'HVAC: final', 'Electrical: final', 'Appliances'
+  'Cabinets', 'Plumbing: final', 'HVAC: final', 'Electrical: final', 'Appliances',
+  'Specialty Finishes'
 ];
 
 // Only Painting has real items right now.
@@ -11533,6 +11534,20 @@ const TPL_ITEMS_BY_CATEGORY = {
   ],
   'Electrical: final': [
     { key: 'outletreplace', label: 'Outlet Replace (Standard, Non-GFCI)' }
+  ],
+  'Appliances': [
+    { key: 'dishwasher', label: 'Dishwasher Install' }
+  ],
+  'Plumbing: final': [
+    { key: 'garbagedisposal', label: 'Garbage Disposal Install' }
+  ],
+  'Cabinets': [
+    { key: 'cabinethardware', label: 'Cabinet Pull Replace (25-Pack)' }
+  ],
+  'Specialty Finishes': [
+    { key: 'bathhardwareset', label: 'Bath Hardware Set (Towel Bar, TP Holder, Towel Ring)' },
+    { key: 'medicinecabinet', label: 'Medicine Cabinet Install' },
+    { key: 'tubsurround', label: 'Tub/Shower Surround Install' }
   ]
 };
 
@@ -11566,6 +11581,48 @@ const LINEAR_ITEMS = {
     qtyUnit: 'ea',
     material: { desc: 'Leviton 15 Amp Residential Grade Grounding Duplex Outlet, White', unitCost: 0.77, unitPrice: 0.963 },
     labor: { desc: 'Labor to Install outlet', unitCost: 25.00, unitPrice: 28.75 }
+  },
+  dishwasher: {
+    title: 'Dishwasher Install',
+    unitLabel: 'Number of Dishwashers',
+    qtyUnit: 'ea',
+    material: { desc: 'Dishwasher - 24"', unitCost: 500.00, unitPrice: 625.00 },
+    labor: { desc: 'Dishwasher Install', unitCost: 300.00, unitPrice: 345.00 }
+  },
+  garbagedisposal: {
+    title: 'Garbage Disposal Install',
+    unitLabel: 'Number of Disposals',
+    qtyUnit: 'ea',
+    material: { desc: 'InSinkErator Badger 500 1/2 HP Continuous Feed Garbage Disposal', unitCost: 139.00, unitPrice: 173.75 },
+    labor: { desc: 'InSinkErator Badger 500 1/2 HP Continuous Feed Garbage Disposal', unitCost: 100.00, unitPrice: 115.00 }
+  },
+  cabinethardware: {
+    title: 'Cabinet Pull Replace (25-Pack)',
+    unitLabel: 'Number of 25-Packs Needed',
+    qtyUnit: 'ea',
+    material: { desc: 'Dynasty Hardware European Style 3 in. (76 mm) Center-to-Center Satin Nickel Bar Cabinet Pull (25-Pack)', unitCost: 2.36, unitPrice: 2.95 },
+    labor: { desc: 'Dynasty Hardware European Style 3 in. (76 mm) Center-to-Center Satin Nickel Bar Cabinet Pull (25-Pack)', unitCost: 100.00, unitPrice: 115.00 }
+  },
+  bathhardwareset: {
+    title: 'Bath Hardware Set (Towel Bar, TP Holder, Towel Ring)',
+    unitLabel: 'Number of Sets',
+    qtyUnit: 'ea',
+    material: { desc: 'Delta Porter 3-Piece Bath Hardware Set with Towel Ring Toilet Paper Holder and 24 in. Towel Bar in Oil Rubbed Bronze', unitCost: 59.98, unitPrice: 74.975 },
+    labor: { desc: 'Delta Porter 3-Piece Bath Hardware Set with Towel Ring Toilet Paper Holder and 24 in. Towel Bar in Oil Rubbed Bronze', unitCost: 100.00, unitPrice: 115.00 }
+  },
+  medicinecabinet: {
+    title: 'Medicine Cabinet Install',
+    unitLabel: 'Number of Cabinets',
+    qtyUnit: 'ea',
+    material: { desc: 'Glacier Bay 15-1/8 in. W x 19-1/4 in. H Framed Recessed or Surface-Mount Bathroom Medicine Cabinet in White', unitCost: 50.00, unitPrice: 62.50 },
+    labor: { desc: 'Glacier Bay 15-1/8 in. W x 19-1/4 in. H Framed Recessed or Surface-Mount Bathroom Medicine Cabinet in White', unitCost: 100.00, unitPrice: 115.00 }
+  },
+  tubsurround: {
+    title: 'Tub/Shower Surround Install',
+    unitLabel: 'Number of Surrounds',
+    qtyUnit: 'ea',
+    material: { desc: 'Delta Classic 500 60 in. W x 61.25 in. H x 32 in. D 3-Piece Direct-to-Stud Alcove Bathtub/Shower Surrounds in High Gloss White', unitCost: 359.00, unitPrice: 448.75 },
+    labor: { desc: 'Delta Classic 500 60 in. W x 61.25 in. H x 32 in. D 3-Piece Direct-to-Stud Alcove Bathtub/Shower Surrounds in High Gloss White', unitCost: 100.00, unitPrice: 115.00 }
   }
 };
 
