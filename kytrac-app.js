@@ -1,4 +1,4 @@
-// JOBSpan Application JavaScript v2.20.0 · 13/Jul/2026
+// JOBSpan Application JavaScript v2.21.0 · 13/Jul/2026
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -60,6 +60,44 @@ window.switchJobsView = switchJobsView;
 
 // ── DRAG AND DROP ──
 let _dragJobId = null;
+
+// ── Closed Lost requires a reason, logged permanently to Activity ──
+// Prompts (and re-prompts on empty input) only when a job is genuinely
+// transitioning INTO Closed Lost from some other status — moving between
+// any other two statuses, or already being Closed Lost, needs nothing.
+// Returns { needed:false } when no reason is required, or
+// { needed:true, aborted:bool, reason } when it is.
+function getClosedLostReasonIfNeeded(prevStatus, newStatus) {
+  if (newStatus !== 'Closed Lost' || prevStatus === 'Closed Lost') return { needed: false };
+  while (true) {
+    const input = prompt('This job is being marked Closed Lost. Please enter a reason (required):');
+    if (input === null) return { needed: true, aborted: true };
+    const reason = input.trim();
+    if (reason) return { needed: true, aborted: false, reason };
+    alert('A reason is required to mark this job Closed Lost.');
+  }
+}
+
+// Logs any status change (not just Closed Lost) as a real, permanent
+// Activity entry — reuses the existing 'logs' collection so it shows up
+// in the Activity feed with no separate rendering pipeline needed.
+function logStatusChangeActivity(jobId, prevStatus, newStatus, reason) {
+  if (!conDb || !jobId) return;
+  const notes = reason
+    ? `Status changed: ${prevStatus || '—'} → ${newStatus}. Reason: ${reason}`
+    : `Status changed: ${prevStatus || '—'} → ${newStatus}`;
+  coll('jobs').doc(jobId).collection('logs').add({
+    date: new Date().toISOString().split('T')[0],
+    notes,
+    type: 'status_change',
+    fromStatus: prevStatus || '',
+    toStatus: newStatus,
+    reason: reason || '',
+    userName: conCurrentUser?.displayName || conCurrentUser?.email || 'Unknown',
+    companyId: currentCompanyId,
+    createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+  }).catch(e => console.error('Status change log error:', e));
+}
 
 function initDragDrop(boardId) {
   const board = document.getElementById(boardId);
@@ -137,6 +175,11 @@ function initDragDrop(boardId) {
       if (!newStatus) { console.warn('Drop failed: no status on col'); return; }
       const job = conJobs.find(j => j.id === jobId);
       if (job && job.status === newStatus) return; // same column, no-op
+      const prevStatus = job ? job.status : '';
+
+      const closedLost = getClosedLostReasonIfNeeded(prevStatus, newStatus);
+      if (closedLost.needed && closedLost.aborted) return; // user cancelled, don't move the card
+
       console.log('Moving job', jobId, 'to', newStatus);
       // Optimistically update local state for instant visual feedback
       if (job) job.status = newStatus;
@@ -148,6 +191,8 @@ function initDragDrop(boardId) {
         statusDate: new Date().toISOString().split('T')[0],
         updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
         updatedBy: conCurrentUser ? conCurrentUser.email : 'unknown'
+      }).then(() => {
+        logStatusChangeActivity(jobId, prevStatus, newStatus, closedLost.needed ? closedLost.reason : null);
       }).catch(err => {
         console.error('Firestore update failed:', err);
         alert('Could not move job: ' + err.message);
@@ -524,12 +569,24 @@ function saveJob(openEstimate) {
   const client = document.getElementById('jobClient').value.trim();
   if (!name || !client) { alert('Job name and client name are required.'); return; }
 
+  const newStatus = document.getElementById('jobStatus').value;
+  let closedLostReason = null;
+  if (conEditingJobId) {
+    const existingJob = conJobs.find(j => j.id === conEditingJobId);
+    const prevStatus = existingJob ? existingJob.status : '';
+    const closedLost = getClosedLostReasonIfNeeded(prevStatus, newStatus);
+    if (closedLost.needed) {
+      if (closedLost.aborted) return; // user cancelled — don't save any changes
+      closedLostReason = closedLost.reason;
+    }
+  }
+
   const data = {
     name, client,
     phone: document.getElementById('jobPhone').value.trim(),
     email: document.getElementById('jobEmail').value.trim(),
     address: document.getElementById('jobAddress').value.trim(),
-    status: document.getElementById('jobStatus').value,
+    status: newStatus,
     statusDate: new Date().toISOString().split('T')[0],
     type: document.getElementById('jobType').value,
     contractValue: parseFloat(document.getElementById('jobContractValue').value) || 0,
@@ -545,8 +602,15 @@ function saveJob(openEstimate) {
   };
 
   if (conEditingJobId) {
+    const existingJob = conJobs.find(j => j.id === conEditingJobId);
+    const prevStatus = existingJob ? existingJob.status : '';
     coll('jobs').doc(conEditingJobId).update(data)
-      .then(() => kClose('newJobModal'))
+      .then(() => {
+        kClose('newJobModal');
+        if (prevStatus && prevStatus !== newStatus) {
+          logStatusChangeActivity(conEditingJobId, prevStatus, newStatus, closedLostReason);
+        }
+      })
       .catch(e => alert('Error saving: ' + e.message));
   } else {
     data.jobNumber = conGenJobNumber();
@@ -14003,10 +14067,12 @@ function loadJobActivity(jobId, mode) {
     .then(snap => {
       snap.forEach(d => {
         const log = d.data();
+        const isStatusChange = log.type === 'status_change';
+        const isClosedLost = isStatusChange && log.toStatus === 'Closed Lost';
         activityItems.push({
-          type: 'log',
-          icon: '📝',
-          iconBg: 'rgba(59,130,246,.15)',
+          type: log.type || 'log',
+          icon: isClosedLost ? '🔴' : (isStatusChange ? '🔄' : '📝'),
+          iconBg: isClosedLost ? 'rgba(220,38,38,.15)' : (isStatusChange ? 'rgba(139,92,246,.15)' : 'rgba(59,130,246,.15)'),
           text: log.notes || 'Daily log entry',
           sub: (log.date || '') + (log.userName ? ' · ' + log.userName : ''),
           time: log.date || '',
