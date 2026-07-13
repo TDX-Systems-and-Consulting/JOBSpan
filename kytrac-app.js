@@ -1,4 +1,4 @@
-// JOBSpan Application JavaScript v2.21.0 · 13/Jul/2026
+// JOBSpan Application JavaScript v2.22.0 · 13/Jul/2026
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -6304,7 +6304,7 @@ function renderCustomers() {
       '<div style="flex:1;min-width:0">' +
       '<div style="font-weight:800;font-size:.95rem;color:#eaf0fb">' + esc(c.name||'') + '</div>' +
       '<div style="font-size:.75rem;color:var(--muted);margin-top:1px">' + esc(c.type||'Homeowner') + '</div>' +
-      (c.source ? '<div style="font-size:.72rem;color:rgba(110,145,210,.4);margin-top:1px">via ' + esc(c.source) + '</div>' : '') +
+      (c.source ? '<div style="font-size:.72rem;color:rgba(110,145,210,.4);margin-top:1px">via ' + esc(c.source) + (c.referredBy ? ' — ' + esc(c.referredBy) : '') + '</div>' : '') +
       '</div>' +
       (jobCount>0 ? '<span style="background:var(--amber-dim);color:var(--amber);border:1px solid var(--amber-border);border-radius:999px;padding:2px 8px;font-size:.7rem;font-weight:700;white-space:nowrap">' + jobCount + ' job' + (jobCount!==1?'s':'') + '</span>' : '') +
       '</div>' +
@@ -6340,6 +6340,7 @@ function openCustomerModal(id) {
   setVal('custEmail', customer?.email);
   setVal('custAddress', customer?.address);
   setVal('custSource', customer?.source);
+  setVal('custReferredBy', customer?.referredBy);
   setVal('custType', customer?.type || 'Homeowner');
   setVal('custNotes', customer?.notes);
 
@@ -6360,6 +6361,7 @@ function saveCustomer(goToNewJob) {
     email: document.getElementById('custEmail')?.value.trim() || '',
     address: document.getElementById('custAddress')?.value.trim() || '',
     source: document.getElementById('custSource')?.value || '',
+    referredBy: document.getElementById('custReferredBy')?.value.trim() || '',
     type: document.getElementById('custType')?.value || 'Homeowner',
     notes: document.getElementById('custNotes')?.value.trim() || '',
     updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
