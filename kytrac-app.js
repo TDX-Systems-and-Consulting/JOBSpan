@@ -1,4 +1,4 @@
-// JOBSpan Application JavaScript v2.4.1 · 11/Jul/2026
+// JOBSpan Application JavaScript v2.5.0 · 11/Jul/2026
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -11008,14 +11008,14 @@ const TIERED_BUNDLES = {
           { desc: '3/8 in. Compression x 7/8 in. Ballcock Nut x 12 in. Braided Polymer Toilet Supply Line', qty: 1, unitCost: 12, unitPrice: 15, unit: 'ea', type: 'material' },
           { desc: 'Labor to replace toilet', qty: 1, unitCost: 100, unitPrice: 115, unit: 'hr', type: 'labor' },
         ]},
-        med: { label: 'Dual Flush', priceRange: 'Glacier Bay Dual Flush ~$124', lines: [
-          { desc: 'Glacier Bay 2-piece 1.1 GPF/1.6 GPF High Efficiency Dual Flush Complete Toilet in White', qty: 1, unitCost: 99, unitPrice: 123.75, unit: 'ea', type: 'material' },
+        med: { label: 'Oblong Dual Flush', priceRange: 'Glacier Bay Elongated Dual Flush ~$124', lines: [
+          { desc: 'Glacier Bay 2-piece 1.1 GPF/1.6 GPF High Efficiency Dual Flush Complete Elongated Toilet in White, Seat Included', qty: 1, unitCost: 99, unitPrice: 123.75, unit: 'ea', type: 'material' },
           { desc: 'Lift-Off Round Closed Front Toilet Seat in White', qty: 1, unitCost: 16.97, unitPrice: 21.21, unit: 'ea', type: 'material' },
           { desc: 'Everbilt Extra Thick Reinforced Toilet Wax Ring with Plastic Horn and Bolts', qty: 1, unitCost: 6.98, unitPrice: 8.72, unit: 'ea', type: 'material' },
           { desc: '3/8 in. Compression x 7/8 in. Ballcock Nut x 12 in. Braided Polymer Toilet Supply Line', qty: 1, unitCost: 12, unitPrice: 15, unit: 'ea', type: 'material' },
           { desc: 'Labor to replace toilet', qty: 1, unitCost: 100, unitPrice: 115, unit: 'hr', type: 'labor' },
         ]},
-        high: { label: 'Power Flush Elongated', priceRange: 'Power Flush Tall ~$229', lines: [
+        high: { label: 'Oblong Power Flush', priceRange: 'Power Flush Tall Elongated ~$229', lines: [
           { desc: 'Power Flush 2-Piece 1.28 GPF Single Flush Extra Tall Elongated Toilet in White', qty: 1, unitCost: 183.08, unitPrice: 228.85, unit: 'ea', type: 'material' },
           { desc: 'Lift-Off Round Closed Front Toilet Seat in White', qty: 1, unitCost: 16.97, unitPrice: 21.21, unit: 'ea', type: 'material' },
           { desc: 'Everbilt Extra Thick Reinforced Toilet Wax Ring with Plastic Horn and Bolts', qty: 1, unitCost: 6.98, unitPrice: 8.72, unit: 'ea', type: 'material' },
@@ -12015,21 +12015,75 @@ function wizardRenderBundleTasks(trade, bundles) {
   if (footer) footer.innerHTML = '<button class="btn" onclick="kClose(\'smartAddModal\')">Cancel</button>';
 }
 
+let _wizardShape = null;
+
 function wizardSelectBundle(bundleName) {
   const bundles = TIERED_BUNDLES[_wizardTrade] || [];
   _wizardBundle = bundles.find(b => b.name === bundleName);
   if (!_wizardBundle) return;
   _wizardTier = null;
+  _wizardShape = null;
   _wizardBundleQty = 1;
-  wizardRenderTierSelect();
+
+  // Toilet Replacement has a real shape distinction (Round vs Oblong/
+  // Elongated) in the underlying catalog data — ask that first, since
+  // it's a separate decision from grade, not a grade itself.
+  if (_wizardBundle.name === 'Toilet Replacement') {
+    wizardRenderShapeSelect();
+  } else {
+    wizardRenderTierSelect();
+  }
 }
 window.wizardSelectBundle = wizardSelectBundle;
+
+// Only Toilet Replacement uses this right now. Round only has one real
+// product in the catalog (no separate Round-Medium/Round-High SKU), so
+// picking Round skips straight to quantity — no pointless grade question
+// when there's nothing to choose between.
+function wizardRenderShapeSelect() {
+  const itemListEl = document.getElementById('wizardItemList');
+  if (!itemListEl || !_wizardBundle) return;
+
+  itemListEl.innerHTML =
+    '<div style="text-align:center;margin-bottom:16px">' +
+    '<div style="font-size:1.8rem">' + _wizardBundle.icon + '</div>' +
+    '<div style="font-weight:800;font-size:1rem;color:#eaf0fb;margin-top:6px">' + esc(_wizardBundle.name) + '</div>' +
+    '<div style="font-size:.78rem;color:var(--muted);margin-top:2px">' + esc(_wizardBundle.desc) + '</div></div>' +
+    '<div style="font-size:.75rem;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:10px">Round or Oblong?</div>' +
+    '<div onclick="wizardSelectShape(\'round\')" style="border:2px solid rgba(217,119,6,.25);border-radius:14px;padding:16px;margin-bottom:10px;cursor:pointer;text-align:center;font-weight:800;color:#eaf0fb">⭕ Round</div>' +
+    '<div onclick="wizardSelectShape(\'oblong\')" style="border:2px solid rgba(217,119,6,.25);border-radius:14px;padding:16px;margin-bottom:10px;cursor:pointer;text-align:center;font-weight:800;color:#eaf0fb">⬭ Oblong (Elongated)</div>' +
+    '<button onclick="wizardRenderBundleTasks(_wizardTrade, TIERED_BUNDLES[_wizardTrade]||[])" ' +
+    'style="background:none;border:none;color:var(--muted);font-size:.8rem;cursor:pointer;margin-top:6px">← Back to bundles</button>';
+
+  const footer = document.getElementById('wizardFooter');
+  if (footer) footer.innerHTML = '<button class="btn" onclick="kClose(\'smartAddModal\')">Cancel</button>';
+}
+window.wizardRenderShapeSelect = wizardRenderShapeSelect;
+
+function wizardSelectShape(shape) {
+  _wizardShape = shape;
+  if (shape === 'round') {
+    // Only one real Round product exists — skip the grade question
+    // entirely and go straight to quantity.
+    _wizardTier = 'low';
+    _wizardBundleQty = 1;
+    wizardRenderQtySelect();
+  } else {
+    wizardRenderTierSelect();
+  }
+}
+window.wizardSelectShape = wizardSelectShape;
 
 function wizardRenderTierSelect() {
   const itemListEl = document.getElementById('wizardItemList');
   if (!itemListEl || !_wizardBundle) return;
 
-  const tiers = _wizardBundle.tiers;
+  let tiers = _wizardBundle.tiers;
+  // For Toilet Replacement, Oblong only has real Medium/High products —
+  // there's no Oblong-Low SKU in the catalog, so don't offer it.
+  if (_wizardBundle.name === 'Toilet Replacement' && _wizardShape === 'oblong') {
+    tiers = { med: tiers.med, high: tiers.high };
+  }
   const tierColors = { low: '#34d399', med: '#f59e0b', high: '#ef4444' };
   const tierEmoji = { low: '🟢', med: '🟡', high: '🔴' };
 
