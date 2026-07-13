@@ -920,7 +920,7 @@
     <div class="kt-logo">
       <div class="kt-logo-mark">JOBSpan</div>
       <div class="kt-logo-tag" id="ktCompanyTag">7 Pillars Contracting</div>
-      <div class="kt-logo-version" id="ktVersionTag">Version 2.10.0 · 11/Jul/2026</div>
+      <div class="kt-logo-version" id="ktVersionTag">Version 2.11.0 · 13/Jul/2026</div>
     </div>
 
     <nav class="kt-nav">
@@ -3536,6 +3536,18 @@
               <label class="small muted" style="display:flex;align-items:center;gap:5px;cursor:pointer" title="Only check this if the customer specifically requests an itemized breakdown - e.g. their bank/lender needs one">
                 <input type="checkbox" id="proposalItemizedToggle" style="cursor:pointer" /> Itemized (bank/lender request only)
               </label>
+              <label class="small muted" style="display:flex;align-items:center;gap:5px">
+                Payment Schedule
+                <select id="paymentScheduleType" onchange="savePaymentSchedule()" style="padding:3px 6px;font-size:.8rem">
+                  <option value="none">None (don't print on Proposal)</option>
+                  <option value="50/50">50 / 50</option>
+                  <option value="50/25/25">50 / 25 / 25</option>
+                  <option value="10/40/25/25">10 / 40 / 25 / 25</option>
+                  <option value="custom">Custom…</option>
+                </select>
+              </label>
+              <input id="paymentScheduleCustomInput" placeholder="e.g. 20,30,50" onchange="savePaymentSchedule()"
+                style="display:none;width:110px;padding:3px 6px;font-size:.8rem" title="Comma-separated percentages, must total 100" />
               <button class="btn" onclick="printPunchList()" style="padding:6px 14px;font-size:.82rem;background:linear-gradient(135deg,rgba(29,187,135,.2),rgba(13,148,136,.15));color:#a3f2d2;border-color:rgba(29,187,135,.3)">📋 Punch List</button>
             </div>
           </div>
@@ -3845,6 +3857,6 @@
   </div>
 </div>
 
-<script src="kytrac-app.js?v=202607111630"></script>
+<script src="kytrac-app.js?v=202607131400"></script>
 </body>
 </html>

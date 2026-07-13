@@ -1,4 +1,4 @@
-// JOBSpan Application JavaScript v2.10.0 · 11/Jul/2026
+// JOBSpan Application JavaScript v2.11.0 · 13/Jul/2026
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -9898,8 +9898,76 @@ function loadEstimate(jobId) {
     .then(() => {
       renderEstimateTree();
       updateEstimateSummary();
+      renderPaymentScheduleControls(jobId);
     })
     .catch(e => console.error('Estimate load error:', e));
+}
+
+// ── Payment Schedule (Proposal) ──
+// Populates the Payment Schedule select/custom-input from the job's saved
+// paymentSchedule (if any) whenever the Estimate tab loads for a job.
+function renderPaymentScheduleControls(jobId) {
+  const sel = document.getElementById('paymentScheduleType');
+  const custom = document.getElementById('paymentScheduleCustomInput');
+  if (!sel) return;
+  const job = conJobs.find(j => j.id === jobId);
+  const ps = job?.paymentSchedule || { type: 'none' };
+  sel.value = ps.type || 'none';
+  custom.style.display = (ps.type === 'custom') ? '' : 'none';
+  custom.value = (ps.type === 'custom' && Array.isArray(ps.customPcts)) ? ps.customPcts.join(',') : '';
+}
+
+// Saves the selected Payment Schedule choice to the current job in
+// Firestore. Called on change of either the preset dropdown or the
+// custom-percentages input.
+function savePaymentSchedule() {
+  const sel = document.getElementById('paymentScheduleType');
+  const custom = document.getElementById('paymentScheduleCustomInput');
+  if (!sel || !conCurrentJobId || !conDb) return;
+  const type = sel.value;
+  custom.style.display = (type === 'custom') ? '' : 'none';
+
+  const data = { type };
+  if (type === 'custom') {
+    const pcts = (custom.value || '').split(',').map(s => parseFloat(s.trim())).filter(n => !isNaN(n) && n > 0);
+    const sum = pcts.reduce((a, b) => a + b, 0);
+    if (pcts.length && Math.abs(sum - 100) > 0.01) {
+      alert('Custom payment percentages must add up to 100 (currently ' + sum + ').');
+      return;
+    }
+    data.customPcts = pcts;
+  }
+  coll('jobs').doc(conCurrentJobId).update({ paymentSchedule: data })
+    .then(() => {
+      const job = conJobs.find(j => j.id === conCurrentJobId);
+      if (job) job.paymentSchedule = data;
+    })
+    .catch(e => alert('Error saving payment schedule: ' + e.message));
+}
+window.savePaymentSchedule = savePaymentSchedule;
+
+// Turns a job's saved paymentSchedule + the Proposal's grand total into an
+// array of { label, pct, amount } rows ready to print. Returns [] for
+// 'none' or when there's nothing usable to show — printProposal skips the
+// whole table in that case rather than printing an empty box.
+function getPaymentScheduleRows(paymentSchedule, grandTotal) {
+  const ps = paymentSchedule || { type: 'none' };
+  let stages = null;
+  if (ps.type === '50/50') {
+    stages = [['Deposit', 50], ['Final Payment (Due Upon Completion)', 50]];
+  } else if (ps.type === '50/25/25') {
+    stages = [['Deposit', 50], ['Progress Payment', 25], ['Final Payment (Due Upon Completion)', 25]];
+  } else if (ps.type === '10/40/25/25') {
+    stages = [['Deposit', 10], ['Materials & Mobilization', 40], ['Progress Payment', 25], ['Final Payment (Due Upon Completion)', 25]];
+  } else if (ps.type === 'custom' && Array.isArray(ps.customPcts) && ps.customPcts.length) {
+    stages = ps.customPcts.map((pct, i) => {
+      const isLast = i === ps.customPcts.length - 1;
+      const label = i === 0 ? 'Deposit' : (isLast ? 'Final Payment (Due Upon Completion)' : `Payment ${i + 1}`);
+      return [label, pct];
+    });
+  }
+  if (!stages) return [];
+  return stages.map(([label, pct]) => ({ label, pct, amount: grandTotal * (pct / 100) }));
 }
 
 // ── Render the estimate tree ──
@@ -10529,6 +10597,22 @@ function printProposal() {
     </div>`;
   }).join('');
 
+  const paymentRows = getPaymentScheduleRows(job?.paymentSchedule, grandTotal);
+  const paymentTableHtml = paymentRows.length ? `
+  <div class="payment-schedule">
+    <div class="payment-heading">Payment Schedule</div>
+    <table class="payment-table">
+      <thead><tr><th>Stage</th><th style="text-align:center">%</th><th style="text-align:right">Amount</th></tr></thead>
+      <tbody>
+        ${paymentRows.map(r => `<tr>
+          <td>${esc(r.label)}</td>
+          <td style="text-align:center">${r.pct}%</td>
+          <td style="text-align:right">$${r.amount.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>
+  </div>` : '';
+
   win.document.write(`<!DOCTYPE html><html><head><title>Proposal — ${esc(job?.name||'')}</title>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap');
@@ -10552,6 +10636,11 @@ function printProposal() {
     .total-box { margin-top: 36px; padding: 20px 24px; background: #1f2937; color: #fff; border-radius: 10px; display: flex; justify-content: space-between; align-items: center; }
     .total-box .label { font-size: 1rem; font-weight: 700; letter-spacing: .04em; }
     .total-box .amount { font-size: 1.6rem; font-weight: 800; color: #fbbf24; }
+    .payment-schedule { margin-top: 28px; page-break-inside: avoid; }
+    .payment-heading { font-size: .95rem; font-weight: 800; color: #111827; margin-bottom: 8px; text-transform: uppercase; letter-spacing: .04em; }
+    .payment-table { width: 100%; border-collapse: collapse; font-size: .88rem; }
+    .payment-table th { text-align: left; background: #f3f4f6; padding: 8px 12px; font-weight: 700; color: #4b5563; border-bottom: 2px solid #e5e7eb; }
+    .payment-table td { padding: 8px 12px; border-bottom: 1px solid #e5e7eb; color: #1f2937; }
     .signatures { display: flex; gap: 40px; margin-top: 56px; }
     .sig-block { flex: 1; }
     .sig-line { border-bottom: 1.5px solid #9ca3af; height: 42px; margin-bottom: 6px; }
@@ -10588,6 +10677,8 @@ function printProposal() {
     <div class="label">TOTAL PROJECT INVESTMENT</div>
     <div class="amount">$${grandTotal.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
   </div>
+
+  ${paymentTableHtml}
 
   <div class="signatures">
     <div class="sig-block">
