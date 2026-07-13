@@ -925,7 +925,7 @@
     <div class="kt-logo">
       <div class="kt-logo-mark">JOBSpan</div>
       <div class="kt-logo-tag" id="ktCompanyTag">7 Pillars Contracting</div>
-      <div class="kt-logo-version" id="ktVersionTag">Version 2.22.0 · 13/Jul/2026</div>
+      <div class="kt-logo-version" id="ktVersionTag">Version 2.23.0 · 13/Jul/2026</div>
     </div>
 
     <nav class="kt-nav">
@@ -2880,9 +2880,17 @@
         <div style="display:flex;flex-wrap:wrap;gap:6px" id="subgroupQuickPicks"></div>
       </div>
       <div style="margin-top:16px">
-        <label class="small muted" style="display:block;margin-bottom:6px">Scope Notes <span style="color:#9ca3af;font-weight:400">(internal only — for the crew/punch list, never shown to the customer)</span></label>
+        <label class="small muted" style="display:block;margin-bottom:6px">Scope Notes <span style="color:#9ca3af;font-weight:400">(shown to the customer as body text under this category on the Proposal — NOT internal-only)</span></label>
         <textarea id="subgroupScopeNotes" rows="3" placeholder="e.g. Single-handle pull-down faucet, new — not reusing existing. Or: Replace one outlet on north wall, cover plates on all outlets."
           style="width:100%;padding:10px;border-radius:8px;font-size:.9rem"></textarea>
+      </div>
+      <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--line)">
+        <label class="small muted" style="display:flex;align-items:center;gap:8px;cursor:pointer">
+          <input type="checkbox" id="subgroupPendingBid" style="cursor:pointer" />
+          Pending Vendor Bid <span style="color:#9ca3af;font-weight:400">(shows a caveat to the customer on the Proposal — this scope's pricing may change)</span>
+        </label>
+        <textarea id="subgroupPendingBidNote" rows="2" placeholder="Optional custom wording — e.g. &quot;These numbers are probably a little high until I get final bids from my vendors.&quot; Leave blank to use the default caveat."
+          style="width:100%;margin-top:8px;padding:10px;border-radius:8px;font-size:.9rem"></textarea>
       </div>
     </div>
     <div class="modal-foot">
@@ -3878,6 +3886,6 @@
   </div>
 </div>
 
-<script src="kytrac-app.js?v=202607132120"></script>
+<script src="kytrac-app.js?v=202607132200"></script>
 </body>
 </html>

@@ -1,4 +1,4 @@
-// JOBSpan Application JavaScript v2.22.0 · 13/Jul/2026
+// JOBSpan Application JavaScript v2.23.0 · 13/Jul/2026
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -10292,6 +10292,7 @@ function renderSubgroupHTML(groupId, sub) {
       <span class="est-group-toggle ${isCollapsed?'':'open'}" style="font-size:.75rem">▶</span>
       <span class="est-subgroup-name">${esc(sub.name)}</span>
       ${sub.scopeNotes ? `<span title="${esc(sub.scopeNotes)}" style="font-size:.85rem;cursor:help" onclick="event.stopPropagation()">📝</span>` : ''}
+      ${sub.pendingBid ? `<span title="${esc(sub.pendingBidNote || 'Pending Vendor Bid — customer sees a preliminary-pricing caveat on the Proposal')}" style="font-size:.85rem;cursor:help" onclick="event.stopPropagation()">⚠️</span>` : ''}
       <span style="font-size:.74rem;color:var(--muted)">${(sub.items||[]).length} items · Cost $${Math.round(totals.cost).toLocaleString()} · Price $${Math.round(totals.price).toLocaleString()}</span>
       <span style="font-size:.74rem;color:${marginColor}">${Math.round(totals.margin)}%</span>
       <div style="display:flex;gap:4px" onclick="event.stopPropagation()">
@@ -10527,6 +10528,10 @@ function openAddSubgroupModal(groupId, editSubId) {
   document.getElementById('subgroupNameInput').value = existingSub?.name || '';
   const scopeNotesEl = document.getElementById('subgroupScopeNotes');
   if (scopeNotesEl) scopeNotesEl.value = existingSub?.scopeNotes || '';
+  const pendingBidEl = document.getElementById('subgroupPendingBid');
+  if (pendingBidEl) pendingBidEl.checked = !!existingSub?.pendingBid;
+  const pendingBidNoteEl = document.getElementById('subgroupPendingBidNote');
+  if (pendingBidNoteEl) pendingBidNoteEl.value = existingSub?.pendingBidNote || '';
   const parentEl = document.getElementById('subgroupParentName');
   if (parentEl) parentEl.textContent = group?.name || '';
 
@@ -10564,6 +10569,8 @@ function saveSubgroupName() {
   const name = document.getElementById('subgroupNameInput')?.value.trim();
   if (!name) { alert('Please enter a subgroup name.'); return; }
   const scopeNotes = document.getElementById('subgroupScopeNotes')?.value.trim() || '';
+  const pendingBid = !!document.getElementById('subgroupPendingBid')?.checked;
+  const pendingBidNote = document.getElementById('subgroupPendingBidNote')?.value.trim() || '';
   kClose('subgroupNameModal');
   const groupId = _pendingSubgroupForGroup;
   const editSubId = _pendingSubgroupEditId;
@@ -10571,21 +10578,21 @@ function saveSubgroupName() {
 
   if (editSubId) {
     coll('jobs').doc(conCurrentJobId).collection('estimateGroups')
-      .doc(groupId).collection('subgroups').doc(editSubId).update({ name, scopeNotes })
+      .doc(groupId).collection('subgroups').doc(editSubId).update({ name, scopeNotes, pendingBid, pendingBidNote })
       .then(function() {
         const sub = group?.subgroups?.find(s => s.id === editSubId);
-        if (sub) { sub.name = name; sub.scopeNotes = scopeNotes; }
+        if (sub) { sub.name = name; sub.scopeNotes = scopeNotes; sub.pendingBid = pendingBid; sub.pendingBidNote = pendingBidNote; }
         renderEstimateTree();
       }).catch(function(e) { alert('Error: ' + e.message); });
   } else {
     const order = group?.subgroups?.length || 0;
     coll('jobs').doc(conCurrentJobId).collection('estimateGroups')
       .doc(groupId).collection('subgroups').add({
-        name: name, scopeNotes: scopeNotes, order: order, createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        name: name, scopeNotes: scopeNotes, pendingBid: pendingBid, pendingBidNote: pendingBidNote, order: order, createdAt: firebase.firestore.FieldValue.serverTimestamp()
       }).then(function(ref) {
         if (group) {
           if (!group.subgroups) group.subgroups = [];
-          group.subgroups.push({ id: ref.id, name: name, scopeNotes: scopeNotes, order: order, items: [] });
+          group.subgroups.push({ id: ref.id, name: name, scopeNotes: scopeNotes, pendingBid: pendingBid, pendingBidNote: pendingBidNote, order: order, items: [] });
         }
         renderEstimateTree();
       }).catch(function(e) { alert('Error: ' + e.message); });
@@ -10844,7 +10851,13 @@ function computeProposalData(job, itemized) {
       if (sub.visibleToCustomer === false) return null;
       const st = calcGroupTotals(sub.items || []);
       if (st.price <= 0) return null;
-      return { label: customerSafeLabel(sub), price: st.price, scopeNotes: sub.scopeNotes || '' };
+      return {
+        label: customerSafeLabel(sub),
+        price: st.price,
+        scopeNotes: sub.scopeNotes || '',
+        pendingBid: !!sub.pendingBid,
+        pendingBidNote: sub.pendingBidNote || ''
+      };
     }).filter(Boolean);
 
     const directBlocks = (group.directItems || []).map(item => {
@@ -10877,9 +10890,13 @@ function renderProposalDocumentHtml(data, job, co) {
   const roomSections = data.rooms.map(room => {
     const catHtml = room.catBlocks.map(c => {
       const priceHtml = itemized ? `<span style="float:right;font-weight:700;color:#1f2937">$${c.price.toFixed(2)}</span>` : '';
+      const bidCaveat = c.pendingBid
+        ? `<div class="cat-bid-caveat">⚠ ${esc(c.pendingBidNote || 'Pricing for this item is preliminary and may be adjusted once final vendor bids are in.')}</div>`
+        : '';
       return `<div class="cat-block">
         <div class="cat-name">${esc(c.label)}${priceHtml}</div>
         ${c.scopeNotes ? `<div class="cat-scope">${esc(c.scopeNotes)}</div>` : ''}
+        ${bidCaveat}
       </div>`;
     }).join('');
     const directHtml = room.directBlocks.map(d => {
@@ -10941,6 +10958,7 @@ function renderProposalDocumentHtml(data, job, co) {
     .cat-block:last-child { border-radius: 0 0 8px 8px; }
     .cat-name { font-weight: 700; font-size: .98rem; color: #111827; overflow: hidden; }
     .cat-scope { color: #4b5563; font-size: .88rem; margin-top: 6px; line-height: 1.55; }
+    .cat-bid-caveat { color: #92400e; background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; padding: 6px 10px; font-size: .82rem; margin-top: 8px; line-height: 1.5; }
     .total-box { margin-top: 36px; padding: 20px 24px; background: #1f2937; color: #fff; border-radius: 10px; display: flex; justify-content: space-between; align-items: center; }
     .total-box .label { font-size: 1rem; font-weight: 700; letter-spacing: .04em; }
     .total-box .amount { font-size: 1.6rem; font-weight: 800; color: #fbbf24; }
