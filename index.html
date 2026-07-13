@@ -778,6 +778,11 @@
     .portal-phase-row { display:flex; align-items:center; gap:12px; padding:10px 0; border-bottom:1px solid rgba(110,145,210,.07); }
     .portal-log-card { background:rgba(8,18,36,.6); border-radius:10px; padding:12px 14px; margin-bottom:10px; border:1px solid rgba(110,145,210,.08); }
     .portal-invoice-row { display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-bottom:1px solid rgba(110,145,210,.07); }
+    .portal-prop-room { padding:10px 0; border-bottom:1px solid rgba(110,145,210,.07); }
+    .portal-prop-room:last-child { border-bottom:none; }
+    .portal-prop-total { display:flex; justify-content:space-between; align-items:center; padding:14px 16px; background:rgba(217,119,6,.12); border:1px solid rgba(217,119,6,.35); border-radius:10px; margin:14px 0; }
+    .portal-sig-canvas { border:1.5px dashed var(--line); border-radius:10px; background:#fff; touch-action:none; width:100%; max-width:460px; height:150px; display:block; cursor:crosshair; }
+    .portal-terms-toggle { color:var(--amber); font-size:.78rem; cursor:pointer; text-decoration:underline; margin:10px 0; display:inline-block; }
     /* Portal overlay - shown when portal param detected */
     #ktPortalView { display:none; position:fixed; inset:0; background:#050e1c; z-index:99999; overflow-y:auto; }
     #ktPortalView.active { display:block; }
@@ -920,7 +925,7 @@
     <div class="kt-logo">
       <div class="kt-logo-mark">JOBSpan</div>
       <div class="kt-logo-tag" id="ktCompanyTag">7 Pillars Contracting</div>
-      <div class="kt-logo-version" id="ktVersionTag">Version 2.13.0 · 13/Jul/2026</div>
+      <div class="kt-logo-version" id="ktVersionTag">Version 2.14.0 · 13/Jul/2026</div>
     </div>
 
     <nav class="kt-nav">
@@ -2389,6 +2394,12 @@
         <!-- Progress track -->
         <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:10px">Project Progress</div>
         <div class="portal-status-track" id="portalStatusTrack"></div>
+      </div>
+
+      <!-- Proposal (pending signature, or signed confirmation) -->
+      <div class="portal-section" id="portalProposalSection" style="display:none">
+        <div class="portal-section-head"><h3 id="portalProposalHeading">📄 Proposal</h3></div>
+        <div class="portal-section-body" id="portalProposalBody"></div>
       </div>
 
       <!-- Phases -->
@@ -3865,6 +3876,6 @@
   </div>
 </div>
 
-<script src="kytrac-app.js?v=202607131530"></script>
+<script src="kytrac-app.js?v=202607131615"></script>
 </body>
 </html>

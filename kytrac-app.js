@@ -1,4 +1,4 @@
-// JOBSpan Application JavaScript v2.13.0 · 13/Jul/2026
+// JOBSpan Application JavaScript v2.14.0 · 13/Jul/2026
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -8085,8 +8085,17 @@ function initPortalFirebase(jobId, token) {
   }
 }
 
+// Module-level refs so the signature-pad submit handler (fired from a
+// button click, not from inside loadPortalJob's closure) can still reach
+// the right Firestore scope.
+let _portalDb = null;
+let _portalCompanyId = null;
+let _portalLatestProposal = null;
+
 function loadPortalJob(db, jobId, tokenData) {
   const companyId = tokenData.companyId || null;
+  _portalDb = db;
+  _portalCompanyId = companyId;
 
   // Helper to get company-scoped collection
   function portalColl(name) {
@@ -8144,6 +8153,16 @@ function loadPortalJob(db, jobId, tokenData) {
           const cos = [];
           snap.forEach(d => cos.push({ id: d.id, ...d.data() }));
           renderPortalCOs(cos);
+        }).catch(() => {});
+
+      // Load the latest Proposal version (Draft versions are never shown
+      // to the customer — only Pending/Approved/Declined are customer-facing)
+      portalColl('jobs').doc(jobId).collection('proposals')
+        .orderBy('version', 'desc').limit(1).get()
+        .then(snap => {
+          if (snap.empty) return;
+          const d = snap.docs[0];
+          renderPortalProposal({ id: d.id, ...d.data() }, jobId);
         }).catch(() => {});
     })
     .catch(() => showPortalNotFound());
@@ -8336,6 +8355,183 @@ function renderPortalCOs(cos) {
 function showPortalNotFound() {
   document.getElementById('portalLoading').style.display = 'none';
   document.getElementById('portalNotFound').style.display = 'block';
+}
+
+// ── Portal Proposal: view + e-signature capture ──
+// Renders whatever the latest proposal version looks like, branching on
+// status: 'draft' is never shown to the customer (not yet sent); 'pending'
+// shows the full breakdown + signature pad; 'approved'/'declined' show a
+// read-only confirmation of what was already decided. All content is
+// built from the FROZEN snapshot stored on the proposal doc — never
+// recomputed from the live estimate — so what the customer sees here is
+// guaranteed to match what they're being asked to sign.
+function renderPortalProposal(prop, jobId) {
+  if (!prop || prop.status === 'draft') return; // not yet sent, nothing to show
+  _portalLatestProposal = prop;
+  const section = document.getElementById('portalProposalSection');
+  const body = document.getElementById('portalProposalBody');
+  const heading = document.getElementById('portalProposalHeading');
+  if (!section || !body) return;
+  section.style.display = 'block';
+
+  const data = prop.snapshot || { rooms: [], grandTotal: 0, itemized: false, paymentSchedule: null };
+  const roomsHtml = data.rooms.map(room => {
+    const lines = [...room.catBlocks, ...room.directBlocks];
+    return `<div class="portal-prop-room">
+      <div style="font-weight:800;color:#eaf0fb;margin-bottom:4px">${esc(room.name)}</div>
+      ${lines.map(l => `<div style="font-size:.86rem;color:var(--muted);padding-left:8px">
+        ${esc(l.label)}${data.itemized ? ` <span style="float:right;color:#eaf0fb;font-weight:700">$${l.price.toFixed(2)}</span>` : ''}
+      </div>`).join('')}
+    </div>`;
+  }).join('');
+
+  const paymentRows = getPaymentScheduleRows(data.paymentSchedule, data.grandTotal);
+  const paymentHtml = paymentRows.length ? `
+    <div style="margin-top:16px">
+      <div style="font-weight:800;color:#eaf0fb;margin-bottom:6px;font-size:.85rem;text-transform:uppercase;letter-spacing:.04em">Payment Schedule</div>
+      ${paymentRows.map(r => `<div style="display:flex;justify-content:space-between;font-size:.86rem;padding:4px 0;color:var(--muted)">
+        <span>${esc(r.label)} (${r.pct}%)</span><span style="color:#eaf0fb;font-weight:700">$${r.amount.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+      </div>`).join('')}
+    </div>` : '';
+
+  const termsHtml = `<div id="portalTermsBody" style="display:none;margin-top:12px;font-size:.78rem;color:var(--muted);line-height:1.6">
+    ${TERMS_AND_CONDITIONS.map(([title, text]) => `<div style="margin-bottom:10px"><strong style="color:#eaf0fb">${title}</strong><br>${text}</div>`).join('')}
+  </div>
+  <span class="portal-terms-toggle" onclick="const t=document.getElementById('portalTermsBody'); t.style.display = t.style.display==='none'?'block':'none';">View full Terms &amp; Conditions</span>`;
+
+  if (prop.status === 'pending') {
+    heading.textContent = '📄 Proposal — Awaiting Your Signature';
+    body.innerHTML = `
+      ${roomsHtml}
+      <div class="portal-prop-total">
+        <span style="font-weight:800;color:#eaf0fb">Total Project Investment</span>
+        <span style="font-weight:900;font-size:1.2rem;color:#fbbf24">$${data.grandTotal.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+      </div>
+      ${paymentHtml}
+      ${termsHtml}
+      <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--line)">
+        <div style="font-weight:700;color:#eaf0fb;margin-bottom:8px">Sign to Approve</div>
+        <input id="portalSigName" placeholder="Type your full name" style="width:100%;max-width:460px;margin-bottom:10px;padding:8px 10px;border-radius:8px;border:1px solid var(--line);background:rgba(8,18,36,.6);color:#eaf0fb" />
+        <canvas id="portalSigCanvas" class="portal-sig-canvas"></canvas>
+        <div style="margin-top:8px;display:flex;gap:10px;flex-wrap:wrap">
+          <button class="btn" style="padding:6px 14px;font-size:.8rem" onclick="clearPortalSignature()">Clear</button>
+          <button class="btn-amber" style="padding:8px 18px;font-size:.85rem" onclick="submitPortalSignature('${prop.id}','${jobId}','approved')">✓ Approve &amp; Sign</button>
+          <button class="btn" style="padding:8px 18px;font-size:.85rem;color:#ef5350" onclick="submitPortalSignature('${prop.id}','${jobId}','declined')">Decline</button>
+        </div>
+      </div>`;
+    initPortalSignaturePad();
+  } else if (prop.status === 'approved') {
+    heading.textContent = '✅ Proposal — Approved';
+    body.innerHTML = `
+      ${roomsHtml}
+      <div class="portal-prop-total">
+        <span style="font-weight:800;color:#eaf0fb">Total Project Investment</span>
+        <span style="font-weight:900;font-size:1.2rem;color:#fbbf24">$${data.grandTotal.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+      </div>
+      ${paymentHtml}
+      <div style="margin-top:14px;font-size:.82rem;color:#1dbb87">
+        Signed by ${esc(prop.signedByName || 'customer')}${prop.respondedAt?.toDate ? ' on ' + prop.respondedAt.toDate().toLocaleDateString() : ''}.
+        ${prop.signatureDataUrl ? `<br><img src="${prop.signatureDataUrl}" style="height:50px;margin-top:8px;background:#fff;border-radius:4px;padding:4px">` : ''}
+      </div>`;
+  } else if (prop.status === 'declined') {
+    heading.textContent = 'Proposal — Declined';
+    body.innerHTML = `<div style="font-size:.86rem;color:var(--muted)">
+      This proposal was declined${prop.declineReason ? ': "' + esc(prop.declineReason) + '"' : '.'} Please reach out using the contact info below if you'd like to discuss a revised scope.
+    </div>`;
+  }
+}
+
+// Basic mouse + touch signature pad — no external library needed.
+let _portalSigCtx = null, _portalSigDrawing = false, _portalSigHasStroke = false;
+function initPortalSignaturePad() {
+  const canvas = document.getElementById('portalSigCanvas');
+  if (!canvas) return;
+  // Match backing resolution to displayed size for crisp lines
+  const ratio = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width * ratio;
+  canvas.height = rect.height * ratio;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(ratio, ratio);
+  ctx.strokeStyle = '#111827';
+  ctx.lineWidth = 2;
+  ctx.lineCap = 'round';
+  _portalSigCtx = ctx;
+  _portalSigHasStroke = false;
+
+  function pos(e) {
+    const r = canvas.getBoundingClientRect();
+    const t = e.touches ? e.touches[0] : e;
+    return { x: t.clientX - r.left, y: t.clientY - r.top };
+  }
+  function start(e) { e.preventDefault(); _portalSigDrawing = true; const p = pos(e); ctx.beginPath(); ctx.moveTo(p.x, p.y); }
+  function move(e) { if (!_portalSigDrawing) return; e.preventDefault(); const p = pos(e); ctx.lineTo(p.x, p.y); ctx.stroke(); _portalSigHasStroke = true; }
+  function end() { _portalSigDrawing = false; }
+
+  canvas.onmousedown = start; canvas.onmousemove = move; canvas.onmouseup = end; canvas.onmouseleave = end;
+  canvas.ontouchstart = start; canvas.ontouchmove = move; canvas.ontouchend = end;
+}
+window.initPortalSignaturePad = initPortalSignaturePad;
+
+function clearPortalSignature() {
+  const canvas = document.getElementById('portalSigCanvas');
+  if (!canvas || !_portalSigCtx) return;
+  _portalSigCtx.clearRect(0, 0, canvas.width, canvas.height);
+  _portalSigHasStroke = false;
+}
+window.clearPortalSignature = clearPortalSignature;
+
+// Writes the customer's decision straight to the frozen proposal doc.
+// NOTE: this requires Firestore security rules that allow an anonymous
+// portal visitor to update ONLY status/signature fields on a proposal doc
+// matching their portal token — that rule needs to be added in the
+// Firebase console; it's not something this environment can deploy.
+function submitPortalSignature(proposalId, jobId, action) {
+  const nameEl = document.getElementById('portalSigName');
+  const name = nameEl ? nameEl.value.trim() : '';
+
+  if (action === 'approved') {
+    if (!name) { alert('Please type your full name before signing.'); return; }
+    if (!_portalSigHasStroke) { alert('Please sign in the box before approving.'); return; }
+    const canvas = document.getElementById('portalSigCanvas');
+    const dataUrl = canvas.toDataURL('image/png');
+    const update = {
+      status: 'approved',
+      signedByName: name,
+      signatureDataUrl: dataUrl,
+      respondedAt: firebase.firestore.FieldValue.serverTimestamp()
+    };
+    _portalProposalColl(jobId).doc(proposalId).update(update)
+      .then(() => {
+        _portalLatestProposal.status = 'approved';
+        _portalLatestProposal.signedByName = name;
+        _portalLatestProposal.signatureDataUrl = dataUrl;
+        _portalLatestProposal.respondedAt = { toDate: () => new Date() };
+        renderPortalProposal(_portalLatestProposal, jobId);
+      })
+      .catch(e => alert('Error submitting signature: ' + e.message));
+  } else {
+    const reason = prompt('Optional: let us know why, so we can follow up (or leave blank).') || '';
+    _portalProposalColl(jobId).doc(proposalId).update({
+      status: 'declined',
+      declineReason: reason,
+      respondedAt: firebase.firestore.FieldValue.serverTimestamp()
+    })
+      .then(() => {
+        _portalLatestProposal.status = 'declined';
+        _portalLatestProposal.declineReason = reason;
+        renderPortalProposal(_portalLatestProposal, jobId);
+      })
+      .catch(e => alert('Error submitting response: ' + e.message));
+  }
+}
+window.submitPortalSignature = submitPortalSignature;
+
+function _portalProposalColl(jobId) {
+  const base = _portalCompanyId
+    ? _portalDb.collection('companies').doc(_portalCompanyId).collection('jobs')
+    : _portalDb.collection('jobs');
+  return base.doc(jobId).collection('proposals');
 }
 
 // ── Generate and share portal link ──
