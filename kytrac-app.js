@@ -1,4 +1,4 @@
-// JOBSpan Application JavaScript v2.6.0 · 11/Jul/2026
+// JOBSpan Application JavaScript v2.6.1 · 11/Jul/2026
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -10971,27 +10971,27 @@ const TIERED_BUNDLES = {
       desc: 'Bath or kitchen faucet swap with supply lines and shutoffs',
       tiers: {
         low: { label: 'Standard', priceRange: 'Glacier Bay 2-Handle ~$37', lines: [
-          { desc: 'Glacier Bay Constructor 4 in. Centerset 2-Handle Low-Arc Bathroom Faucet in Chrome', qty: 1, unitCost: 29.98, unitPrice: 37.48, unit: 'ea', type: 'material' },
+          { desc: 'Glacier Bay Constructor 4 in. Centerset 2-Handle Low-Arc Bathroom Faucet in Brushed Nickel', qty: 1, unitCost: 29.98, unitPrice: 37.48, unit: 'ea', type: 'material' },
           { desc: 'Faucet Installation Labor', qty: 1, unitCost: 100, unitPrice: 115, unit: 'hr', type: 'labor' },
-          { desc: 'Brass Craft 3/8 in. Compression x 1/2 in. FIP x 20 in. Braided Polymer Supply Line', qty: 2, unitCost: 8.97, unitPrice: 11.21, unit: 'ea', type: 'material' },
+          { desc: 'Brass Craft 3/8 in. Compression x 1/2 in. FIP x 20 in. Braided Polymer Universal Faucet Water Connector', qty: 2, unitCost: 8.97, unitPrice: 11.21, unit: 'ea', type: 'material' },
           { desc: 'Bathroom Supply Line Labor', qty: 1, unitCost: 50, unitPrice: 57.50, unit: 'hr', type: 'labor' },
-          { desc: 'SharkBite 1/2 in. Push-to-Connect x 3/8 in. O.D. Compression Chrome Angle Stop', qty: 2, unitCost: 13.45, unitPrice: 16.81, unit: 'ea', type: 'material' },
+          { desc: 'SharkBite 1/2 in. Push-to-Connect x 3/8 in. O.D. Compression Chrome-Plated Brass Quarter-Turn Angle Stop Valve', qty: 2, unitCost: 13.45, unitPrice: 16.81, unit: 'ea', type: 'material' },
           { desc: 'Sharkbite Shutoff Labor', qty: 1, unitCost: 50, unitPrice: 57.50, unit: 'hr', type: 'labor' },
         ]},
         med: { label: 'Mid-Grade', priceRange: 'Glacier Bay Pull-Out ~$136', lines: [
-          { desc: 'Glacier Bay Market Single-Handle Pull-Out Sprayer Kitchen Faucet in Chrome', qty: 1, unitCost: 109, unitPrice: 136.25, unit: 'ea', type: 'material' },
+          { desc: 'Glacier Bay Market Single-Handle Pull-Out Sprayer Kitchen Faucet in Stainless Steel', qty: 1, unitCost: 109, unitPrice: 136.25, unit: 'ea', type: 'material' },
           { desc: 'Faucet Installation Labor', qty: 1, unitCost: 100, unitPrice: 115, unit: 'hr', type: 'labor' },
-          { desc: 'Brass Craft 3/8 in. Compression x 1/2 in. FIP x 20 in. Braided Polymer Supply Line', qty: 2, unitCost: 8.97, unitPrice: 11.21, unit: 'ea', type: 'material' },
+          { desc: 'Brass Craft 3/8 in. Compression x 1/2 in. FIP x 20 in. Braided Polymer Universal Faucet Water Connector', qty: 2, unitCost: 8.97, unitPrice: 11.21, unit: 'ea', type: 'material' },
           { desc: 'Bathroom Supply Line Labor', qty: 1, unitCost: 50, unitPrice: 57.50, unit: 'hr', type: 'labor' },
-          { desc: 'SharkBite 1/2 in. Push-to-Connect x 3/8 in. O.D. Compression Chrome Angle Stop', qty: 2, unitCost: 13.45, unitPrice: 16.81, unit: 'ea', type: 'material' },
+          { desc: 'SharkBite 1/2 in. Push-to-Connect x 3/8 in. O.D. Compression Chrome-Plated Brass Quarter-Turn Angle Stop Valve', qty: 2, unitCost: 13.45, unitPrice: 16.81, unit: 'ea', type: 'material' },
           { desc: 'Sharkbite Shutoff Labor', qty: 1, unitCost: 50, unitPrice: 57.50, unit: 'hr', type: 'labor' },
         ]},
         high: { label: 'Premium', priceRange: 'COOLWEST Commercial Wall Mount ~$109', lines: [
-          { desc: 'COOLWEST Commercial Wall Mount Faucet 8 Inch Center with 8" Gooseneck Spout', qty: 1, unitCost: 86.99, unitPrice: 108.74, unit: 'ea', type: 'material' },
+          { desc: 'COOLWEST Commercial Wall Mount Faucet 8 Inch Center with 8" Gooseneck Swivel Spout, 2 Handles Heavy Duty Brass Kitchen Sink Faucet, Chrome Finish', qty: 1, unitCost: 86.99, unitPrice: 108.74, unit: 'ea', type: 'material' },
           { desc: 'Faucet Installation Labor', qty: 1.5, unitCost: 100, unitPrice: 115, unit: 'hr', type: 'labor' },
-          { desc: 'Brass Craft 3/8 in. Compression x 1/2 in. FIP x 20 in. Braided Polymer Supply Line', qty: 2, unitCost: 8.97, unitPrice: 11.21, unit: 'ea', type: 'material' },
+          { desc: 'Brass Craft 3/8 in. Compression x 1/2 in. FIP x 20 in. Braided Polymer Universal Faucet Water Connector', qty: 2, unitCost: 8.97, unitPrice: 11.21, unit: 'ea', type: 'material' },
           { desc: 'Bathroom Supply Line Labor', qty: 1, unitCost: 50, unitPrice: 57.50, unit: 'hr', type: 'labor' },
-          { desc: 'SharkBite 1/2 in. Push-to-Connect x 3/8 in. O.D. Compression Chrome Angle Stop', qty: 2, unitCost: 13.45, unitPrice: 16.81, unit: 'ea', type: 'material' },
+          { desc: 'SharkBite 1/2 in. Push-to-Connect x 3/8 in. O.D. Compression Chrome-Plated Brass Quarter-Turn Angle Stop Valve', qty: 2, unitCost: 13.45, unitPrice: 16.81, unit: 'ea', type: 'material' },
           { desc: 'Sharkbite Shutoff Labor', qty: 1, unitCost: 50, unitPrice: 57.50, unit: 'hr', type: 'labor' },
         ]},
       }
@@ -11004,21 +11004,21 @@ const TIERED_BUNDLES = {
         low: { label: 'Round Standard', priceRange: 'Glacier Bay 1.28 GPF ~$111', lines: [
           { desc: 'Glacier Bay 2-Piece 1.28 GPF High Efficiency Single Flush Round Toilet in White', qty: 1, unitCost: 89, unitPrice: 111.25, unit: 'ea', type: 'material' },
           { desc: 'Lift-Off Round Closed Front Toilet Seat in White', qty: 1, unitCost: 16.97, unitPrice: 21.21, unit: 'ea', type: 'material' },
-          { desc: 'Everbilt Extra Thick Reinforced Toilet Wax Ring with Plastic Horn and Bolts', qty: 1, unitCost: 6.98, unitPrice: 8.72, unit: 'ea', type: 'material' },
+          { desc: 'Everbilt Extra Thick Reinforced Toilet Wax Ring with Plastic Horn and Zinc-Plated Toilet Bolts', qty: 1, unitCost: 6.98, unitPrice: 8.72, unit: 'ea', type: 'material' },
           { desc: '3/8 in. Compression x 7/8 in. Ballcock Nut x 12 in. Braided Polymer Toilet Supply Line', qty: 1, unitCost: 12, unitPrice: 15, unit: 'ea', type: 'material' },
           { desc: 'Labor to replace toilet', qty: 1, unitCost: 100, unitPrice: 115, unit: 'hr', type: 'labor' },
         ]},
         med: { label: 'Oblong Dual Flush', priceRange: 'Glacier Bay Elongated Dual Flush ~$124', lines: [
           { desc: 'Glacier Bay 2-piece 1.1 GPF/1.6 GPF High Efficiency Dual Flush Complete Elongated Toilet in White, Seat Included', qty: 1, unitCost: 99, unitPrice: 123.75, unit: 'ea', type: 'material' },
           { desc: 'Lift-Off Round Closed Front Toilet Seat in White', qty: 1, unitCost: 16.97, unitPrice: 21.21, unit: 'ea', type: 'material' },
-          { desc: 'Everbilt Extra Thick Reinforced Toilet Wax Ring with Plastic Horn and Bolts', qty: 1, unitCost: 6.98, unitPrice: 8.72, unit: 'ea', type: 'material' },
+          { desc: 'Everbilt Extra Thick Reinforced Toilet Wax Ring with Plastic Horn and Zinc-Plated Toilet Bolts', qty: 1, unitCost: 6.98, unitPrice: 8.72, unit: 'ea', type: 'material' },
           { desc: '3/8 in. Compression x 7/8 in. Ballcock Nut x 12 in. Braided Polymer Toilet Supply Line', qty: 1, unitCost: 12, unitPrice: 15, unit: 'ea', type: 'material' },
           { desc: 'Labor to replace toilet', qty: 1, unitCost: 100, unitPrice: 115, unit: 'hr', type: 'labor' },
         ]},
         high: { label: 'Oblong Power Flush', priceRange: 'Power Flush Tall Elongated ~$229', lines: [
-          { desc: 'Power Flush 2-Piece 1.28 GPF Single Flush Extra Tall Elongated Toilet in White', qty: 1, unitCost: 183.08, unitPrice: 228.85, unit: 'ea', type: 'material' },
+          { desc: 'Power Flush 2-Piece 1.28 GPF Single Flush Extra Tall Elongated Toilet in White with Slow-Close Seat Included', qty: 1, unitCost: 183.08, unitPrice: 228.85, unit: 'ea', type: 'material' },
           { desc: 'Lift-Off Round Closed Front Toilet Seat in White', qty: 1, unitCost: 16.97, unitPrice: 21.21, unit: 'ea', type: 'material' },
-          { desc: 'Everbilt Extra Thick Reinforced Toilet Wax Ring with Plastic Horn and Bolts', qty: 1, unitCost: 6.98, unitPrice: 8.72, unit: 'ea', type: 'material' },
+          { desc: 'Everbilt Extra Thick Reinforced Toilet Wax Ring with Plastic Horn and Zinc-Plated Toilet Bolts', qty: 1, unitCost: 6.98, unitPrice: 8.72, unit: 'ea', type: 'material' },
           { desc: '3/8 in. Compression x 7/8 in. Ballcock Nut x 12 in. Braided Polymer Toilet Supply Line', qty: 1, unitCost: 12, unitPrice: 15, unit: 'ea', type: 'material' },
           { desc: 'Labor to replace toilet', qty: 1, unitCost: 100, unitPrice: 115, unit: 'hr', type: 'labor' },
         ]},
@@ -11031,20 +11031,20 @@ const TIERED_BUNDLES = {
       tiers: {
         low: { label: 'Single Bowl 25"', priceRange: 'Glacier Bay Single ~$86', lines: [
           { desc: 'Glacier Bay 25 in. Drop-in Single Bowl 22 Gauge Stainless Steel Kitchen Sink', qty: 1, unitCost: 69, unitPrice: 86.25, unit: 'ea', type: 'material' },
-          { desc: 'Glacier Bay Fixed Post Kitchen Sink Strainer - Stainless steel with Chrome Finish', qty: 1, unitCost: 10.77, unitPrice: 13.46, unit: 'ea', type: 'material' },
-          { desc: '1-1/2 in. White Plastic Sink Drain P-Trap', qty: 1, unitCost: 4.68, unitPrice: 5.85, unit: 'ea', type: 'material' },
+          { desc: 'Glacier Bay Fixed Post Kitchen Sink Strainer - Stainless steel with polished finish', qty: 1, unitCost: 10.77, unitPrice: 13.46, unit: 'ea', type: 'material' },
+          { desc: '1-1/2 in. White Plastic Sink Drain P- Trap', qty: 1, unitCost: 4.68, unitPrice: 5.85, unit: 'ea', type: 'material' },
           { desc: 'Kitchen Sink Install Labor', qty: 1, unitCost: 300, unitPrice: 345, unit: 'hr', type: 'labor' },
         ]},
         med: { label: 'Double Bowl 33"', priceRange: 'Glacier Bay Double ~$99', lines: [
-          { desc: 'GLACIER BAY 33 in. Drop-in Double Bowl 22 Gauge Stainless Steel Kitchen Sink', qty: 1, unitCost: 79, unitPrice: 98.75, unit: 'ea', type: 'material' },
-          { desc: 'Glacier Bay Fixed Post Kitchen Sink Strainer - Stainless steel with Chrome Finish', qty: 2, unitCost: 10.77, unitPrice: 13.46, unit: 'ea', type: 'material' },
-          { desc: '1-1/2 in. White Plastic Sink Drain P-Trap', qty: 1, unitCost: 4.68, unitPrice: 5.85, unit: 'ea', type: 'material' },
+          { desc: 'GLACIER BAY 33 in. Drop-in Double Bowl 22 Gauge Stainless Steel Kitchen Sink with 4-Faucet Holes', qty: 1, unitCost: 79, unitPrice: 98.75, unit: 'ea', type: 'material' },
+          { desc: 'Glacier Bay Fixed Post Kitchen Sink Strainer - Stainless steel with polished finish', qty: 2, unitCost: 10.77, unitPrice: 13.46, unit: 'ea', type: 'material' },
+          { desc: '1-1/2 in. White Plastic Sink Drain P- Trap', qty: 1, unitCost: 4.68, unitPrice: 5.85, unit: 'ea', type: 'material' },
           { desc: 'Kitchen Sink Install Labor', qty: 1, unitCost: 300, unitPrice: 345, unit: 'hr', type: 'labor' },
         ]},
         high: { label: 'Pedestal Sink', priceRange: 'Glacier Bay Pedestal ~$92', lines: [
-          { desc: 'Pedestal Sink (Glacier Bay Shelburne/Petite Aragon Pedestal in White)', qty: 1, unitCost: 73.75, unitPrice: 92.19, unit: 'ea', type: 'material' },
-          { desc: 'Glacier Bay Fixed Post Kitchen Sink Strainer - Stainless steel with Chrome Finish', qty: 1, unitCost: 10.77, unitPrice: 13.46, unit: 'ea', type: 'material' },
-          { desc: '1-1/2 in. White Plastic Sink Drain P-Trap', qty: 1, unitCost: 4.68, unitPrice: 5.85, unit: 'ea', type: 'material' },
+          { desc: 'Pedestal Sink (Glacier Bay Shelburne/Petite Aragon Pedestal in White & Glacier Bay Petite Aragon 8-3/8 in. Pedestal Sink Basin in White)', qty: 1, unitCost: 73.75, unitPrice: 92.19, unit: 'ea', type: 'material' },
+          { desc: 'Glacier Bay Fixed Post Kitchen Sink Strainer - Stainless steel with polished finish', qty: 1, unitCost: 10.77, unitPrice: 13.46, unit: 'ea', type: 'material' },
+          { desc: '1-1/2 in. White Plastic Sink Drain P- Trap', qty: 1, unitCost: 4.68, unitPrice: 5.85, unit: 'ea', type: 'material' },
           { desc: 'Kitchen Sink Install Labor', qty: 1, unitCost: 300, unitPrice: 345, unit: 'hr', type: 'labor' },
         ]},
       }
@@ -11055,15 +11055,15 @@ const TIERED_BUNDLES = {
       desc: 'Tub or shower valve replacement with trim kit',
       tiers: {
         low: { label: 'Glacier Bay Aragon Chrome', priceRange: '~$124', lines: [
-          { desc: 'Glacier Bay Aragon 3 Handle 1-Spray Tub and Shower Faucet 1.8 GPM in Chrome', qty: 1, unitCost: 99, unitPrice: 123.75, unit: 'ea', type: 'material' },
+          { desc: 'Glacier Bay Aragon 3 Handle 1-Spray Tub and Shower Faucet 1.8 GPM in Chrome (Valve Included)', qty: 1, unitCost: 99, unitPrice: 123.75, unit: 'ea', type: 'material' },
           { desc: 'Shower Valve Replacement Labor', qty: 1, unitCost: 150, unitPrice: 172.50, unit: 'hr', type: 'labor' },
         ]},
         med: { label: 'Moen Adler Chrome', priceRange: '~$124', lines: [
-          { desc: 'MOEN Adler Single-Handle 4-Spray Tub and Shower Faucet in Chrome', qty: 1, unitCost: 99, unitPrice: 123.75, unit: 'ea', type: 'material' },
+          { desc: 'MOEN Adler Single-Handle 4-Spray Tub and Shower Faucet in Chrome (Valve Included)', qty: 1, unitCost: 99, unitPrice: 123.75, unit: 'ea', type: 'material' },
           { desc: 'Shower Valve Replacement Labor', qty: 1, unitCost: 150, unitPrice: 172.50, unit: 'hr', type: 'labor' },
         ]},
         high: { label: 'Banbury Trim Kit Matte Black', priceRange: '~$207', lines: [
-          { desc: 'Banbury 1-Handle 1-Spray Trim Kit Tub and Shower Faucet 1.75 GPM in Matte Black', qty: 1, unitCost: 165.62, unitPrice: 207.03, unit: 'ea', type: 'material' },
+          { desc: 'Banbury 1-Handle 1-Spray Trim Kit Tub and Shower Faucet 1.75 GPM in Matte Black (Valve and Handles Included)', qty: 1, unitCost: 165.62, unitPrice: 207.03, unit: 'ea', type: 'material' },
           { desc: 'Shower Valve Replacement Labor', qty: 1, unitCost: 150, unitPrice: 172.50, unit: 'hr', type: 'labor' },
         ]},
       }
@@ -11102,11 +11102,11 @@ const TIERED_BUNDLES = {
           { desc: 'Ceiling fan install Labor', qty: 1, unitCost: 100, unitPrice: 115, unit: 'hr', type: 'labor' },
         ]},
         med: { label: '44" Hampton Bay Bronze', priceRange: '~$94', lines: [
-          { desc: 'Hampton Bay Wellston II 44 in. Indoor LED Bronze Dry Rated Downrod Ceiling Fan with Light', qty: 1, unitCost: 74.97, unitPrice: 93.71, unit: 'ea', type: 'material' },
+          { desc: 'Hampton Bay Wellston II 44 in. Indoor LED Bronze Dry Rated Downrod Ceiling Fan with Light Kit and 5 Reversible Blades', qty: 1, unitCost: 74.97, unitPrice: 93.71, unit: 'ea', type: 'material' },
           { desc: 'Ceiling fan install Labor', qty: 1, unitCost: 100, unitPrice: 115, unit: 'hr', type: 'labor' },
         ]},
         high: { label: '52" Hampton Bay Menage', priceRange: '~$136', lines: [
-          { desc: 'Hampton Bay Menage 52 in. Integrated LED Indoor Low Profile Oil Rubbed Bronze Ceiling Fan', qty: 1, unitCost: 109, unitPrice: 136.25, unit: 'ea', type: 'material' },
+          { desc: 'Hampton Bay Menage 52 in. Integrated LED Indoor Low Profile Oil Rubbed Bronze Ceiling Fan with Light Kit', qty: 1, unitCost: 109, unitPrice: 136.25, unit: 'ea', type: 'material' },
           { desc: 'Ceiling fan install Labor', qty: 1, unitCost: 100, unitPrice: 115, unit: 'hr', type: 'labor' },
         ]},
       }
@@ -11117,15 +11117,15 @@ const TIERED_BUNDLES = {
       desc: 'Swap flush mount light at existing box',
       tiers: {
         low: { label: '11" Brushed Nickel', priceRange: '~$28', lines: [
-          { desc: '11 in. 1-Light Brushed Nickel Flush Mount with Frosted Glass', qty: 1, unitCost: 22.47, unitPrice: 28.09, unit: 'ea', type: 'material' },
+          { desc: '11 in. 1-Light Brushed Nickel Flush Mount with Frosted Glass Shade (2-Pack)', qty: 1, unitCost: 22.47, unitPrice: 28.09, unit: 'ea', type: 'material' },
           { desc: 'Flush mount light install labor', qty: 1, unitCost: 50, unitPrice: 57.50, unit: 'hr', type: 'labor' },
         ]},
-        med: { label: '15" Mid-Grade', priceRange: '~$47', lines: [
-          { desc: '11 in. 1-Light Brushed Nickel Flush Mount with Frosted Glass', qty: 1, unitCost: 37.98, unitPrice: 47.47, unit: 'ea', type: 'material' },
+        med: { label: '15" Mid-Grade', priceRange: '~$50', lines: [
+          { desc: 'Commercial Electric 15 in. Brushed Nickel New Ultra-Low Profile Integrated LED Flush Mount 5CCT (2-Pack)', qty: 1, unitCost: 39.99, unitPrice: 49.99, unit: 'ea', type: 'material' },
           { desc: 'Flush mount light install labor', qty: 1, unitCost: 50, unitPrice: 57.50, unit: 'hr', type: 'labor' },
         ]},
         high: { label: 'Sconce/Premium', priceRange: '~$57+', lines: [
-          { desc: '1-Light Oil Rubbed Bronze Sconce with Tea Stained Glass Shade', qty: 1, unitCost: 25.97, unitPrice: 32.46, unit: 'ea', type: 'material' },
+          { desc: '1-Light Oil Rubbed Bronze Sconce with Tea Stained Glass Shade by Hampton Bay', qty: 1, unitCost: 25.97, unitPrice: 32.46, unit: 'ea', type: 'material' },
           { desc: 'Labor to install Sconce', qty: 1, unitCost: 50, unitPrice: 57.50, unit: 'hr', type: 'labor' },
         ]},
       }
@@ -11140,11 +11140,11 @@ const TIERED_BUNDLES = {
           { desc: 'Flush mount light install labor', qty: 1, unitCost: 50, unitPrice: 57.50, unit: 'hr', type: 'labor' },
         ]},
         med: { label: '3-Light Oil Rubbed Bronze', priceRange: '~$100', lines: [
-          { desc: 'Hampton Bay 3-Light 21 in. Oil-Rubbed Bronze Contemporary Bathroom Vanity Light', qty: 1, unitCost: 79.97, unitPrice: 99.96, unit: 'ea', type: 'material' },
+          { desc: 'Hampton Bay 3-Light 21 in. Oil-Rubbed Bronze Contemporary Bathroom Vanity Light with Frosted Patterned Glass Shade', qty: 1, unitCost: 79.97, unitPrice: 99.96, unit: 'ea', type: 'material' },
           { desc: 'Flush mount light install labor', qty: 1, unitCost: 50, unitPrice: 57.50, unit: 'hr', type: 'labor' },
         ]},
         high: { label: '3-Light Regan BN', priceRange: '~$112', lines: [
-          { desc: 'Hampton Bay Regan 21 in. 3-Light Brushed Nickel Bathroom Vanity Light', qty: 1, unitCost: 89.97, unitPrice: 112.46, unit: 'ea', type: 'material' },
+          { desc: 'Hampton Bay Regan 21 in. 3-Light Brushed Nickel Bathroom Vanity Light with Clear Glass Shades', qty: 1, unitCost: 89.97, unitPrice: 112.46, unit: 'ea', type: 'material' },
           { desc: 'Flush mount light install labor', qty: 1, unitCost: 50, unitPrice: 57.50, unit: 'hr', type: 'labor' },
         ]},
       }
@@ -11209,19 +11209,19 @@ const TIERED_BUNDLES = {
         low: { label: 'LVP Aspen 4.5mm/12mil', priceRange: '$2.36/sqft material', lines: [
           { desc: 'LVP: Aspen, 7"x48"x4.5mm/12mil', qty: 200, unitCost: 1.89, unitPrice: 2.36, unit: 'sqft', type: 'material' },
           { desc: 'LVP Flooring Labor', qty: 200, unitCost: 5, unitPrice: 5.75, unit: 'sqft', type: 'labor' },
-          { desc: 'CAP A TREAD Burnt Oak 47 in. L x 12.15 in. W x 1.69 in. T Vinyl Transition Strip', qty: 1, unitCost: 63, unitPrice: 78.75, unit: 'ea', type: 'material' },
+          { desc: 'CAP A TREAD Burnt Oak 47 in. L x 12.15 in. W x 1.69 in. T Vinyl Stair Tread and Reversible Riser Kit', qty: 1, unitCost: 63, unitPrice: 78.75, unit: 'ea', type: 'material' },
           { desc: 'Transition Strip Labor', qty: 1, unitCost: 35, unitPrice: 40.25, unit: 'hr', type: 'labor' },
         ]},
         med: { label: 'LVP Ash Gray 5mm/20mil', priceRange: '$2.61/sqft material', lines: [
           { desc: 'LVP: Ash Gray, 7"x48"x5mm/20mil', qty: 200, unitCost: 2.09, unitPrice: 2.61, unit: 'sqft', type: 'material' },
           { desc: 'LVP Flooring Labor', qty: 200, unitCost: 5, unitPrice: 5.75, unit: 'sqft', type: 'labor' },
-          { desc: 'CAP A TREAD Burnt Oak 47 in. L x 12.15 in. W x 1.69 in. T Vinyl Transition Strip', qty: 1, unitCost: 63, unitPrice: 78.75, unit: 'ea', type: 'material' },
+          { desc: 'CAP A TREAD Burnt Oak 47 in. L x 12.15 in. W x 1.69 in. T Vinyl Stair Tread and Reversible Riser Kit', qty: 1, unitCost: 63, unitPrice: 78.75, unit: 'ea', type: 'material' },
           { desc: 'Transition Strip Labor', qty: 1, unitCost: 35, unitPrice: 40.25, unit: 'hr', type: 'labor' },
         ]},
         high: { label: 'LVP Ash Gray 6.5mm/24mil', priceRange: '$2.99/sqft material', lines: [
           { desc: 'LVP: Ash Gray, 7"x48"x6.5mm/24mil', qty: 200, unitCost: 2.39, unitPrice: 2.99, unit: 'sqft', type: 'material' },
           { desc: 'LVP Flooring Labor', qty: 200, unitCost: 5, unitPrice: 5.75, unit: 'sqft', type: 'labor' },
-          { desc: 'CAP A TREAD Burnt Oak 47 in. L x 12.15 in. W x 1.69 in. T Vinyl Transition Strip', qty: 2, unitCost: 63, unitPrice: 78.75, unit: 'ea', type: 'material' },
+          { desc: 'CAP A TREAD Burnt Oak 47 in. L x 12.15 in. W x 1.69 in. T Vinyl Stair Tread and Reversible Riser Kit', qty: 2, unitCost: 63, unitPrice: 78.75, unit: 'ea', type: 'material' },
           { desc: 'Transition Strip Labor', qty: 2, unitCost: 35, unitPrice: 40.25, unit: 'hr', type: 'labor' },
         ]},
       }
@@ -11238,8 +11238,8 @@ const TIERED_BUNDLES = {
           { desc: 'Carpet removal', qty: 2, unitCost: 100, unitPrice: 115, unit: 'hr', type: 'labor' },
           { desc: 'Carpet replacement (sqft)', qty: 200, unitCost: 3.54, unitPrice: 4.43, unit: 'sqft', type: 'material' },
         ]},
-        high: { label: 'Devon Oak LVP Alternative', priceRange: '$3.14/sqft + labor', lines: [
-          { desc: 'Devon Oak 6 in. x 36 in. Rigid Core Luxury Vinyl Plank Flooring', qty: 200, unitCost: 1.99, unitPrice: 3.14, unit: 'sqft', type: 'material' },
+        high: { label: 'Devon Oak LVP Alternative', priceRange: '$2.49/sqft + labor', lines: [
+          { desc: 'Devon Oak 6 in. x 36 in. Rigid Core Luxury Vinyl Plank Flooring (23.95 sq. ft. / case)', qty: 200, unitCost: 1.99, unitPrice: 2.49, unit: 'sqft', type: 'material' },
           { desc: 'LVP Flooring Labor', qty: 200, unitCost: 5, unitPrice: 5.75, unit: 'sqft', type: 'labor' },
         ]},
       }
@@ -11273,18 +11273,18 @@ const TIERED_BUNDLES = {
       desc: 'Vanity with top, mirror, and install labor',
       tiers: {
         low: { label: '24.5" Glacier Bay Freestanding', priceRange: '~$186', lines: [
-          { desc: 'Glacier Bay 24.5 in. W x 18.6 in. D x 35.4 in. H Freestanding Bath Vanity in White', qty: 1, unitCost: 149, unitPrice: 186.25, unit: 'ea', type: 'material' },
-          { desc: 'Glacier Bay 30 in. W x 36 in. H Frameless Rectangular Beveled Edge Bathroom Vanity Mirror', qty: 1, unitCost: 49.97, unitPrice: 62.46, unit: 'ea', type: 'material' },
+          { desc: 'Glacier Bay 24.5 in. W x 18.6 in. D x 35.4 in. H Freestanding Bath Vanity in White with White Cultured Marble Top', qty: 1, unitCost: 149, unitPrice: 186.25, unit: 'ea', type: 'material' },
+          { desc: 'Glacier Bay 30 in. W x 36 in. H Frameless Rectangular Beveled Edge Bathroom Vanity Mirror in Silver', qty: 1, unitCost: 49.97, unitPrice: 62.46, unit: 'ea', type: 'material' },
           { desc: 'Labor for vanity install', qty: 1, unitCost: 200, unitPrice: 230, unit: 'hr', type: 'labor' },
         ]},
         med: { label: '31" Vanity with Cultured Marble Top', priceRange: '~$249', lines: [
           { desc: '31 in. W Vanity in White with Cultured Marble Vanity Top in White by Glacier Bay', qty: 1, unitCost: 199, unitPrice: 248.75, unit: 'ea', type: 'material' },
-          { desc: 'Glacier Bay 30 in. W x 36 in. H Frameless Rectangular Beveled Edge Bathroom Vanity Mirror', qty: 1, unitCost: 49.97, unitPrice: 62.46, unit: 'ea', type: 'material' },
+          { desc: 'Glacier Bay 30 in. W x 36 in. H Frameless Rectangular Beveled Edge Bathroom Vanity Mirror in Silver', qty: 1, unitCost: 49.97, unitPrice: 62.46, unit: 'ea', type: 'material' },
           { desc: 'Labor for vanity install', qty: 1, unitCost: 200, unitPrice: 230, unit: 'hr', type: 'labor' },
         ]},
         high: { label: '30" Bannister Freestanding', priceRange: '~$424', lines: [
-          { desc: 'Glacier Bay Bannister 30 in. W x 19 in. D x 35 in. H single Sink Freestanding Bath Vanity', qty: 1, unitCost: 339, unitPrice: 423.75, unit: 'ea', type: 'material' },
-          { desc: 'Glacier Bay 30 in. W x 36 in. H Frameless Rectangular Beveled Edge Bathroom Vanity Mirror', qty: 1, unitCost: 49.97, unitPrice: 62.46, unit: 'ea', type: 'material' },
+          { desc: 'Glacier Bay Bannister 30 in. W x 19 in. D x 35 in. H single Sink Freestanding Bath Vanity in White with White Cultured Marble Top', qty: 1, unitCost: 339, unitPrice: 423.75, unit: 'ea', type: 'material' },
+          { desc: 'Glacier Bay 30 in. W x 36 in. H Frameless Rectangular Beveled Edge Bathroom Vanity Mirror in Silver', qty: 1, unitCost: 49.97, unitPrice: 62.46, unit: 'ea', type: 'material' },
           { desc: 'Labor for vanity install', qty: 1, unitCost: 200, unitPrice: 230, unit: 'hr', type: 'labor' },
         ]},
       }
@@ -11327,7 +11327,7 @@ const TIERED_BUNDLES = {
         med: { label: '1/2 Sheet', priceRange: '~$20 material + labor', lines: [
           { desc: '1/2" Drywall install per sqft', qty: 32, unitCost: 0.94, unitPrice: 1.18, unit: 'sqft', type: 'material' },
           { desc: '4.5 gal. Plus 3 Ready-Mixed Joint Compound', qty: 1, unitCost: 21.78, unitPrice: 27.23, unit: 'ea', type: 'material' },
-          { desc: 'Wall/door patch: 4.5 Gal. Plus 3 Lightweight All-Purpose Pre-Mixed Joint Compound', qty: 1, unitCost: 0.88, unitPrice: 1.10, unit: 'ea', type: 'material' },
+          { desc: 'Wall/door patch: 4.5 Gal. Plus 3 Lightweight All-Purpose Pre-Mixed Joint Compound by USG Sheetrock Brand & 75 ft. Drywall Joint Tape by USG Sheetrock Brand', qty: 1, unitCost: 0.88, unitPrice: 1.10, unit: 'ea', type: 'material' },
           { desc: 'Drywall Labor/ Sq Ft', qty: 32, unitCost: 6.50, unitPrice: 7.48, unit: 'sqft', type: 'labor' },
         ]},
         high: { label: 'Full Sheet 4x8', priceRange: '$19.93/sheet + labor', lines: [
@@ -11345,7 +11345,7 @@ const TIERED_BUNDLES = {
       desc: 'Freestanding range install, disconnect old unit',
       tiers: {
         low: { label: 'Electric Standard', priceRange: '~$625', lines: [
-          { desc: 'GE ENERGY STAR 30 In. 5.0 Cu. Ft. Coil Electric Freestanding Range in White', qty: 1, unitCost: 759, unitPrice: 948.75, unit: 'ea', type: 'material' },
+          { desc: 'GE ENERGY STAR 30 In. 5.0 Cu. Ft. Coil Electric Freestanding Range, Manual Clean, Black', qty: 1, unitCost: 759, unitPrice: 948.75, unit: 'ea', type: 'material' },
           { desc: 'Anti-Tip Bracket by Frigidaire', qty: 1, unitCost: 10.96, unitPrice: 13.70, unit: 'ea', type: 'material' },
           { desc: 'Range - Electric Install Labor', qty: 1, unitCost: 100, unitPrice: 115, unit: 'hr', type: 'labor' },
         ]},
@@ -11369,19 +11369,19 @@ const TIERED_BUNDLES = {
       tiers: {
         low: { label: '30" Hollow Core Slab', priceRange: '~$42', lines: [
           { desc: '30 in. x 80 in. Unfinished Flush Hardwood Interior Door Slab', qty: 1, unitCost: 33.86, unitPrice: 42.33, unit: 'ea', type: 'material' },
-          { desc: 'Kwikset Tylo Satin Chrome Keyed Entry Door Knob', qty: 1, unitCost: 25.45, unitPrice: 31.81, unit: 'ea', type: 'material' },
+          { desc: 'Kwikset Tylo Satin Chrome Keyed Entry Door Knob Featuring SmartKey Security', qty: 1, unitCost: 25.45, unitPrice: 31.81, unit: 'ea', type: 'material' },
           { desc: 'Labor to install Passage Knob', qty: 1, unitCost: 25, unitPrice: 28.75, unit: 'hr', type: 'labor' },
           { desc: 'Labor to install pre hung interior door', qty: 1, unitCost: 100, unitPrice: 115, unit: 'hr', type: 'labor' },
         ]},
         med: { label: '30" Steves 6-Panel Primed', priceRange: '~$75', lines: [
-          { desc: 'Steves & Sons 30 in. x 80 in. 6-Panel Textured Hollow Core White Primed Interior Door Slab', qty: 1, unitCost: 60, unitPrice: 75, unit: 'ea', type: 'material' },
-          { desc: 'Kwikset Tylo Satin Chrome Keyed Entry Door Knob', qty: 1, unitCost: 25.45, unitPrice: 31.81, unit: 'ea', type: 'material' },
+          { desc: 'Steves & Sons 30 in. x 80 in. 6-Panel Textured Hollow Core White Primed Composite Interior Door Slab', qty: 1, unitCost: 60, unitPrice: 75, unit: 'ea', type: 'material' },
+          { desc: 'Kwikset Tylo Satin Chrome Keyed Entry Door Knob Featuring SmartKey Security', qty: 1, unitCost: 25.45, unitPrice: 31.81, unit: 'ea', type: 'material' },
           { desc: 'Labor to install Passage Knob', qty: 1, unitCost: 25, unitPrice: 28.75, unit: 'hr', type: 'labor' },
           { desc: 'Labor to install pre hung interior door', qty: 1, unitCost: 100, unitPrice: 115, unit: 'hr', type: 'labor' },
         ]},
         high: { label: '32" Right-Hand Pre-Hung', priceRange: '~$158', lines: [
-          { desc: 'Steves & Sons 32 in. x 80 in. Right-Handed 6-Panel Textured Hollow Core Pre-Hung', qty: 1, unitCost: 126, unitPrice: 157.50, unit: 'ea', type: 'material' },
-          { desc: 'Kwikset Tylo Satin Chrome Keyed Entry Door Knob', qty: 1, unitCost: 25.45, unitPrice: 31.81, unit: 'ea', type: 'material' },
+          { desc: 'Steves & Sons 32 in. x 80 in. Right-Handed 6-Panel Textured Hollow Core White Primed Composite SJ Single Prehung Interior Door', qty: 1, unitCost: 126, unitPrice: 157.50, unit: 'ea', type: 'material' },
+          { desc: 'Kwikset Tylo Satin Chrome Keyed Entry Door Knob Featuring SmartKey Security', qty: 1, unitCost: 25.45, unitPrice: 31.81, unit: 'ea', type: 'material' },
           { desc: 'Labor to install Passage Knob', qty: 1, unitCost: 25, unitPrice: 28.75, unit: 'hr', type: 'labor' },
           { desc: 'Labor to install pre hung interior door', qty: 1.5, unitCost: 100, unitPrice: 115, unit: 'hr', type: 'labor' },
         ]},
@@ -11412,15 +11412,15 @@ const TIERED_BUNDLES = {
       desc: 'Window blind install per window',
       tiers: {
         low: { label: '1 Window', priceRange: '1 blind', lines: [
-          { desc: 'Hampton Bay White Cordless Room Darkening 1 in. Vinyl Mini Blind for Window or Door', qty: 1, unitCost: 26.48, unitPrice: 33.10, unit: 'ea', type: 'material' },
+          { desc: 'Hampton Bay White Cordless Room Darkening 1 in. Vinyl Mini Blind for Window or Door - 34 in. W x 48 in. L', qty: 1, unitCost: 26.48, unitPrice: 33.10, unit: 'ea', type: 'material' },
           { desc: 'Labor to install Mini Blinds', qty: 1, unitCost: 50, unitPrice: 57.50, unit: 'hr', type: 'labor' },
         ]},
         med: { label: '3 Windows', priceRange: '3 blinds', lines: [
-          { desc: 'Hampton Bay White Cordless Room Darkening 1 in. Vinyl Mini Blind for Window or Door', qty: 3, unitCost: 26.48, unitPrice: 33.10, unit: 'ea', type: 'material' },
+          { desc: 'Hampton Bay White Cordless Room Darkening 1 in. Vinyl Mini Blind for Window or Door - 34 in. W x 48 in. L', qty: 3, unitCost: 26.48, unitPrice: 33.10, unit: 'ea', type: 'material' },
           { desc: 'Labor to install Mini Blinds', qty: 3, unitCost: 50, unitPrice: 57.50, unit: 'hr', type: 'labor' },
         ]},
         high: { label: '6 Windows', priceRange: '6 blinds', lines: [
-          { desc: 'Hampton Bay White Cordless Room Darkening 1 in. Vinyl Mini Blind for Window or Door', qty: 6, unitCost: 26.48, unitPrice: 33.10, unit: 'ea', type: 'material' },
+          { desc: 'Hampton Bay White Cordless Room Darkening 1 in. Vinyl Mini Blind for Window or Door - 34 in. W x 48 in. L', qty: 6, unitCost: 26.48, unitPrice: 33.10, unit: 'ea', type: 'material' },
           { desc: 'Labor to install Mini Blinds', qty: 6, unitCost: 50, unitPrice: 57.50, unit: 'hr', type: 'labor' },
         ]},
       }
