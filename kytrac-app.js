@@ -1,4 +1,4 @@
-// JOBSpan Application JavaScript v2.14.0 · 13/Jul/2026
+// JOBSpan Application JavaScript v2.15.0 · 13/Jul/2026
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -11911,6 +11911,51 @@ const TIERED_BUNDLES = {
         low: { label: '6 ft. Railing Kit', priceRange: '$180.00/section', lines: [
           { desc: 'NewTechWood Ultrashield Hemispheres 36 in. x 3 in. x 6 ft. Brown Peruvian Teak Composite Railing Kit', qty: 1, unitCost: 144.00, unitPrice: 180.00, unit: 'ea', type: 'material' },
           { desc: 'Labor to install composite railing', qty: 1, unitCost: 300, unitPrice: 345, unit: 'hr', type: 'labor' },
+        ]},
+      }
+    },
+  ],
+  // Real catalog data (2x4 stud, OSB, joist hanger) paired only with the
+  // specific, distinctly-named labor tasks that exist for them — NOT the
+  // generic "Labor - <exact material name>" $100/hr filler that's stamped
+  // onto dozens of unrelated catalog rows (dimensional lumber, jack posts,
+  // fasteners) as import noise, not real researched labor. Single tier
+  // only: no fake Low/Med/High grades invented where just one real product
+  // exists. Dimensional lumber (2x8x12, 2x8x16 PT, 4x4x8 PT) and the Jack
+  // Post are intentionally NOT bundled here — they only pair with that same
+  // generic filler rate, so packaging them would mean fabricating a labor
+  // number. Flagged for Travis; real labor rates needed before building.
+  '0600 Framing': [
+    {
+      name: 'Wall Stud Framing',
+      icon: '🏗',
+      desc: 'Per stud — 2x4 wall framing',
+      tiers: {
+        low: { label: '2x4 Stud', priceRange: '$4.33 + $92 labor/stud', lines: [
+          { desc: '2 in. x 4 in. x 96 in. Prime Whitewood Stud', qty: 1, unitCost: 3.46, unitPrice: 4.33, unit: 'ea', type: 'material' },
+          { desc: 'Labor to install a stud', qty: 1, unitCost: 80, unitPrice: 92, unit: 'hr', type: 'labor' },
+        ]},
+      }
+    },
+    {
+      name: 'OSB Subfloor/Sheathing Install',
+      icon: '📐',
+      desc: 'Per 4x8 sheet — subfloor or wall sheathing',
+      tiers: {
+        low: { label: '1/2 in. OSB Sheet', priceRange: '$21.98 + $37.95 labor/sheet', lines: [
+          { desc: '1/2 4 ft. x 8 ft. Oriented Strand Board', qty: 1, unitCost: 17.58, unitPrice: 21.98, unit: 'ea', type: 'material' },
+          { desc: 'OSB Install Labor', qty: 1, unitCost: 33, unitPrice: 37.95, unit: 'hr', type: 'labor' },
+        ]},
+      }
+    },
+    {
+      name: 'Joist Hanger Install',
+      icon: '🔩',
+      desc: 'Per hanger — 2x8 nominal lumber',
+      tiers: {
+        low: { label: 'Simpson Strong-Tie LUS (2x8)', priceRange: '$2.99 + $17.25 labor/hanger', lines: [
+          { desc: 'Simpson Strong-Tie LUS ZMAX Galvanized Face-Mount Joist Hanger for 2x8 Nominal Lumber', qty: 1, unitCost: 2.39, unitPrice: 2.988, unit: 'ea', type: 'material' },
+          { desc: 'Joist hanger labor', qty: 1, unitCost: 15, unitPrice: 17.25, unit: 'hr', type: 'labor' },
         ]},
       }
     },
