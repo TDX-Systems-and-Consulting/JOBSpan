@@ -1,4 +1,4 @@
-// JOBSpan Application JavaScript v2.19.0 · 13/Jul/2026
+// JOBSpan Application JavaScript v2.20.0 · 13/Jul/2026
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -11951,6 +11951,34 @@ const TIERED_BUNDLES = {
         high: { label: 'Full Day + Dumpster', priceRange: '8 hrs + dumpster', lines: [
           { desc: 'Trash removal per hour', qty: 8, unitCost: 100, unitPrice: 115, unit: 'hr', type: 'labor' },
           { desc: 'Dumpster Rental', qty: 1, unitCost: 500, unitPrice: 625, unit: 'ea', type: 'other' },
+        ]},
+      }
+    },
+  ],
+  // Real catalog data. Only "Concrete Patch Labor" ($200/$230) is
+  // genuinely distinct labor here — rebar, dry mix bags, form tube, and
+  // sealant only pair with the generic $100/hr filler and are NOT bundled;
+  // they're raw materials for a larger pour job that would need a real
+  // "pour" labor rate from Travis.
+  '2800 Concrete': [
+    {
+      name: 'Concrete Replacement',
+      icon: '⬜',
+      desc: 'Per sqft — all-in rate, driveway/patio/sidewalk',
+      tiers: {
+        low: { label: 'Standard Replacement', priceRange: '$15.00/sqft (all-in)', lines: [
+          { desc: 'Concrete replacement per sqft', qty: 1, unitCost: 12.00, unitPrice: 15.00, unit: 'sqft', type: 'material' },
+        ]},
+      }
+    },
+    {
+      name: 'Concrete Patch Repair',
+      icon: '🩹',
+      desc: 'Spot repair — spalling, cracks, minor damage',
+      tiers: {
+        low: { label: 'Sika Textured Concrete Patch', priceRange: '$40.78 + $230 labor', lines: [
+          { desc: 'Sika 1 Gal. Ready-Mix Concrete Patch and Repair, Textured Concrete Patch', qty: 1, unitCost: 32.62, unitPrice: 40.775, unit: 'ea', type: 'material' },
+          { desc: 'Concrete Patch Labor', qty: 1, unitCost: 200, unitPrice: 230, unit: 'hr', type: 'labor' },
         ]},
       }
     },
