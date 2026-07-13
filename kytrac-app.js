@@ -1,4 +1,4 @@
-// JOBSpan Application JavaScript v2.24.0 · 13/Jul/2026
+// JOBSpan Application JavaScript v2.25.0 · 13/Jul/2026
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -8139,12 +8139,12 @@ function initPortalFirebase(jobId, token) {
           showPortalNotFound(); return;
         }
         // Token valid - load all portal data
-        return loadPortalJob(db, jobId, tokenData);
+        return loadPortalJob(db, jobId, tokenData, token);
       })
       .catch(() => {
         // If token collection doesn't exist yet, try loading job directly
         // This allows portal to work even before token system is set up
-        loadPortalJob(db, jobId, {});
+        loadPortalJob(db, jobId, {}, token);
       });
   } catch(e) {
     showPortalNotFound();
@@ -8153,12 +8153,18 @@ function initPortalFirebase(jobId, token) {
 
 // Module-level refs so the signature-pad submit handler (fired from a
 // button click, not from inside loadPortalJob's closure) can still reach
-// the right Firestore scope.
+// the right Firestore scope. _portalToken is included on every write the
+// portal makes (signature, decline, view timestamp) so Firestore security
+// rules can validate the anonymous visitor against the portalTokens
+// collection — rules have no other way to check a "bearer token" style
+// credential for an unauthenticated portal visitor.
 let _portalDb = null;
 let _portalCompanyId = null;
 let _portalLatestProposal = null;
+let _portalToken = null;
 
-function loadPortalJob(db, jobId, tokenData) {
+function loadPortalJob(db, jobId, tokenData, token) {
+  _portalToken = token || null;
   const companyId = tokenData.companyId || null;
   _portalDb = db;
   _portalCompanyId = companyId;
@@ -8450,7 +8456,8 @@ function renderPortalProposal(prop, jobId) {
   // "email opened". Only fires once, on first view.
   if (prop.status === 'pending' && !prop.viewedAt) {
     _portalProposalColl(jobId).doc(prop.id).update({
-      viewedAt: firebase.firestore.FieldValue.serverTimestamp()
+      viewedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      lastPortalToken: _portalToken || ''
     }).then(() => { prop.viewedAt = { toDate: () => new Date() }; }).catch(() => {});
   }
 
@@ -8579,7 +8586,8 @@ function submitPortalSignature(proposalId, jobId, action) {
       status: 'approved',
       signedByName: name,
       signatureDataUrl: dataUrl,
-      respondedAt: firebase.firestore.FieldValue.serverTimestamp()
+      respondedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      lastPortalToken: _portalToken || ''
     };
     _portalProposalColl(jobId).doc(proposalId).update(update)
       .then(() => {
@@ -8595,7 +8603,8 @@ function submitPortalSignature(proposalId, jobId, action) {
     _portalProposalColl(jobId).doc(proposalId).update({
       status: 'declined',
       declineReason: reason,
-      respondedAt: firebase.firestore.FieldValue.serverTimestamp()
+      respondedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      lastPortalToken: _portalToken || ''
     })
       .then(() => {
         _portalLatestProposal.status = 'declined';
