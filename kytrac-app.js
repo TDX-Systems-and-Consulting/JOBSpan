@@ -1,4 +1,4 @@
-// JOBSpan Application JavaScript v2.5.0 · 11/Jul/2026
+// JOBSpan Application JavaScript v2.6.0 · 11/Jul/2026
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -11247,38 +11247,6 @@ const TIERED_BUNDLES = {
   ],
   '2300 Painting': [
     {
-      name: 'Paint Room',
-      icon: '🎨',
-      desc: '2 coats walls + ceiling, includes labor and materials',
-      tiers: {
-        low: { label: '1 Coat per sqft', priceRange: '$3.45/sqft labor', lines: [
-          { desc: 'Mud/Tape per sqft', qty: 400, unitCost: 0.05, unitPrice: 0.06, unit: 'sqft', type: 'material' },
-          { desc: 'Paint Labor for 1 coat per sq ft', qty: 400, unitCost: 3.00, unitPrice: 3.45, unit: 'sqft', type: 'labor' },
-          { desc: 'Patch wall/holes', qty: 1, unitCost: 9.48, unitPrice: 11.85, unit: 'ea', type: 'material' },
-          { desc: '9 in. x 3/8 in. High-Density Polyester Knit Paint Roller Cover', qty: 1, unitCost: 8.48, unitPrice: 10.60, unit: 'ea', type: 'material' },
-          { desc: '3M ScotchBlue 1.88 in. x 60 yds. Original Multi-Surface Painter\'s Tape', qty: 1, unitCost: 39.48, unitPrice: 49.35, unit: 'ea', type: 'material' },
-        ]},
-        med: { label: '2 Coats per sqft', priceRange: '$4.07/sqft labor', lines: [
-          { desc: 'Mud/Tape per sqft', qty: 400, unitCost: 0.05, unitPrice: 0.06, unit: 'sqft', type: 'material' },
-          { desc: 'Paint/sqft - 1 coat', qty: 400, unitCost: 0.10, unitPrice: 0.46, unit: 'sqft', type: 'material' },
-          { desc: 'Paint Labor for 2 coat per sq ft', qty: 400, unitCost: 3.00, unitPrice: 4.07, unit: 'sqft', type: 'labor' },
-          { desc: 'Patch wall/holes', qty: 2, unitCost: 9.48, unitPrice: 11.85, unit: 'ea', type: 'material' },
-          { desc: '9 in. x 3/8 in. High-Density Polyester Knit Paint Roller Cover', qty: 2, unitCost: 8.48, unitPrice: 10.60, unit: 'ea', type: 'material' },
-          { desc: '3M ScotchBlue 1.88 in. x 60 yds. Original Multi-Surface Painter\'s Tape', qty: 1, unitCost: 39.48, unitPrice: 49.35, unit: 'ea', type: 'material' },
-        ]},
-        high: { label: 'Full Room with Caulk', priceRange: '2 coats + caulk finish', lines: [
-          { desc: 'Mud/Tape per sqft', qty: 800, unitCost: 0.05, unitPrice: 0.06, unit: 'sqft', type: 'material' },
-          { desc: 'Paint/sqft - 1 coat', qty: 800, unitCost: 0.10, unitPrice: 0.46, unit: 'sqft', type: 'material' },
-          { desc: 'Paint Labor for 2 coat per sq ft', qty: 800, unitCost: 3.00, unitPrice: 4.07, unit: 'sqft', type: 'labor' },
-          { desc: 'Patch wall/holes', qty: 3, unitCost: 9.48, unitPrice: 11.85, unit: 'ea', type: 'material' },
-          { desc: 'GE Advanced Silicone 2 10.1 oz. White Kitchen and Bath Silicone', qty: 2, unitCost: 10.98, unitPrice: 13.73, unit: 'ea', type: 'material' },
-          { desc: 'Caulk Labor', qty: 1, unitCost: 25, unitPrice: 28.75, unit: 'hr', type: 'labor' },
-          { desc: '9 in. x 3/8 in. High-Density Polyester Knit Paint Roller Cover', qty: 2, unitCost: 8.48, unitPrice: 10.60, unit: 'ea', type: 'material' },
-          { desc: '3M ScotchBlue 1.88 in. x 60 yds. Original Multi-Surface Painter\'s Tape', qty: 2, unitCost: 39.48, unitPrice: 49.35, unit: 'ea', type: 'material' },
-        ]},
-      }
-    },
-    {
       name: 'Paint Exterior Door',
       icon: '🚪',
       desc: 'Interior and exterior of doors, includes prep',
@@ -11459,41 +11427,6 @@ const TIERED_BUNDLES = {
     },
   ],
   '2100 Trimwork': [
-    {
-      name: 'Baseboard Install',
-      icon: '📏',
-      desc: 'Baseboard trim install per linear foot',
-      tiers: {
-        low: { label: '50 Linear Ft', priceRange: '~1 room', lines: [
-          { desc: 'CMPC WM 356 11/16 in. x 2 1/4 in. x 168 in. Pine Primed Finger-Joint Base Moulding', qty: 50, unitCost: 0.99, unitPrice: 1.24, unit: 'lf', type: 'material' },
-          { desc: 'Labor to Install Baseboards per linear ft', qty: 50, unitCost: 3.30, unitPrice: 3.80, unit: 'lf', type: 'labor' },
-        ]},
-        med: { label: '100 Linear Ft', priceRange: '~2-3 rooms', lines: [
-          { desc: 'CMPC WM 356 11/16 in. x 2 1/4 in. x 168 in. Pine Primed Finger-Joint Base Moulding', qty: 100, unitCost: 0.99, unitPrice: 1.24, unit: 'lf', type: 'material' },
-          { desc: 'Labor to Install Baseboards per linear ft', qty: 100, unitCost: 3.30, unitPrice: 3.80, unit: 'lf', type: 'labor' },
-        ]},
-        high: { label: '200 Linear Ft', priceRange: 'Whole floor', lines: [
-          { desc: 'CMPC WM 356 11/16 in. x 2 1/4 in. x 168 in. Pine Primed Finger-Joint Base Moulding', qty: 200, unitCost: 0.99, unitPrice: 1.24, unit: 'lf', type: 'material' },
-          { desc: 'Labor to Install Baseboards per linear ft', qty: 200, unitCost: 3.30, unitPrice: 3.80, unit: 'lf', type: 'labor' },
-        ]},
-      }
-    },
-    {
-      name: 'Quarter Round Install',
-      icon: '📐',
-      desc: 'Quarter round paint and install per linear foot',
-      tiers: {
-        low: { label: '50 Linear Ft', priceRange: '~1 room', lines: [
-          { desc: 'Quarter round (paint & install) per linear foot', qty: 50, unitCost: 8, unitPrice: 9.20, unit: 'lf', type: 'labor' },
-        ]},
-        med: { label: '100 Linear Ft', priceRange: '~2-3 rooms', lines: [
-          { desc: 'Quarter round (paint & install) per linear foot', qty: 100, unitCost: 8, unitPrice: 9.20, unit: 'lf', type: 'labor' },
-        ]},
-        high: { label: '200 Linear Ft', priceRange: 'Whole floor', lines: [
-          { desc: 'Quarter round (paint & install) per linear foot', qty: 200, unitCost: 8, unitPrice: 9.20, unit: 'lf', type: 'labor' },
-        ]},
-      }
-    },
   ],
   '0200 Demolition': [
     {
@@ -11592,7 +11525,26 @@ const TPL_CATEGORIES = [
 
 // Only Painting has real items right now.
 const TPL_ITEMS_BY_CATEGORY = {
-  'Painting': [{ key: 'paint', label: 'Paint — 1 Coat Per Sq Ft' }]
+  'Painting': [{ key: 'paint', label: 'Paint — 1 Coat Per Sq Ft' }],
+  'Trim': [
+    { key: 'baseboard', label: 'Baseboard — Per Linear Ft' },
+    { key: 'quarterround', label: 'Quarter Round — Per Linear Ft' }
+  ]
+};
+
+// Real single-SKU linear-footage items — no fake grade tiers since only
+// one real product/labor rate exists in the catalog for each.
+const LINEAR_ITEMS = {
+  baseboard: {
+    title: 'Baseboard — Per Linear Ft',
+    material: { desc: 'CMPC WM 356 11/16 in. x 2 1/4 in. x 168 in. Pine Primed Finger-Jointed Casing Pro Pack (12-Pieces)', unitCost: 0.99, unitPrice: 1.238 },
+    labor: { desc: 'Labor to Install Baseboards per linear ft', unitCost: 3.30, unitPrice: 3.795 }
+  },
+  quarterround: {
+    title: 'Quarter Round — Per Linear Ft',
+    material: null,
+    labor: { desc: 'Quarter round (paint & install) per linear foot', unitCost: 8.00, unitPrice: 9.20 }
+  }
 };
 
 // Paint formula constants — sourced directly from the real cost catalog.
@@ -11644,6 +11596,7 @@ function tplGoToRooms() {
   document.getElementById('tplStepCategories').style.display = 'none';
   document.getElementById('tplStepItems').style.display = 'none';
   document.getElementById('tplStepPaintForm').style.display = 'none';
+  document.getElementById('tplStepLinearForm').style.display = 'none';
   const grid = document.getElementById('tplRoomGrid');
   grid.innerHTML = TPL_ROOMS.map(r =>
     `<div class="wizard-category-card" onclick="tplSelectRoom('${esc(r)}')">${esc(r)}</div>`
@@ -11664,6 +11617,7 @@ function tplGoToCategories() {
   document.getElementById('tplStepCategories').style.display = 'block';
   document.getElementById('tplStepItems').style.display = 'none';
   document.getElementById('tplStepPaintForm').style.display = 'none';
+  document.getElementById('tplStepLinearForm').style.display = 'none';
   document.getElementById('tplCategoryRoomTitle').textContent = _tplSelectedRoom;
   const grid = document.getElementById('tplCategoryGrid');
   grid.innerHTML = TPL_CATEGORIES.map(c =>
@@ -11684,11 +11638,12 @@ function tplGoToItems() {
   document.getElementById('tplStepCategories').style.display = 'none';
   document.getElementById('tplStepItems').style.display = 'block';
   document.getElementById('tplStepPaintForm').style.display = 'none';
+  document.getElementById('tplStepLinearForm').style.display = 'none';
   document.getElementById('tplItemCategoryTitle').textContent = _tplSelectedCategory;
   const items = TPL_ITEMS_BY_CATEGORY[_tplSelectedCategory] || [];
   const grid = document.getElementById('tplItemGrid');
   if (!items.length) {
-    grid.innerHTML = '<div class="small muted" style="padding:20px;text-align:center;grid-column:1/-1">Coming soon — only Painting is built out right now.</div>';
+    grid.innerHTML = '<div class="small muted" style="padding:20px;text-align:center;grid-column:1/-1">Coming soon — being built out category by category.</div>';
   } else {
     grid.innerHTML = items.map(it =>
       `<div class="wizard-category-card" onclick="tplSelectItem('${esc(it.key)}')">${esc(it.label)}</div>`
@@ -11708,9 +11663,102 @@ function tplSelectItem(key) {
     _tplSelectedGrade = 'low';
     tplRefreshGradeButtons();
     tplUpdatePaintPreview();
+  } else if (LINEAR_ITEMS[key]) {
+    _tplLinearKey = key;
+    document.getElementById('tplStepRooms').style.display = 'none';
+    document.getElementById('tplStepCategories').style.display = 'none';
+    document.getElementById('tplStepItems').style.display = 'none';
+    document.getElementById('tplStepLinearForm').style.display = 'block';
+    document.getElementById('tplLinearTitle').textContent = LINEAR_ITEMS[key].title;
+    document.getElementById('tplLinearFeet').value = '';
+    tplUpdateLinearPreview();
   }
 }
 window.tplSelectItem = tplSelectItem;
+
+let _tplLinearKey = null;
+
+function tplComputeLinear() {
+  const feet = parseFloat(document.getElementById('tplLinearFeet')?.value) || 0;
+  const item = LINEAR_ITEMS[_tplLinearKey];
+  if (!item) return { feet: 0, totalCost: 0, totalPrice: 0 };
+  const matCost = item.material ? feet * item.material.unitCost : 0;
+  const matPrice = item.material ? feet * item.material.unitPrice : 0;
+  const laborCost = feet * item.labor.unitCost;
+  const laborPrice = feet * item.labor.unitPrice;
+  return { feet, matCost, matPrice, laborCost, laborPrice, totalCost: matCost + laborCost, totalPrice: matPrice + laborPrice };
+}
+
+function tplUpdateLinearPreview() {
+  const r = tplComputeLinear();
+  const item = LINEAR_ITEMS[_tplLinearKey];
+  const el = document.getElementById('tplLinearPreview');
+  if (!el) return;
+  if (r.feet <= 0) { el.innerHTML = '<span class="muted">Enter linear feet to see pricing.</span>'; return; }
+  let html = '';
+  if (item.material) {
+    html += `<div style="display:flex;justify-content:space-between;margin-bottom:6px"><span>Material (${r.feet} lf @ $${item.material.unitPrice.toFixed(2)}/lf)</span><strong>$${r.matPrice.toFixed(2)}</strong></div>`;
+  }
+  html += `<div style="display:flex;justify-content:space-between;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid rgba(29,187,135,.25)"><span>Labor (${r.feet} lf @ $${item.labor.unitPrice.toFixed(2)}/lf)</span><strong>$${r.laborPrice.toFixed(2)}</strong></div>`;
+  html += `<div style="display:flex;justify-content:space-between;font-size:1rem;font-weight:800"><span>Total</span><span>$${r.totalPrice.toFixed(2)}</span></div>`;
+  el.innerHTML = html;
+}
+window.tplUpdateLinearPreview = tplUpdateLinearPreview;
+
+async function tplAddLinearToEstimate() {
+  if (!conCurrentJobId) { alert('Open a job first.'); return; }
+  const r = tplComputeLinear();
+  if (r.feet <= 0) { alert('Enter a linear footage greater than 0.'); return; }
+  const item = LINEAR_ITEMS[_tplLinearKey];
+
+  let group = estGroups.find(g => g.name.toLowerCase() === _tplSelectedRoom.toLowerCase());
+  if (!group) {
+    const ref = await coll('jobs').doc(conCurrentJobId).collection('estimateGroups').add({
+      name: _tplSelectedRoom, order: estGroups.length,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    group = { id: ref.id, name: _tplSelectedRoom, order: estGroups.length, subgroups: [], directItems: [] };
+    estGroups.push(group);
+  }
+
+  let subgroup = (group.subgroups || []).find(s => s.name.toLowerCase() === _tplSelectedCategory.toLowerCase());
+  if (!subgroup) {
+    const subRef = await coll('jobs').doc(conCurrentJobId).collection('estimateGroups')
+      .doc(group.id).collection('subgroups').add({
+        name: _tplSelectedCategory, order: group.subgroups?.length || 0,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+    subgroup = { id: subRef.id, name: _tplSelectedCategory, order: group.subgroups?.length || 0, items: [] };
+    if (!group.subgroups) group.subgroups = [];
+    group.subgroups.push(subgroup);
+  }
+
+  const itemsToAdd = [];
+  if (item.material) {
+    itemsToAdd.push({
+      desc: item.material.desc, qty: r.feet, unit: 'lf', costType: 'Materials',
+      unitCost: item.material.unitCost, unitPrice: item.material.unitPrice,
+      markup: Math.round((item.material.unitPrice / item.material.unitCost - 1) * 100)
+    });
+  }
+  itemsToAdd.push({
+    desc: item.labor.desc, qty: r.feet, unit: 'lf', costType: 'Labor',
+    unitCost: item.labor.unitCost, unitPrice: item.labor.unitPrice,
+    markup: Math.round((item.labor.unitPrice / item.labor.unitCost - 1) * 100)
+  });
+
+  let order = 0;
+  for (const it of itemsToAdd) {
+    await coll('jobs').doc(conCurrentJobId)
+      .collection('estimateGroups').doc(group.id)
+      .collection('subgroups').doc(subgroup.id)
+      .collection('items').add({ ...it, order: order++, createdAt: firebase.firestore.FieldValue.serverTimestamp() });
+  }
+
+  kClose('templatePickerModal');
+  if (typeof loadEstimate === 'function') loadEstimate(conCurrentJobId);
+}
+window.tplAddLinearToEstimate = tplAddLinearToEstimate;
 
 function tplRefreshGradeButtons() {
   document.querySelectorAll('.tpl-grade-btn').forEach(btn => {
