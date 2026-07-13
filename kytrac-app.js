@@ -1,4 +1,4 @@
-// JOBSpan Application JavaScript v2.15.0 · 13/Jul/2026
+// JOBSpan Application JavaScript v2.16.0 · 13/Jul/2026
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -11956,6 +11956,52 @@ const TIERED_BUNDLES = {
         low: { label: 'Simpson Strong-Tie LUS (2x8)', priceRange: '$2.99 + $17.25 labor/hanger', lines: [
           { desc: 'Simpson Strong-Tie LUS ZMAX Galvanized Face-Mount Joist Hanger for 2x8 Nominal Lumber', qty: 1, unitCost: 2.39, unitPrice: 2.988, unit: 'ea', type: 'material' },
           { desc: 'Joist hanger labor', qty: 1, unitCost: 15, unitPrice: 17.25, unit: 'hr', type: 'labor' },
+        ]},
+      }
+    },
+  ],
+  // Real catalog data. Only "Insulation Batting Labor Sq Ft" ($0.30/$0.345
+  // per sqft) is genuine, distinctly-named labor — everything else pairs
+  // with the same $100/hr filler noise seen in Framing. Rigid foam board
+  // (XPS) and spray foam sealant are intentionally NOT bundled for that
+  // reason; flagged for Travis if he wants real labor rates for those.
+  // Batt per-sqft prices are computed from the product's own stated
+  // dimensions (15in x 47in = 4.896 sqft/batt; 23in x 25ft = 47.917 sqft/
+  // roll) — real arithmetic on real numbers, not invented pricing.
+  '1300 Insulation': [
+    {
+      name: 'Blown-In Attic Insulation',
+      icon: '🧊',
+      desc: 'Per sqft — cellulose blown-in, all-in rate',
+      tiers: {
+        low: { label: 'Cellulose Blown-In', priceRange: '$2.375/sqft (all-in)', lines: [
+          { desc: 'Cellulose Blown-In insulation/sqft', qty: 1, unitCost: 1.90, unitPrice: 2.375, unit: 'sqft', type: 'material' },
+        ]},
+      }
+    },
+    {
+      name: 'Batt Insulation (R-15)',
+      icon: '🧱',
+      desc: 'Per sqft — wall/ceiling batt insulation',
+      tiers: {
+        low: { label: 'Standard Unfaced Batt', priceRange: '$0.25/sqft + $0.345 labor/sqft', lines: [
+          { desc: 'Owens Corning R-15 Thermafiber UltraBatt Unfaced Mineral Wool Insulation Batt (15in x 47in)', qty: 1, unitCost: 0.20, unitPrice: 0.25, unit: 'sqft', type: 'material' },
+          { desc: 'Insulation Batting Labor Sq Ft', qty: 1, unitCost: 0.30, unitPrice: 0.345, unit: 'hr', type: 'labor' },
+        ]},
+        high: { label: 'Fire & Sound Guard Batt', priceRange: '$0.34/sqft + $0.345 labor/sqft', lines: [
+          { desc: 'Owen Corning R15 Thermafiber Fire and Sound Guard Plus Mineral Wool Insulation Batt (15in x 47in)', qty: 1, unitCost: 0.27, unitPrice: 0.34, unit: 'sqft', type: 'material' },
+          { desc: 'Insulation Batting Labor Sq Ft', qty: 1, unitCost: 0.30, unitPrice: 0.345, unit: 'hr', type: 'labor' },
+        ]},
+      }
+    },
+    {
+      name: 'Attic Insulation Roll (R-30)',
+      icon: '🧊',
+      desc: 'Per sqft — unfaced fiberglass roll, attic-grade',
+      tiers: {
+        low: { label: 'Owens Corning R-30 Pink', priceRange: '$1.94/sqft + $0.345 labor/sqft', lines: [
+          { desc: 'Owens Corning R-30 PINK Unfaced Fiberglass Insulation Roll (23in x 25ft)', qty: 1, unitCost: 1.55, unitPrice: 1.94, unit: 'sqft', type: 'material' },
+          { desc: 'Insulation Batting Labor Sq Ft', qty: 1, unitCost: 0.30, unitPrice: 0.345, unit: 'hr', type: 'labor' },
         ]},
       }
     },
