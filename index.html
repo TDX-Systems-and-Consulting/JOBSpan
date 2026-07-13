@@ -920,7 +920,7 @@
     <div class="kt-logo">
       <div class="kt-logo-mark">JOBSpan</div>
       <div class="kt-logo-tag" id="ktCompanyTag">7 Pillars Contracting</div>
-      <div class="kt-logo-version" id="ktVersionTag">Version 2.12.0 · 13/Jul/2026</div>
+      <div class="kt-logo-version" id="ktVersionTag">Version 2.13.0 · 13/Jul/2026</div>
     </div>
 
     <nav class="kt-nav">
@@ -3551,6 +3551,14 @@
               <button class="btn" onclick="printPunchList()" style="padding:6px 14px;font-size:.82rem;background:linear-gradient(135deg,rgba(29,187,135,.2),rgba(13,148,136,.15));color:#a3f2d2;border-color:rgba(29,187,135,.3)">📋 Punch List</button>
             </div>
           </div>
+          <!-- Proposal History (Draft/Pending/Approved/Declined versions) -->
+          <div style="margin-bottom:14px;border:1px solid var(--line);border-radius:10px;overflow:hidden">
+            <button onclick="const p=document.getElementById('proposalHistoryList'); p.style.display = p.style.display==='none' ? 'block' : 'none';"
+              style="width:100%;text-align:left;padding:8px 12px;background:rgba(8,18,36,.6);border:none;color:var(--amber);font-size:.82rem;font-weight:700;cursor:pointer;display:flex;justify-content:space-between;align-items:center">
+              📜 Proposal History <span class="small muted" style="font-weight:400">click to expand/collapse</span>
+            </button>
+            <div id="proposalHistoryList" style="display:none"></div>
+          </div>
           <!-- Column headers -->
           <div class="est-col-header">
             <div></div><div>Description</div><div>Qty</div><div>Type</div>
@@ -3857,6 +3865,6 @@
   </div>
 </div>
 
-<script src="kytrac-app.js?v=202607131445"></script>
+<script src="kytrac-app.js?v=202607131530"></script>
 </body>
 </html>

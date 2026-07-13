@@ -1,4 +1,4 @@
-// JOBSpan Application JavaScript v2.12.0 · 13/Jul/2026
+// JOBSpan Application JavaScript v2.13.0 · 13/Jul/2026
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -9899,6 +9899,7 @@ function loadEstimate(jobId) {
       renderEstimateTree();
       updateEstimateSummary();
       renderPaymentScheduleControls(jobId);
+      loadProposals(jobId);
     })
     .catch(e => console.error('Estimate load error:', e));
 }
@@ -10545,65 +10546,93 @@ function showCatalogPicker(groupId) {
 
 // ── PRINT ESTIMATE ──
 // ── PRINT PROPOSAL (Customer-facing — totals only, no itemized costs, no scope notes) ──
-function printProposal() {
-  const job = conJobs.find(j => j.id === conCurrentJobId);
-  const co = companyProfile;
-  const itemized = !!document.getElementById('proposalItemizedToggle')?.checked;
-  const win = window.open('', '_blank');
+// Static legal boilerplate — not sourced from any specific document.
+// Original draft language; flagged for attorney review before being
+// treated as binding on real customers.
+const TERMS_AND_CONDITIONS = [
+  ['Scope of Work &amp; Pricing', `This Proposal reflects the scope of work and pricing outlined above, based on information and site conditions known at the time of preparation. Pricing is based on current material and labor costs; unless otherwise noted, any pending vendor bids or unforeseen site conditions discovered after acceptance may require a revised Change Order before affected work proceeds.`],
+  ['Payments', `Payment is due according to the Payment Schedule outlined above. Deposits are required to schedule and materially begin work. Late payments may result in a pause of work until the account is brought current. Accepted payment methods will be provided at signing.`],
+  ['Alterations &amp; Change Orders', `Any changes, additions, or alterations to the scope of work described in this Proposal — requested by the Customer or required due to unforeseen conditions — will be documented in a written Change Order reflecting any adjustment to price and/or schedule, and must be signed by both parties before the additional work begins.`],
+  ['Acceptance of Proposal', `This Proposal is not a binding contract until signed and dated by the Customer below. Signature constitutes acceptance of the scope of work, pricing, payment schedule, and these Terms &amp; Conditions in full.`],
+  ['Proposal Validity', `This Proposal is valid for thirty (30) days from the date shown above. Pricing is subject to change if not accepted within that window or if the scope of work changes after signing.`]
+];
 
+// Gathers everything the Proposal print needs into a plain, serializable
+// data object — no HTML, just structured facts (room/category/price/notes,
+// grand total, payment schedule). This is what gets frozen into a
+// versioned proposal snapshot in Firestore, AND what renderProposalDocumentHtml
+// turns into the printable page. Keeping these separate means a stored
+// snapshot can be reprinted byte-for-byte later even if the live estimate
+// has since changed.
+function computeProposalData(job, itemized) {
   let grandTotal = 0;
+  const rooms = [];
 
-  const roomSections = estGroups.map(group => {
+  estGroups.forEach(group => {
     const allItems = getAllItemsInGroup(group);
     const totals = calcGroupTotals(allItems);
-    if (totals.price <= 0) return '';
+    if (totals.price <= 0) return;
     // Price always counts toward the total, whether or not this scope is
     // shown to the customer — hiding a room/category only hides its
     // description, it doesn't mean the work (and its cost) isn't happening.
     grandTotal += totals.price;
-
-    if (group.visibleToCustomer === false) return '';
+    if (group.visibleToCustomer === false) return;
 
     const catBlocks = (group.subgroups || []).map(sub => {
-      if (sub.visibleToCustomer === false) return '';
+      if (sub.visibleToCustomer === false) return null;
       const st = calcGroupTotals(sub.items || []);
-      if (st.price <= 0) return '';
-      const label = customerSafeLabel(sub);
-      const priceHtml = itemized ? `<span style="float:right;font-weight:700;color:#1f2937">$${st.price.toFixed(2)}</span>` : '';
-      return `<div class="cat-block">
-        <div class="cat-name">${esc(label)}${priceHtml}</div>
-        ${sub.scopeNotes ? `<div class="cat-scope">${esc(sub.scopeNotes)}</div>` : ''}
-      </div>`;
-    }).join('');
+      if (st.price <= 0) return null;
+      return { label: customerSafeLabel(sub), price: st.price, scopeNotes: sub.scopeNotes || '' };
+    }).filter(Boolean);
 
     const directBlocks = (group.directItems || []).map(item => {
-      if (item.visibleToCustomer === false) return '';
+      if (item.visibleToCustomer === false) return null;
       const price = (item.qty || 1) * (item.unitPrice || item.unitCost || 0);
-      if (price <= 0) return '';
+      if (price <= 0) return null;
       const gradeWord = item.bundleTier ? ({ low: 'Low Grade', med: 'Medium Grade', high: 'High Grade' }[item.bundleTier] || '') : '';
       const label = gradeWord ? toGenericLabel(item.desc) + ' — ' + gradeWord : toGenericLabel(item.desc);
-      const priceHtml = itemized ? `<span style="float:right;font-weight:700;color:#1f2937">$${price.toFixed(2)}</span>` : '';
+      return { label, price, notes: item.notes || '' };
+    }).filter(Boolean);
+
+    if (!catBlocks.length && !directBlocks.length) return;
+    rooms.push({ name: group.name, catBlocks, directBlocks });
+  });
+
+  return {
+    itemized: !!itemized,
+    grandTotal,
+    rooms,
+    paymentSchedule: job?.paymentSchedule || null
+  };
+}
+
+// Turns a computeProposalData() result into the full printable HTML page.
+// Used both for a fresh live print and for reprinting a frozen historical
+// version — same renderer, different data source.
+function renderProposalDocumentHtml(data, job, co) {
+  const itemized = data.itemized;
+
+  const roomSections = data.rooms.map(room => {
+    const catHtml = room.catBlocks.map(c => {
+      const priceHtml = itemized ? `<span style="float:right;font-weight:700;color:#1f2937">$${c.price.toFixed(2)}</span>` : '';
       return `<div class="cat-block">
-        <div class="cat-name">${esc(label)}${priceHtml}</div>
-        ${item.notes ? `<div class="cat-scope">${esc(item.notes)}</div>` : ''}
+        <div class="cat-name">${esc(c.label)}${priceHtml}</div>
+        ${c.scopeNotes ? `<div class="cat-scope">${esc(c.scopeNotes)}</div>` : ''}
       </div>`;
     }).join('');
-
-    if (!catBlocks && !directBlocks) return '';
-
+    const directHtml = room.directBlocks.map(d => {
+      const priceHtml = itemized ? `<span style="float:right;font-weight:700;color:#1f2937">$${d.price.toFixed(2)}</span>` : '';
+      return `<div class="cat-block">
+        <div class="cat-name">${esc(d.label)}${priceHtml}</div>
+        ${d.notes ? `<div class="cat-scope">${esc(d.notes)}</div>` : ''}
+      </div>`;
+    }).join('');
     return `<div class="room-section">
-      <div class="room-heading">${esc(group.name)}</div>
-      ${catBlocks}${directBlocks}
+      <div class="room-heading">${esc(room.name)}</div>
+      ${catHtml}${directHtml}
     </div>`;
   }).join('');
 
-  const TERMS_AND_CONDITIONS = [
-    ['Scope of Work &amp; Pricing', `This Proposal reflects the scope of work and pricing outlined above, based on information and site conditions known at the time of preparation. Pricing is based on current material and labor costs; unless otherwise noted, any pending vendor bids or unforeseen site conditions discovered after acceptance may require a revised Change Order before affected work proceeds.`],
-    ['Payments', `Payment is due according to the Payment Schedule outlined above. Deposits are required to schedule and materially begin work. Late payments may result in a pause of work until the account is brought current. Accepted payment methods will be provided at signing.`],
-    ['Alterations &amp; Change Orders', `Any changes, additions, or alterations to the scope of work described in this Proposal — requested by the Customer or required due to unforeseen conditions — will be documented in a written Change Order reflecting any adjustment to price and/or schedule, and must be signed by both parties before the additional work begins.`],
-    ['Acceptance of Proposal', `This Proposal is not a binding contract until signed and dated by the Customer below. Signature constitutes acceptance of the scope of work, pricing, payment schedule, and these Terms &amp; Conditions in full.`],
-    ['Proposal Validity', `This Proposal is valid for thirty (30) days from the date shown above. Pricing is subject to change if not accepted within that window or if the scope of work changes after signing.`]
-  ];
   const termsHtml = `
   <div class="terms-block">
     <div class="payment-heading">Terms &amp; Conditions</div>
@@ -10614,7 +10643,7 @@ function printProposal() {
       </div>`).join('')}
   </div>`;
 
-  const paymentRows = getPaymentScheduleRows(job?.paymentSchedule, grandTotal);
+  const paymentRows = getPaymentScheduleRows(data.paymentSchedule, data.grandTotal);
   const paymentTableHtml = paymentRows.length ? `
   <div class="payment-schedule">
     <div class="payment-heading">Payment Schedule</div>
@@ -10630,7 +10659,7 @@ function printProposal() {
     </table>
   </div>` : '';
 
-  win.document.write(`<!DOCTYPE html><html><head><title>Proposal — ${esc(job?.name||'')}</title>
+  return `<!DOCTYPE html><html><head><title>Proposal — ${esc(job?.name||'')}</title>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap');
     * { box-sizing: border-box; }
@@ -10696,7 +10725,7 @@ function printProposal() {
 
   <div class="total-box">
     <div class="label">TOTAL PROJECT INVESTMENT</div>
-    <div class="amount">$${grandTotal.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+    <div class="amount">$${data.grandTotal.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
   </div>
 
   ${paymentTableHtml}
@@ -10718,7 +10747,109 @@ function printProposal() {
     ${esc(co.companyName||'')} · ${esc(co.phone||'')} · ${esc(co.email||'')}${co.license?' · License #'+esc(co.license):''}
   </div>
 
-  <script>window.print();<\/script></body></html>`);
+  <script>window.print();<\/script></body></html>`;
+}
+
+// ── Proposal version history (Draft → Pending → Approved/Declined) ──
+// Each print snapshots computeProposalData() into jobs/{jobId}/proposals/{id}.
+// While the latest version is still 'draft', reprinting updates that same
+// doc in place (no version-spam from routine reprints). Once a version is
+// marked Sent (locked to 'pending' or beyond), the NEXT print automatically
+// starts a new version — this is how "1250-1", "1250-2" happens naturally.
+let conProposals = [];
+
+function loadProposals(jobId) {
+  if (!conDb || !jobId) { conProposals = []; renderProposalHistory(); return; }
+  coll('jobs').doc(jobId).collection('proposals').orderBy('version', 'desc').get()
+    .then(snap => {
+      conProposals = [];
+      snap.forEach(d => conProposals.push({ id: d.id, ...d.data() }));
+      renderProposalHistory();
+    })
+    .catch(e => console.error('Proposal history load error:', e));
+}
+
+function saveProposalSnapshot(jobId, data) {
+  if (!conDb || !jobId) return;
+  const latest = conProposals[0];
+  if (latest && latest.status === 'draft') {
+    coll('jobs').doc(jobId).collection('proposals').doc(latest.id).update({
+      snapshot: data,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    }).then(() => loadProposals(jobId)).catch(e => console.error('Proposal snapshot update error:', e));
+  } else {
+    const version = latest ? (latest.version || 1) + 1 : 1;
+    coll('jobs').doc(jobId).collection('proposals').add({
+      version, status: 'draft', snapshot: data,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      createdBy: conCurrentUser ? conCurrentUser.email : 'unknown'
+    }).then(() => loadProposals(jobId)).catch(e => console.error('Proposal snapshot create error:', e));
+  }
+}
+
+// Manual status transitions until real e-signature capture wires these
+// automatically. 'pending' = marked Sent (locks the snapshot); 'approved'/
+// 'declined' = customer response, recorded manually for now.
+function markProposalStatus(proposalId, newStatus) {
+  if (!conDb || !conCurrentJobId) return;
+  const extra = {};
+  if (newStatus === 'pending') extra.sentAt = firebase.firestore.FieldValue.serverTimestamp();
+  if (newStatus === 'approved' || newStatus === 'declined') extra.respondedAt = firebase.firestore.FieldValue.serverTimestamp();
+  coll('jobs').doc(conCurrentJobId).collection('proposals').doc(proposalId).update({ status: newStatus, ...extra })
+    .then(() => loadProposals(conCurrentJobId))
+    .catch(e => alert('Error updating proposal status: ' + e.message));
+}
+window.markProposalStatus = markProposalStatus;
+
+// Reprints a frozen historical version exactly as it looked when saved —
+// no live recompute against today's estimate.
+function reprintProposalVersion(proposalId) {
+  const job = conJobs.find(j => j.id === conCurrentJobId);
+  const co = companyProfile;
+  const prop = conProposals.find(p => p.id === proposalId);
+  if (!prop) return;
+  const win = window.open('', '_blank');
+  win.document.write(renderProposalDocumentHtml(prop.snapshot, job, co));
+  win.document.close();
+}
+window.reprintProposalVersion = reprintProposalVersion;
+
+function renderProposalHistory() {
+  const el = document.getElementById('proposalHistoryList');
+  if (!el) return;
+  if (!conProposals.length) {
+    el.innerHTML = '<div class="small muted" style="font-style:italic;padding:8px 4px">No proposals printed yet for this job.</div>';
+    return;
+  }
+  const STATUS_COLORS = { draft: '#9ca3af', pending: '#d97706', approved: '#1dbb87', declined: '#ef4444' };
+  const job = conJobs.find(j => j.id === conCurrentJobId);
+  el.innerHTML = conProposals.map(p => {
+    const color = STATUS_COLORS[p.status] || '#9ca3af';
+    const label = (job?.jobNumber || '') + '-' + p.version;
+    const actions = [];
+    if (p.status === 'draft') actions.push(`<button class="btn" style="padding:3px 10px;font-size:.75rem" onclick="markProposalStatus('${p.id}','pending')">Mark Sent</button>`);
+    if (p.status === 'pending') {
+      actions.push(`<button class="btn" style="padding:3px 10px;font-size:.75rem;color:#1dbb87" onclick="markProposalStatus('${p.id}','approved')">Mark Approved</button>`);
+      actions.push(`<button class="btn" style="padding:3px 10px;font-size:.75rem;color:#ef4444" onclick="markProposalStatus('${p.id}','declined')">Mark Declined</button>`);
+    }
+    actions.push(`<button class="btn" style="padding:3px 10px;font-size:.75rem" onclick="reprintProposalVersion('${p.id}')">🖨 Reprint</button>`);
+    return `<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-bottom:1px solid var(--line)">
+      <span style="font-weight:700;color:var(--amber);min-width:90px">${esc(label)}</span>
+      <span style="text-transform:uppercase;font-size:.7rem;font-weight:800;color:${color};background:${color}22;padding:2px 8px;border-radius:6px">${esc(p.status)}</span>
+      <span style="margin-left:auto;display:flex;gap:6px">${actions.join('')}</span>
+    </div>`;
+  }).join('');
+}
+window.renderProposalHistory = renderProposalHistory;
+
+function printProposal() {
+  const job = conJobs.find(j => j.id === conCurrentJobId);
+  const co = companyProfile;
+  const itemized = !!document.getElementById('proposalItemizedToggle')?.checked;
+  const data = computeProposalData(job, itemized);
+  saveProposalSnapshot(conCurrentJobId, data);
+  const win = window.open('', '_blank');
+  win.document.write(renderProposalDocumentHtml(data, job, co));
   win.document.close();
 }
 window.printProposal = printProposal;
