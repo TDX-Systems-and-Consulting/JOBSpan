@@ -1,4 +1,4 @@
-// JOBSpan Application JavaScript v2.16.0 · 13/Jul/2026
+// JOBSpan Application JavaScript v2.17.0 · 13/Jul/2026
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -12002,6 +12002,95 @@ const TIERED_BUNDLES = {
         low: { label: 'Owens Corning R-30 Pink', priceRange: '$1.94/sqft + $0.345 labor/sqft', lines: [
           { desc: 'Owens Corning R-30 PINK Unfaced Fiberglass Insulation Roll (23in x 25ft)', qty: 1, unitCost: 1.55, unitPrice: 1.94, unit: 'sqft', type: 'material' },
           { desc: 'Insulation Batting Labor Sq Ft', qty: 1, unitCost: 0.30, unitPrice: 0.345, unit: 'hr', type: 'labor' },
+        ]},
+      }
+    },
+  ],
+  // Real catalog data. Three genuinely distinct labor rates exist here
+  // (wall register, floor register, thermostat install), plus three real
+  // flat-rate service/install lines mislabeled as "materials" in the
+  // export but functioning as complete all-in charges (HVAC Clean & Check,
+  // Install AC Cage, Install new AC & Furnace). NOT bundled: air filters,
+  // ductwork elbows/pipe/caps, window AC unit — all only pair with the
+  // same $100/hr filler noise seen in Framing/Insulation; flagged for
+  // Travis if real labor rates exist for these.
+  '1200 Mechanical': [
+    {
+      name: 'Programmable Thermostat Install',
+      icon: '🌡️',
+      desc: 'Thermostat swap with install labor',
+      tiers: {
+        low: { label: '1-Week Programmable', priceRange: '$37.48 + $57.50 labor', lines: [
+          { desc: '1 Week Programmable Thermostat', qty: 1, unitCost: 29.98, unitPrice: 37.475, unit: 'ea', type: 'material' },
+          { desc: 'Programmable Thermostat Install Labor', qty: 1, unitCost: 50, unitPrice: 57.50, unit: 'hr', type: 'labor' },
+        ]},
+      }
+    },
+    {
+      name: 'Wall/Ceiling Supply Register Install',
+      icon: '💨',
+      desc: 'Per register — 2-way wall or ceiling supply',
+      tiers: {
+        low: { label: '12in x 6in 2-Way Register', priceRange: '$18.59 + $28.75 labor', lines: [
+          { desc: '12 in. x 6 in. 2-Way Wall/Ceiling Register', qty: 1, unitCost: 14.87, unitPrice: 18.588, unit: 'ea', type: 'material' },
+          { desc: 'Labor to Install wall register', qty: 1, unitCost: 25, unitPrice: 28.75, unit: 'hr', type: 'labor' },
+        ]},
+      }
+    },
+    {
+      name: 'Return Air Grille Install',
+      icon: '🌀',
+      desc: 'Per grille — wall-mounted return air',
+      tiers: {
+        low: { label: '30in x 10in White Return Grille', priceRange: '$25.00 + $28.75 labor', lines: [
+          { desc: 'Everbilt 30 in. x 10 in. White Return Air Grille', qty: 1, unitCost: 20.00, unitPrice: 25.00, unit: 'ea', type: 'material' },
+          { desc: 'Labor to Install wall register', qty: 1, unitCost: 25, unitPrice: 28.75, unit: 'hr', type: 'labor' },
+        ]},
+      }
+    },
+    {
+      name: 'Floor Register/Diffuser Install',
+      icon: '⬜',
+      desc: 'Per register — floor-mounted supply',
+      tiers: {
+        low: { label: '4in x 10in White Floor Diffuser', priceRange: '$16.21 + $11.50 labor', lines: [
+          { desc: 'Everbilt 4 in. x 10 in. White Floor Diffuser', qty: 1, unitCost: 12.97, unitPrice: 16.213, unit: 'ea', type: 'material' },
+          { desc: 'Labor to install floor register', qty: 1, unitCost: 10, unitPrice: 11.50, unit: 'hr', type: 'labor' },
+        ]},
+        high: { label: '4in x 10in Brown Steel Register', priceRange: '$16.21 + $11.50 labor', lines: [
+          { desc: 'Everbilt 4 in. x 10 in. 2-Way Steel Floor Register in Brown', qty: 1, unitCost: 12.97, unitPrice: 16.213, unit: 'ea', type: 'material' },
+          { desc: 'Labor to install floor register', qty: 1, unitCost: 10, unitPrice: 11.50, unit: 'hr', type: 'labor' },
+        ]},
+      }
+    },
+    {
+      name: 'AC Security Cage Install',
+      icon: '🔒',
+      desc: 'Cage + real install service, per unit',
+      tiers: {
+        low: { label: 'Reinforced Steel AC Cage', priceRange: '$294.99 + $618.75 install', lines: [
+          { desc: 'AC Security Cage, Adjustable Height and Width, Steel Air Conditioner Cage (Reinforced Version)', qty: 1, unitCost: 235.99, unitPrice: 294.988, unit: 'ea', type: 'material' },
+          { desc: 'Install AC Cage', qty: 1, unitCost: 495.00, unitPrice: 618.75, unit: 'ea', type: 'labor' },
+        ]},
+      }
+    },
+    {
+      name: 'Full HVAC System Replacement',
+      icon: '❄️',
+      desc: 'AC & furnace, complete install — real all-in flat rate',
+      tiers: {
+        low: { label: 'Install New AC & Furnace', priceRange: '$7,218.75 (all-in)', lines: [
+          { desc: 'Install new AC & Furnace', qty: 1, unitCost: 5775.00, unitPrice: 7218.75, unit: 'ea', type: 'material' },
+        ]},
+      }
+    },
+    {
+      name: 'HVAC Clean & Check (Service)',
+      icon: '🔧',
+      desc: 'Maintenance service call — real all-in flat rate',
+      tiers: {
+        low: { label: "JC's AC Clean & Check", priceRange: '$156.25 (all-in)', lines: [
+          { desc: "HVAC Clean & Check (JC's AC)", qty: 1, unitCost: 125.00, unitPrice: 156.25, unit: 'ea', type: 'material' },
         ]},
       }
     },
