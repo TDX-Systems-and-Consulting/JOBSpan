@@ -1,4 +1,4 @@
-// JOBSpan Application JavaScript v2.6.1 · 11/Jul/2026
+// JOBSpan Application JavaScript v2.7.0 · 11/Jul/2026
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -11528,7 +11528,11 @@ const TPL_ITEMS_BY_CATEGORY = {
   'Painting': [{ key: 'paint', label: 'Paint — 1 Coat Per Sq Ft' }],
   'Trim': [
     { key: 'baseboard', label: 'Baseboard — Per Linear Ft' },
-    { key: 'quarterround', label: 'Quarter Round — Per Linear Ft' }
+    { key: 'quarterround', label: 'Quarter Round — Per Linear Ft' },
+    { key: 'windowcasing', label: 'Window Casing — Per Linear Ft' }
+  ],
+  'Electrical: final': [
+    { key: 'outletreplace', label: 'Outlet Replace (Standard, Non-GFCI)' }
   ]
 };
 
@@ -11537,13 +11541,31 @@ const TPL_ITEMS_BY_CATEGORY = {
 const LINEAR_ITEMS = {
   baseboard: {
     title: 'Baseboard — Per Linear Ft',
+    unitLabel: 'Linear Feet',
+    qtyUnit: 'lf',
     material: { desc: 'CMPC WM 356 11/16 in. x 2 1/4 in. x 168 in. Pine Primed Finger-Jointed Casing Pro Pack (12-Pieces)', unitCost: 0.99, unitPrice: 1.238 },
     labor: { desc: 'Labor to Install Baseboards per linear ft', unitCost: 3.30, unitPrice: 3.795 }
   },
   quarterround: {
     title: 'Quarter Round — Per Linear Ft',
+    unitLabel: 'Linear Feet',
+    qtyUnit: 'lf',
     material: null,
     labor: { desc: 'Quarter round (paint & install) per linear foot', unitCost: 8.00, unitPrice: 9.20 }
+  },
+  windowcasing: {
+    title: 'Window Casing — Per Linear Ft',
+    unitLabel: 'Linear Feet',
+    qtyUnit: 'lf',
+    material: { desc: 'Alexandria Moulding 5/8 in. x 3-1/2 in. x 171 in. Primed Finger-Jointed Pine Wood Casing Molding Pro-Pack (6-Pack)', unitCost: 1.40, unitPrice: 1.75 },
+    labor: { desc: 'Labor to Install Baseboards per linear ft', unitCost: 3.30, unitPrice: 3.795 }
+  },
+  outletreplace: {
+    title: 'Outlet Replace (Standard, Non-GFCI)',
+    unitLabel: 'Number of Outlets',
+    qtyUnit: 'ea',
+    material: { desc: 'Leviton 15 Amp Residential Grade Grounding Duplex Outlet, White', unitCost: 0.77, unitPrice: 0.963 },
+    labor: { desc: 'Labor to Install outlet', unitCost: 25.00, unitPrice: 28.75 }
   }
 };
 
@@ -11670,6 +11692,7 @@ function tplSelectItem(key) {
     document.getElementById('tplStepItems').style.display = 'none';
     document.getElementById('tplStepLinearForm').style.display = 'block';
     document.getElementById('tplLinearTitle').textContent = LINEAR_ITEMS[key].title;
+    document.getElementById('tplLinearLabel').textContent = LINEAR_ITEMS[key].unitLabel || 'Quantity';
     document.getElementById('tplLinearFeet').value = '';
     tplUpdateLinearPreview();
   }
@@ -11695,11 +11718,12 @@ function tplUpdateLinearPreview() {
   const el = document.getElementById('tplLinearPreview');
   if (!el) return;
   if (r.feet <= 0) { el.innerHTML = '<span class="muted">Enter linear feet to see pricing.</span>'; return; }
+  const unitAbbr = item.qtyUnit === 'ea' ? 'ea' : 'lf';
   let html = '';
   if (item.material) {
-    html += `<div style="display:flex;justify-content:space-between;margin-bottom:6px"><span>Material (${r.feet} lf @ $${item.material.unitPrice.toFixed(2)}/lf)</span><strong>$${r.matPrice.toFixed(2)}</strong></div>`;
+    html += `<div style="display:flex;justify-content:space-between;margin-bottom:6px"><span>Material (${r.feet} ${unitAbbr} @ $${item.material.unitPrice.toFixed(2)}/${unitAbbr})</span><strong>$${r.matPrice.toFixed(2)}</strong></div>`;
   }
-  html += `<div style="display:flex;justify-content:space-between;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid rgba(29,187,135,.25)"><span>Labor (${r.feet} lf @ $${item.labor.unitPrice.toFixed(2)}/lf)</span><strong>$${r.laborPrice.toFixed(2)}</strong></div>`;
+  html += `<div style="display:flex;justify-content:space-between;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid rgba(29,187,135,.25)"><span>Labor (${r.feet} ${unitAbbr} @ $${item.labor.unitPrice.toFixed(2)}/${unitAbbr})</span><strong>$${r.laborPrice.toFixed(2)}</strong></div>`;
   html += `<div style="display:flex;justify-content:space-between;font-size:1rem;font-weight:800"><span>Total</span><span>$${r.totalPrice.toFixed(2)}</span></div>`;
   el.innerHTML = html;
 }
@@ -11736,13 +11760,13 @@ async function tplAddLinearToEstimate() {
   const itemsToAdd = [];
   if (item.material) {
     itemsToAdd.push({
-      desc: item.material.desc, qty: r.feet, unit: 'lf', costType: 'Materials',
+      desc: item.material.desc, qty: r.feet, unit: item.qtyUnit || 'lf', costType: 'Materials',
       unitCost: item.material.unitCost, unitPrice: item.material.unitPrice,
       markup: Math.round((item.material.unitPrice / item.material.unitCost - 1) * 100)
     });
   }
   itemsToAdd.push({
-    desc: item.labor.desc, qty: r.feet, unit: 'lf', costType: 'Labor',
+    desc: item.labor.desc, qty: r.feet, unit: item.qtyUnit || 'lf', costType: 'Labor',
     unitCost: item.labor.unitCost, unitPrice: item.labor.unitPrice,
     markup: Math.round((item.labor.unitPrice / item.labor.unitCost - 1) * 100)
   });
