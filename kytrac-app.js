@@ -1,4 +1,4 @@
-// JOBSpan Application JavaScript v2.8.0 · 11/Jul/2026
+// JOBSpan Application JavaScript v2.9.0 · 11/Jul/2026
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -11443,6 +11443,34 @@ const TIERED_BUNDLES = {
         high: { label: 'Full Day + Dumpster', priceRange: '8 hrs + dumpster', lines: [
           { desc: 'Trash removal per hour', qty: 8, unitCost: 100, unitPrice: 115, unit: 'hr', type: 'labor' },
           { desc: 'Dumpster Rental', qty: 1, unitCost: 500, unitPrice: 625, unit: 'ea', type: 'other' },
+        ]},
+      }
+    },
+  ],
+  '2500 Decking': [
+    {
+      name: 'Deck Board Replace',
+      icon: '🪵',
+      desc: 'Replace deck boards per board (16 ft. length)',
+      tiers: {
+        low: { label: 'Pressure-Treated Pine', priceRange: '$15.60/board', lines: [
+          { desc: 'WeatherShield 5/4 in. x 6 in. x 16 ft. Standard Ground Contact Pressure-Treated Southern Yellow Pine Decking Board', qty: 1, unitCost: 12.48, unitPrice: 15.60, unit: 'ea', type: 'material' },
+          { desc: 'Deck Board Install Labor', qty: 1, unitCost: 50, unitPrice: 57.50, unit: 'hr', type: 'labor' },
+        ]},
+        high: { label: 'Composite (NewTechWood)', priceRange: '$114.08/board', lines: [
+          { desc: 'NewTechWood Cortes Plus 0.88 in. x 5.43 in. x 16 ft. Rustic and Wood Grain Peruvian Teak Composite Decking Board', qty: 1, unitCost: 91.26, unitPrice: 114.075, unit: 'ea', type: 'material' },
+          { desc: 'Deck Board Install Labor', qty: 1, unitCost: 50, unitPrice: 57.50, unit: 'hr', type: 'labor' },
+        ]},
+      }
+    },
+    {
+      name: 'Composite Railing Install',
+      icon: '🛡️',
+      desc: 'Composite railing kit, per 6 ft. section',
+      tiers: {
+        low: { label: '6 ft. Railing Kit', priceRange: '$180.00/section', lines: [
+          { desc: 'NewTechWood Ultrashield Hemispheres 36 in. x 3 in. x 6 ft. Brown Peruvian Teak Composite Railing Kit', qty: 1, unitCost: 144.00, unitPrice: 180.00, unit: 'ea', type: 'material' },
+          { desc: 'Labor to install composite railing', qty: 1, unitCost: 300, unitPrice: 345, unit: 'hr', type: 'labor' },
         ]},
       }
     },
