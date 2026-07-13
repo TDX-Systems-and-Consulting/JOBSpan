@@ -1,4 +1,4 @@
-// JOBSpan Application JavaScript v2.23.0 · 13/Jul/2026
+// JOBSpan Application JavaScript v2.24.0 · 13/Jul/2026
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -8440,6 +8440,20 @@ function renderPortalProposal(prop, jobId) {
   if (!section || !body) return;
   section.style.display = 'block';
 
+  // Real "viewed" tracking — the one honest piece of the sent/opened/viewed
+  // audit trail JOBSpan can actually deliver right now, since it doesn't
+  // send email itself (every "email" action is a mailto: link opening the
+  // user's own client — no way to embed an open-tracking pixel on top of
+  // that without switching to a real transactional email API). This
+  // records the moment the customer actually looks at their Pending
+  // proposal in the portal — a real signal, just not the same thing as
+  // "email opened". Only fires once, on first view.
+  if (prop.status === 'pending' && !prop.viewedAt) {
+    _portalProposalColl(jobId).doc(prop.id).update({
+      viewedAt: firebase.firestore.FieldValue.serverTimestamp()
+    }).then(() => { prop.viewedAt = { toDate: () => new Date() }; }).catch(() => {});
+  }
+
   const data = prop.snapshot || { rooms: [], grandTotal: 0, itemized: false, paymentSchedule: null };
   const roomsHtml = data.rooms.map(room => {
     const lines = [...room.catBlocks, ...room.directBlocks];
@@ -11113,9 +11127,13 @@ function renderProposalHistory() {
       actions.push(`<button class="btn" style="padding:3px 10px;font-size:.75rem;color:#ef4444" onclick="markProposalStatus('${p.id}','declined')">Mark Declined</button>`);
     }
     actions.push(`<button class="btn" style="padding:3px 10px;font-size:.75rem" onclick="reprintProposalVersion('${p.id}')">🖨 Reprint</button>`);
+    const viewedText = p.viewedAt?.toDate
+      ? `<span style="font-size:.72rem;color:#1dbb87" title="Customer opened this proposal in the portal">👁 Viewed ${p.viewedAt.toDate().toLocaleDateString()}</span>`
+      : (p.status === 'pending' ? `<span style="font-size:.72rem;color:var(--muted)">Not yet viewed</span>` : '');
     return `<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-bottom:1px solid var(--line)">
       <span style="font-weight:700;color:var(--amber);min-width:90px">${esc(label)}</span>
       <span style="text-transform:uppercase;font-size:.7rem;font-weight:800;color:${color};background:${color}22;padding:2px 8px;border-radius:6px">${esc(p.status)}</span>
+      ${viewedText}
       <span style="margin-left:auto;display:flex;gap:6px">${actions.join('')}</span>
     </div>`;
   }).join('');
