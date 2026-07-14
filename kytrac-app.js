@@ -1,4 +1,4 @@
-// JOBSpan Application JavaScript v2.37.0 · 14/Jul/2026
+// JOBSpan Application JavaScript v2.38.0 · 14/Jul/2026
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -9216,6 +9216,7 @@ function renderActiveReport() {
     case 'time': renderLaborReport(el, f); break;
     case 'invoices': renderInvoicesReport(el, f); break;
     case 'vendors': renderVendorsReport(el); break;
+    case 'eos': renderEOSReport(el); break;
   }
 }
 
@@ -9399,7 +9400,299 @@ function renderPipelineReport(el) {
     </div>`;
 }
 
-// ── LABOR REPORT ──
+// ── EOS: Rocks / Scorecard / Issues ──
+// Company-wide leadership tooling (Traction-style), living in Reports so
+// every team member with report access can VIEW it — unlike KYTHROS
+// (single-user), this needs to be visible to Jason, Shane, Gonzalo, etc.
+// Editing (adding Rocks, entering weekly Scorecard numbers, managing
+// Issues) is gated to leadership-level roles (Superintendent and up,
+// role level >= 55) since that's who'd actually run a Level 10 meeting;
+// everyone else sees it read-only.
+let eosRocks = [];
+let eosMetrics = [];
+let eosIssues = [];
+
+function eosCanEdit() {
+  return (KYTRAC_ROLES[currentUserRole]?.level || 0) >= 55;
+}
+
+// Monday of the current week, as a YYYY-MM-DD key — this is what a
+// Scorecard value gets filed under.
+function getWeekKey(date) {
+  const d = date ? new Date(date) : new Date();
+  const day = d.getDay();
+  const diff = (day === 0 ? -6 : 1) - day;
+  d.setDate(d.getDate() + diff);
+  return d.toISOString().split('T')[0];
+}
+
+function renderEOSReport(el) {
+  el.innerHTML = '<div style="text-align:center;padding:40px;color:var(--muted)">Loading EOS data...</div>';
+  Promise.all([
+    coll('eosRocks').get().catch(() => ({ forEach: () => {} })),
+    coll('eosScorecardMetrics').get().catch(() => ({ forEach: () => {} })),
+    coll('eosIssues').get().catch(() => ({ forEach: () => {} }))
+  ]).then(([rocksSnap, metricsSnap, issuesSnap]) => {
+    eosRocks = []; rocksSnap.forEach(d => eosRocks.push({ id: d.id, ...d.data() }));
+    eosRocks.sort((a, b) => (b.createdAtMs || 0) - (a.createdAtMs || 0));
+    eosMetrics = []; metricsSnap.forEach(d => eosMetrics.push({ id: d.id, ...d.data() }));
+    eosMetrics.sort((a, b) => (a.order || 0) - (b.order || 0));
+    eosIssues = []; issuesSnap.forEach(d => eosIssues.push({ id: d.id, ...d.data() }));
+    eosIssues.sort((a, b) => (b.createdAtMs || 0) - (a.createdAtMs || 0));
+    renderEOSContent(el);
+  }).catch(e => { el.innerHTML = '<div class="small muted">Could not load EOS data: ' + esc(e.message) + '</div>'; });
+}
+window.renderEOSReport = renderEOSReport;
+
+function renderEOSContent(el) {
+  const canEdit = eosCanEdit();
+  const ROCK_COLORS = { 'On Track': '#1dbb87', 'Off Track': '#ef4444', 'Done': '#6366f1' };
+  const weekKey = getWeekKey();
+
+  const rocksHtml = eosRocks.length ? eosRocks.map(r => {
+    const color = ROCK_COLORS[r.status] || '#9ca3af';
+    return `<div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line)">
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:700;font-size:.9rem">${esc(r.title || '')}</div>
+        <div class="small muted">${esc(r.ownerName || '')}${r.dueDate ? ' · Due ' + esc(r.dueDate) : ''}</div>
+      </div>
+      ${canEdit ? `
+        <select onchange="updateRockStatus('${r.id}',this.value)" style="font-size:.72rem;padding:3px 8px;border-radius:6px;background:${color}22;color:${color};border:1px solid ${color}44;font-weight:700">
+          ${['On Track', 'Off Track', 'Done'].map(s => `<option value="${s}" ${s === r.status ? 'selected' : ''}>${s}</option>`).join('')}
+        </select>
+        <button class="btn btn-danger" style="padding:3px 8px;font-size:.7rem" onclick="deleteRock('${r.id}')">✕</button>`
+      : `<span style="font-size:.7rem;font-weight:800;color:${color};background:${color}22;padding:2px 8px;border-radius:6px">${esc(r.status || 'On Track')}</span>`}
+    </div>`;
+  }).join('') : '<div class="small muted" style="font-style:italic;padding:6px 0">No Rocks set yet.</div>';
+
+  const metricsHtml = eosMetrics.length ? `
+    <table style="width:100%;border-collapse:collapse">
+      <thead><tr style="border-bottom:1px solid var(--line)">
+        <th style="text-align:left;padding:6px 4px;font-size:.72rem;color:var(--muted);text-transform:uppercase">Metric</th>
+        <th style="text-align:left;padding:6px 4px;font-size:.72rem;color:var(--muted);text-transform:uppercase">Owner</th>
+        <th style="text-align:center;padding:6px 4px;font-size:.72rem;color:var(--muted);text-transform:uppercase">Goal</th>
+        <th style="text-align:center;padding:6px 4px;font-size:.72rem;color:var(--muted);text-transform:uppercase">This Week</th>
+        <th></th>
+      </tr></thead>
+      <tbody>
+        ${eosMetrics.map(m => {
+          const values = m.values || {};
+          const thisWeekVal = values[weekKey];
+          const goal = Number(m.goal || 0);
+          let indicator = '#9ca3af';
+          if (thisWeekVal !== undefined && thisWeekVal !== null && thisWeekVal !== '') {
+            const hit = m.higherIsBetter === false ? (Number(thisWeekVal) <= goal) : (Number(thisWeekVal) >= goal);
+            const near = m.higherIsBetter === false ? (Number(thisWeekVal) <= goal * 1.1) : (Number(thisWeekVal) >= goal * 0.9);
+            indicator = hit ? '#1dbb87' : (near ? '#f59e0b' : '#ef4444');
+          }
+          return `<tr style="border-bottom:1px solid rgba(110,145,210,.07)">
+            <td style="padding:8px 4px;font-weight:700;font-size:.85rem">${esc(m.name || '')}</td>
+            <td style="padding:8px 4px;font-size:.8rem;color:var(--muted)">${esc(m.ownerName || '')}</td>
+            <td style="padding:8px 4px;text-align:center;font-size:.85rem">${goal.toLocaleString()}</td>
+            <td style="padding:8px 4px;text-align:center">
+              ${canEdit
+                ? `<input type="number" id="metricVal_${m.id}" value="${thisWeekVal !== undefined ? thisWeekVal : ''}" style="width:80px;text-align:center;padding:3px 6px;border-radius:6px;border:1px solid ${indicator}66;background:${indicator}15;color:#eaf0fb" onchange="saveMetricValue('${m.id}',this.value)" />`
+                : `<span style="display:inline-block;padding:2px 10px;border-radius:6px;background:${indicator}22;color:${indicator};font-weight:800">${thisWeekVal !== undefined ? thisWeekVal : '—'}</span>`}
+            </td>
+            <td style="padding:8px 4px;text-align:right">${canEdit ? `<button class="btn btn-danger" style="padding:3px 8px;font-size:.7rem" onclick="deleteMetric('${m.id}')">✕</button>` : ''}</td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>` : '<div class="small muted" style="font-style:italic;padding:6px 0">No Scorecard metrics set yet.</div>';
+
+  const issuesHtml = eosIssues.length ? eosIssues.map(i => `
+    <div style="padding:9px 0;border-bottom:1px solid var(--line)">
+      <div style="display:flex;align-items:center;gap:10px">
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:700;font-size:.9rem;${i.status === 'Solved' ? 'text-decoration:line-through;color:var(--muted)' : ''}">${esc(i.title || '')}</div>
+          <div class="small muted">${esc(i.raisedBy || '')}</div>
+        </div>
+        ${canEdit ? `
+          <select onchange="updateIssueStatus('${i.id}',this.value)" style="font-size:.72rem;padding:3px 8px;border-radius:6px;background:${i.status === 'Solved' ? '#1dbb8722' : '#d9770622'};color:${i.status === 'Solved' ? '#1dbb87' : '#d97706'};border:1px solid ${i.status === 'Solved' ? '#1dbb8744' : '#d9770644'};font-weight:700">
+            <option value="Open" ${i.status !== 'Solved' ? 'selected' : ''}>Open</option>
+            <option value="Solved" ${i.status === 'Solved' ? 'selected' : ''}>Solved</option>
+          </select>
+          <button class="btn btn-danger" style="padding:3px 8px;font-size:.7rem" onclick="deleteIssue('${i.id}')">✕</button>`
+        : `<span style="font-size:.7rem;font-weight:800;color:${i.status === 'Solved' ? '#1dbb87' : '#d97706'};background:${i.status === 'Solved' ? '#1dbb8722' : '#d9770622'};padding:2px 8px;border-radius:6px">${esc(i.status || 'Open')}</span>`}
+      </div>
+      ${i.notes ? `<div class="small muted" style="margin-top:4px;padding-left:2px">${esc(i.notes)}</div>` : ''}
+    </div>`).join('') : '<div class="small muted" style="font-style:italic;padding:6px 0">No open issues. 🎉</div>';
+
+  el.innerHTML = `
+    <div class="kt-card" style="margin-bottom:16px">
+      <div class="kt-card-head"><h3>🪨 Rocks — This Quarter's Priorities</h3>${canEdit ? `<button class="btn-amber" style="padding:4px 12px;font-size:.78rem" onclick="toggleAddRockForm()">+ Add Rock</button>` : ''}</div>
+      <div class="kt-card-body">
+        <div id="addRockForm" style="display:none;margin-bottom:14px;padding:12px;background:rgba(8,18,36,.5);border-radius:8px">
+          <input id="newRockTitle" placeholder="Rock title (e.g. 'Land 3 anchor retainer clients')" style="width:100%;margin-bottom:6px;padding:6px 8px;box-sizing:border-box" />
+          <div style="display:flex;gap:6px">
+            <input id="newRockOwner" placeholder="Owner name" style="flex:1;padding:6px 8px" />
+            <input id="newRockDue" type="date" style="padding:6px 8px" />
+          </div>
+          <div style="margin-top:8px;display:flex;gap:6px">
+            <button class="btn-amber" style="padding:4px 12px;font-size:.78rem" onclick="saveRock()">Save</button>
+            <button class="btn" style="padding:4px 12px;font-size:.78rem" onclick="toggleAddRockForm()">Cancel</button>
+          </div>
+        </div>
+        ${rocksHtml}
+      </div>
+    </div>
+
+    <div class="kt-card" style="margin-bottom:16px">
+      <div class="kt-card-head"><h3>📊 Scorecard — Week of ${weekKey}</h3>${canEdit ? `<button class="btn-amber" style="padding:4px 12px;font-size:.78rem" onclick="toggleAddMetricForm()">+ Add Metric</button>` : ''}</div>
+      <div class="kt-card-body">
+        <div id="addMetricForm" style="display:none;margin-bottom:14px;padding:12px;background:rgba(8,18,36,.5);border-radius:8px">
+          <input id="newMetricName" placeholder="Metric name (e.g. 'New leads this week')" style="width:100%;margin-bottom:6px;padding:6px 8px;box-sizing:border-box" />
+          <div style="display:flex;gap:6px">
+            <input id="newMetricOwner" placeholder="Owner name" style="flex:1;padding:6px 8px" />
+            <input id="newMetricGoal" type="number" placeholder="Goal number" style="width:120px;padding:6px 8px" />
+            <select id="newMetricDirection" style="padding:6px 8px">
+              <option value="higher">Higher is better</option>
+              <option value="lower">Lower is better</option>
+            </select>
+          </div>
+          <div style="margin-top:8px;display:flex;gap:6px">
+            <button class="btn-amber" style="padding:4px 12px;font-size:.78rem" onclick="saveMetric()">Save</button>
+            <button class="btn" style="padding:4px 12px;font-size:.78rem" onclick="toggleAddMetricForm()">Cancel</button>
+          </div>
+        </div>
+        ${metricsHtml}
+      </div>
+    </div>
+
+    <div class="kt-card">
+      <div class="kt-card-head"><h3>🧩 Issues List</h3>${canEdit ? `<button class="btn-amber" style="padding:4px 12px;font-size:.78rem" onclick="toggleAddIssueForm()">+ Add Issue</button>` : ''}</div>
+      <div class="kt-card-body">
+        <div id="addIssueForm" style="display:none;margin-bottom:14px;padding:12px;background:rgba(8,18,36,.5);border-radius:8px">
+          <input id="newIssueTitle" placeholder="Issue" style="width:100%;margin-bottom:6px;padding:6px 8px;box-sizing:border-box" />
+          <input id="newIssueRaisedBy" placeholder="Raised by" style="width:100%;padding:6px 8px;box-sizing:border-box" />
+          <div style="margin-top:8px;display:flex;gap:6px">
+            <button class="btn-amber" style="padding:4px 12px;font-size:.78rem" onclick="saveIssue()">Save</button>
+            <button class="btn" style="padding:4px 12px;font-size:.78rem" onclick="toggleAddIssueForm()">Cancel</button>
+          </div>
+        </div>
+        ${issuesHtml}
+      </div>
+    </div>`;
+}
+
+function toggleAddRockForm() {
+  const f = document.getElementById('addRockForm');
+  if (f) f.style.display = f.style.display === 'none' ? 'block' : 'none';
+}
+window.toggleAddRockForm = toggleAddRockForm;
+
+function saveRock() {
+  if (!eosCanEdit()) return;
+  const title = document.getElementById('newRockTitle')?.value.trim();
+  if (!title) { alert('Enter a Rock title.'); return; }
+  const ownerName = document.getElementById('newRockOwner')?.value.trim() || '';
+  const dueDate = document.getElementById('newRockDue')?.value || '';
+  coll('eosRocks').add({
+    title, ownerName, dueDate, status: 'On Track',
+    createdAtMs: Date.now(), createdBy: conCurrentUser?.email || '',
+    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+  }).then(() => renderEOSReport(document.getElementById('reportContent')))
+    .catch(e => alert('Error: ' + e.message));
+}
+window.saveRock = saveRock;
+
+function updateRockStatus(id, status) {
+  if (!eosCanEdit()) return;
+  coll('eosRocks').doc(id).update({ status }).then(() => {
+    const r = eosRocks.find(x => x.id === id); if (r) r.status = status;
+  }).catch(e => alert('Error: ' + e.message));
+}
+window.updateRockStatus = updateRockStatus;
+
+function deleteRock(id) {
+  if (!eosCanEdit() || !confirm('Delete this Rock?')) return;
+  coll('eosRocks').doc(id).delete().then(() => renderEOSReport(document.getElementById('reportContent')))
+    .catch(e => alert('Error: ' + e.message));
+}
+window.deleteRock = deleteRock;
+
+function toggleAddMetricForm() {
+  const f = document.getElementById('addMetricForm');
+  if (f) f.style.display = f.style.display === 'none' ? 'block' : 'none';
+}
+window.toggleAddMetricForm = toggleAddMetricForm;
+
+function saveMetric() {
+  if (!eosCanEdit()) return;
+  const name = document.getElementById('newMetricName')?.value.trim();
+  if (!name) { alert('Enter a metric name.'); return; }
+  const ownerName = document.getElementById('newMetricOwner')?.value.trim() || '';
+  const goal = parseFloat(document.getElementById('newMetricGoal')?.value) || 0;
+  const higherIsBetter = document.getElementById('newMetricDirection')?.value !== 'lower';
+  coll('eosScorecardMetrics').add({
+    name, ownerName, goal, higherIsBetter, order: eosMetrics.length,
+    values: {}, createdAt: firebase.firestore.FieldValue.serverTimestamp()
+  }).then(() => renderEOSReport(document.getElementById('reportContent')))
+    .catch(e => alert('Error: ' + e.message));
+}
+window.saveMetric = saveMetric;
+
+function saveMetricValue(id, value) {
+  if (!eosCanEdit()) return;
+  const num = value === '' ? firebase.firestore.FieldValue.delete() : parseFloat(value);
+  const weekKey = getWeekKey();
+  coll('eosScorecardMetrics').doc(id).update({ ['values.' + weekKey]: num })
+    .then(() => {
+      const m = eosMetrics.find(x => x.id === id);
+      if (m) { if (!m.values) m.values = {}; if (value === '') delete m.values[weekKey]; else m.values[weekKey] = num; }
+      renderEOSReport(document.getElementById('reportContent'));
+    })
+    .catch(e => alert('Error: ' + e.message));
+}
+window.saveMetricValue = saveMetricValue;
+
+function deleteMetric(id) {
+  if (!eosCanEdit() || !confirm('Delete this Scorecard metric?')) return;
+  coll('eosScorecardMetrics').doc(id).delete().then(() => renderEOSReport(document.getElementById('reportContent')))
+    .catch(e => alert('Error: ' + e.message));
+}
+window.deleteMetric = deleteMetric;
+
+function toggleAddIssueForm() {
+  const f = document.getElementById('addIssueForm');
+  if (f) f.style.display = f.style.display === 'none' ? 'block' : 'none';
+}
+window.toggleAddIssueForm = toggleAddIssueForm;
+
+function saveIssue() {
+  if (!eosCanEdit()) return;
+  const title = document.getElementById('newIssueTitle')?.value.trim();
+  if (!title) { alert('Enter an issue.'); return; }
+  const raisedBy = document.getElementById('newIssueRaisedBy')?.value.trim() || '';
+  coll('eosIssues').add({
+    title, raisedBy, status: 'Open', notes: '',
+    createdAtMs: Date.now(), createdAt: firebase.firestore.FieldValue.serverTimestamp()
+  }).then(() => renderEOSReport(document.getElementById('reportContent')))
+    .catch(e => alert('Error: ' + e.message));
+}
+window.saveIssue = saveIssue;
+
+function updateIssueStatus(id, status) {
+  if (!eosCanEdit()) return;
+  const extra = { status };
+  if (status === 'Solved') {
+    const notes = prompt('Optional: how was this resolved?') || '';
+    extra.notes = notes;
+    extra.solvedAt = firebase.firestore.FieldValue.serverTimestamp();
+  }
+  coll('eosIssues').doc(id).update(extra).then(() => renderEOSReport(document.getElementById('reportContent')))
+    .catch(e => alert('Error: ' + e.message));
+}
+window.updateIssueStatus = updateIssueStatus;
+
+function deleteIssue(id) {
+  if (!eosCanEdit() || !confirm('Delete this issue?')) return;
+  coll('eosIssues').doc(id).delete().then(() => renderEOSReport(document.getElementById('reportContent')))
+    .catch(e => alert('Error: ' + e.message));
+}
+window.deleteIssue = deleteIssue;
+
+
 function renderLaborReport(el, f) {
   const entries = allTimeEntries.filter(e => {
     if (!e.date) return false;
