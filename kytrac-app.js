@@ -1,4 +1,4 @@
-// JOBSpan Application JavaScript v2.25.0 · 13/Jul/2026
+// JOBSpan Application JavaScript v2.26.0 · 14/Jul/2026
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -1978,9 +1978,10 @@ let conPhases = [];
 
 function conLoadPhases(jobId) {
   if (!conDb) return;
-  coll('jobs').doc(jobId).collection('phases').orderBy('order').onSnapshot(snap => {
+  coll('jobs').doc(jobId).collection('phases').onSnapshot(snap => {
     conPhases = [];
     snap.forEach(doc => conPhases.push({ id: doc.id, ...doc.data() }));
+    conPhases.sort((a,b) => (a.order ?? 0) - (b.order ?? 0));
     loadPhaseActualHours(jobId).then(() => {
       renderPhaseKanban();
       renderPhaseList();
@@ -4988,9 +4989,10 @@ function importEstimateToInvoice() {
   // under one Feature (subgroup) into a SINGLE customer-facing line —
   // customers should see "what" and "how much," not a materials/labor
   // cost breakdown per part.
-  jobRef.collection('estimateGroups').orderBy('order').get()
+  jobRef.collection('estimateGroups').get()
     .then(async groupSnap => {
-      for (const groupDoc of groupSnap.docs) {
+      const groupDocs = groupSnap.docs.slice().sort((a,b) => (a.data().order ?? 0) - (b.data().order ?? 0));
+      for (const groupDoc of groupDocs) {
         const group = groupDoc.data();
 
         // Direct items sitting right on the group (no subgroup) — combine
@@ -5006,8 +5008,9 @@ function importEstimateToInvoice() {
         }
 
         // Subgroups (Features) — one combined line each.
-        const subSnap = await jobRef.collection('estimateGroups').doc(groupDoc.id).collection('subgroups').orderBy('order').get();
-        for (const subDoc of subSnap.docs) {
+        const subSnapRaw = await jobRef.collection('estimateGroups').doc(groupDoc.id).collection('subgroups').get();
+        const subDocs = subSnapRaw.docs.slice().sort((a,b) => (a.data().order ?? 0) - (b.data().order ?? 0));
+        for (const subDoc of subDocs) {
           const sub = subDoc.data();
           const itemSnap = await jobRef.collection('estimateGroups').doc(groupDoc.id)
             .collection('subgroups').doc(subDoc.id).collection('items').get();
@@ -10138,7 +10141,7 @@ const COST_TYPES = ['Labor','Materials','Subcontractor','Equipment','Permits & F
 function loadEstimate(jobId) {
   if (!conDb || !jobId) return;
   coll('jobs').doc(jobId).collection('estimateGroups')
-    .orderBy('order').get()
+    .get()
     .then(snap => {
       estGroups = [];
       const groupPromises = [];
@@ -10147,7 +10150,7 @@ function loadEstimate(jobId) {
         estGroups.push(group);
         // Load subgroups
         const p = coll('jobs').doc(jobId).collection('estimateGroups')
-          .doc(doc.id).collection('subgroups').orderBy('order').get()
+          .doc(doc.id).collection('subgroups').get()
           .then(subSnap => {
             const subPromises = [];
             subSnap.forEach(subDoc => {
@@ -10156,22 +10159,25 @@ function loadEstimate(jobId) {
               // Load items
               const sp = coll('jobs').doc(jobId).collection('estimateGroups')
                 .doc(doc.id).collection('subgroups').doc(subDoc.id).collection('items')
-                .orderBy('order').get()
+                .get()
                 .then(itemSnap => {
                   itemSnap.forEach(itemDoc => {
                     subgroup.items.push({ id: itemDoc.id, ...itemDoc.data() });
                   });
+                  subgroup.items.sort((a,b) => (a.order ?? 0) - (b.order ?? 0));
                 });
               subPromises.push(sp);
             });
+            group.subgroups.sort((a,b) => (a.order ?? 0) - (b.order ?? 0));
             // Also load items directly on group (no subgroup)
             const dp = coll('jobs').doc(jobId).collection('estimateGroups')
-              .doc(doc.id).collection('items').orderBy('order').get()
+              .doc(doc.id).collection('items').get()
               .then(itemSnap => {
                 if (!group.directItems) group.directItems = [];
                 itemSnap.forEach(itemDoc => {
                   group.directItems.push({ id: itemDoc.id, ...itemDoc.data() });
                 });
+                group.directItems.sort((a,b) => (a.order ?? 0) - (b.order ?? 0));
               });
             subPromises.push(dp);
             return Promise.all(subPromises);
@@ -10181,6 +10187,7 @@ function loadEstimate(jobId) {
       return Promise.all(groupPromises);
     })
     .then(() => {
+      estGroups.sort((a,b) => (a.order ?? 0) - (b.order ?? 0));
       renderEstimateTree();
       updateEstimateSummary();
       renderPaymentScheduleControls(jobId);
