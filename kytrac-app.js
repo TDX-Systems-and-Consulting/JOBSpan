@@ -1,4 +1,4 @@
-// JOBSpan Application JavaScript v2.27.0 · 14/Jul/2026
+// JOBSpan Application JavaScript v2.28.0 · 14/Jul/2026
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -8311,7 +8311,7 @@ function loadPortalJob(db, jobId, tokenData, token) {
           .then(snap => {
             const invs = [];
             snap.forEach(d => invs.push({ id: d.id, ...d.data() }));
-            renderPortalInvoices(invs);
+            renderPortalInvoices(invs, jobId);
           }).catch(() => {});
       }
 
@@ -8464,7 +8464,7 @@ function renderPortalLogs(logs) {
   }).join('');
 }
 
-function renderPortalInvoices(invs) {
+function renderPortalInvoices(invs, jobId) {
   if (!invs.length) return;
   const section = document.getElementById('portalInvoicesSection');
   const el = document.getElementById('portalInvList');
@@ -8478,11 +8478,27 @@ function renderPortalInvoices(invs) {
 
   const statusColors = { Draft:'var(--muted)', Sent:'#3b82f6', Paid:'#1dbb87', Overdue:'#ef5350', Partial:'#f97316' };
 
+  // Same honest view-tracking as proposals: records the moment the customer
+  // actually looks at a non-Draft invoice in the portal. Not email-open
+  // tracking (JOBSpan doesn't send email itself), but a real "they saw it" signal.
+  if (jobId) {
+    invs.forEach(inv => {
+      if (inv.status !== 'Draft' && !inv.viewedAt) {
+        _portalInvoiceColl(jobId).doc(inv.id).update({
+          viewedAt: firebase.firestore.FieldValue.serverTimestamp()
+        }).then(() => { inv.viewedAt = { toDate: () => new Date() }; }).catch(() => {});
+      }
+    });
+  }
+
   el.innerHTML = invs.map(inv => {
     const bal = (inv.total||0) - (inv.amtPaid||0);
     const sColor = statusColors[inv.status] || 'var(--muted)';
     const payBtn = inv.paymentLink && bal > 0 && inv.status !== 'Paid'
       ? `<a href="${inv.paymentLink}" target="_blank" style="display:inline-block;margin-top:8px;background:#d97706;color:#fff;font-size:.78rem;font-weight:800;padding:7px 18px;border-radius:8px;text-decoration:none">💳 Pay Now</a>`
+      : '';
+    const viewedBadge = inv.viewedAt?.toDate
+      ? `<div style="font-size:.7rem;color:#1dbb87;margin-top:2px" title="Customer opened this invoice in the portal">👁 Viewed ${inv.viewedAt.toDate().toLocaleDateString()}</div>`
       : '';
     return `<div class="portal-invoice-row" style="flex-direction:column;gap:6px">
       <div style="display:flex;justify-content:space-between;align-items:flex-start">
@@ -8495,11 +8511,18 @@ function renderPortalInvoices(invs) {
           <div style="font-weight:800;font-size:1rem">$${(inv.total||0).toLocaleString()}</div>
           <div style="font-size:.76rem;color:${sColor};font-weight:700">${inv.status||'Draft'}</div>
           ${bal > 0 ? `<div style="font-size:.74rem;color:var(--muted)">Balance: $${bal.toFixed(2)}</div>` : ''}
+          ${viewedBadge}
         </div>
       </div>
       ${payBtn}
     </div>`;
   }).join('');
+}
+function _portalInvoiceColl(jobId) {
+  const base = _portalCompanyId
+    ? _portalDb.collection('companies').doc(_portalCompanyId).collection('jobs')
+    : _portalDb.collection('jobs');
+  return base.doc(jobId).collection('invoices');
 }
 
 function renderPortalCOs(cos) {
@@ -9338,7 +9361,7 @@ function renderInvoicesTable(el, allInvs, f) {
                 <td style="text-align:right;font-weight:700">$${(inv.total||0).toLocaleString()}</td>
                 <td style="text-align:right;color:#1dbb87">$${(inv.amtPaid||0).toLocaleString()}</td>
                 <td style="text-align:right;font-weight:700;color:${bal>0?'#f59e0b':'#1dbb87'}">$${bal.toLocaleString()}</td>
-                <td><span style="font-size:.72rem;font-weight:700;color:${sc[inv.status||'Draft']||'var(--muted)'}">${inv.status||'Draft'}</span></td>
+                <td><span style="font-size:.72rem;font-weight:700;color:${sc[inv.status||'Draft']||'var(--muted)'}">${inv.status||'Draft'}</span>${inv.viewedAt?.toDate?`<br/><span style="font-size:.68rem;color:#1dbb87" title="Customer opened this invoice in the portal">👁 Viewed ${inv.viewedAt.toDate().toLocaleDateString()}</span>`:''}</td>
               </tr>`;
             }).join('')}
           </tbody>
