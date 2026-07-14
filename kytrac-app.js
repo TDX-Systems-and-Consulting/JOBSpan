@@ -1,4 +1,4 @@
-// JOBSpan Application JavaScript v2.28.0 · 14/Jul/2026
+// JOBSpan Application JavaScript v2.29.0 · 14/Jul/2026
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -2037,11 +2037,144 @@ function switchPhaseView(view) {
     if(k===view){btn.style.background='linear-gradient(135deg,var(--amber),var(--amber2))';btn.style.color='#fff';}
     else{btn.style.background='transparent';btn.style.color='var(--muted)';}
   });
-  if(view==='gantt') renderPhaseGantt();
+  if(view==='gantt') renderEpicGantt();
   if(view==='kanban') renderPhaseKanban();
   if(view==='list') renderPhaseList();
   if(view==='board') renderEpicBoard();
 }
+
+// ── EPIC/FEATURE/TASK TIMELINE (dependency-aware Gantt) ──────────────────
+// The piece from the locked Schedule redesign spec that was never built:
+// a real visual Gantt for the Epic/Feature/Task tree, with dependency arrows
+// instead of just text warnings. Bars are positioned by each Feature's
+// assigned Sprint dates (Features don't carry their own dates — only Sprints
+// do, per the locked design). Features with no Sprint show as "No sprint
+// assigned" rows rather than being silently omitted.
+let _ganttFeaturesById = {};
+
+function renderEpicGantt() {
+  const wrap = document.getElementById('ganttWrap');
+  if (!wrap || !conCurrentJobId) return;
+  wrap.innerHTML = '<div class="small muted" style="padding:20px;text-align:center">Loading timeline...</div>';
+
+  Promise.all([loadEpicTree(conCurrentJobId), loadSprints(conCurrentJobId)])
+    .then(([epics, sprints]) => {
+      const sprintsById = {};
+      sprints.forEach(s => { sprintsById[s.id] = s; });
+
+      const allFeatures = [];
+      epics.forEach(epic => {
+        epic.features.forEach(f => allFeatures.push({ ...f, epicId: epic.id, epicName: epic.name }));
+      });
+      _ganttFeaturesById = {};
+      allFeatures.forEach(f => { _ganttFeaturesById[f.id] = f; });
+
+      const dated = allFeatures.filter(f => f.sprintId && sprintsById[f.sprintId] && sprintsById[f.sprintId].startDate);
+      if (!allFeatures.length) {
+        wrap.innerHTML = '<div class="small muted" style="padding:20px;text-align:center">No Features yet — add Features in the estimate to see them here</div>';
+        return;
+      }
+      if (!dated.length) {
+        wrap.innerHTML = '<div class="small muted" style="padding:20px;text-align:center">Assign Features to a Sprint with dates to see the Timeline</div>';
+        return;
+      }
+
+      const dates = dated.flatMap(f => {
+        const s = sprintsById[f.sprintId];
+        return [s.startDate, s.endDate].filter(Boolean);
+      });
+      const minDate = new Date(dates.reduce((a,b)=>a<b?a:b));
+      const maxDate = new Date(dates.reduce((a,b)=>a>b?a:b));
+      minDate.setDate(minDate.getDate()-7);
+      maxDate.setDate(maxDate.getDate()+14);
+      const totalDays = Math.ceil((maxDate-minDate)/86400000);
+      const dayWidth = Math.max(24, Math.floor(800/totalDays));
+      const totalWidth = totalDays*dayWidth;
+      const today = new Date();
+      const todayOffset = Math.floor((today-minDate)/86400000)*dayWidth;
+
+      const weekWidth = dayWidth*7;
+      let weekHeaders = '', d = new Date(minDate);
+      while (d < maxDate) {
+        const label = d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+        weekHeaders += '<div class="gantt-week-label" style="width:'+weekWidth+'px">Wk '+getWeekNum(d)+'<br><span style="font-size:.64rem">'+label+'</span></div>';
+        d.setDate(d.getDate()+7);
+      }
+
+      const statusColors = {'not-started':'#64748b','in-progress':'#3b82f6','complete':'#10b981','blocked':'#ef4444'};
+      const rowHeight = 44;
+      const barPositions = {};
+      let rowIndex = 0;
+
+      const featureRows = allFeatures.map(f => {
+        const sprint = f.sprintId ? sprintsById[f.sprintId] : null;
+        const rowTop = rowIndex * rowHeight;
+        rowIndex++;
+        if (!sprint || !sprint.startDate) {
+          return '<div class="gantt-row"><div class="gantt-label">'+esc(f.name)+'<div style="font-size:.7rem;color:var(--muted)">'+esc(f.epicName)+'</div></div>'+
+            '<div class="gantt-bar-area" style="width:'+totalWidth+'px"><span style="color:var(--muted);font-size:.74rem;padding:12px 8px;display:block">No sprint assigned</span></div></div>';
+        }
+        const start = new Date(sprint.startDate);
+        const end = sprint.endDate ? new Date(sprint.endDate) : new Date(start.getTime()+86400000*7);
+        const left = Math.floor((start-minDate)/86400000)*dayWidth;
+        const width = Math.max(dayWidth*2, Math.ceil((end-start)/86400000)*dayWidth);
+        barPositions[f.id] = { left, width, top: rowTop };
+        const color = statusColors[f.status] || '#64748b';
+        const doneCount = (f.tasks||[]).filter(t => t.taskStatus === 'done').length;
+        const taskLabel = (f.tasks||[]).length ? ' · '+doneCount+'/'+f.tasks.length+' tasks' : '';
+        const warning = dependencyWarning(f, _ganttFeaturesById);
+        return '<div class="gantt-row">'+
+          '<div class="gantt-label">'+esc(f.name)+'<div style="font-size:.7rem;color:var(--muted)">'+esc(f.epicName)+'</div></div>'+
+          '<div class="gantt-bar-area" style="width:'+totalWidth+'px;position:relative">'+
+          '<div class="gantt-bar" onclick="openGanttFeature(\''+f.id+'\')" style="left:'+left+'px;width:'+width+'px;background:'+color+';opacity:'+(f.status==='complete'?0.7:1)+'">'+
+          esc(f.name)+taskLabel+'</div>'+
+          (warning ? '<div style="position:absolute;left:'+(left+width)+'px;top:12px;font-size:.7rem;color:#f87171;font-weight:700;white-space:nowrap"> ⚠ '+esc(warning)+'</div>' : '')+
+          '</div></div>';
+      }).join('');
+
+      // Dependency arrows — a real visual upgrade over the board's text-only warnings.
+      const totalHeight = rowIndex * rowHeight;
+      let svgLines = '';
+      allFeatures.forEach(f => {
+        (f.dependsOn||[]).forEach(depId => {
+          const from = barPositions[depId];
+          const to = barPositions[f.id];
+          if (!from || !to) return; // one or both unscheduled — no arrow to draw
+          const blocker = _ganttFeaturesById[depId];
+          const satisfied = blocker && blocker.status === 'complete';
+          const x1 = from.left + from.width, y1 = from.top + 22;
+          const x2 = to.left, y2 = to.top + 22;
+          const color = satisfied ? '#475569' : '#ef4444';
+          svgLines += '<line x1="'+x1+'" y1="'+y1+'" x2="'+x2+'" y2="'+y2+'" stroke="'+color+'" stroke-width="2" marker-end="url(#ganttArrowhead)" stroke-dasharray="'+(satisfied?'0':'4,3')+'" />';
+        });
+      });
+      const svgOverlay = svgLines ? '<svg style="position:absolute;left:160px;top:0;pointer-events:none;overflow:visible" width="'+totalWidth+'" height="'+totalHeight+'">'+
+        '<defs><marker id="ganttArrowhead" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#ef4444"/></marker></defs>'+
+        svgLines+'</svg>' : '';
+
+      wrap.innerHTML = '<div style="position:relative">'+
+        '<div style="display:flex"><div style="width:160px;flex-shrink:0"></div>'+
+        '<div class="gantt-header" style="width:'+totalWidth+'px;position:relative">'+weekHeaders+
+        '<div class="gantt-today-line" style="left:'+todayOffset+'px"></div></div></div>'+
+        featureRows+svgOverlay+
+        '</div>'+
+        '<div style="margin-top:12px;font-size:.74rem;color:var(--muted);display:flex;gap:16px;flex-wrap:wrap">'+
+        '<span>🔵 In Progress</span><span>✅ Complete</span><span style="color:#f87171">⚠ Dependency warning</span>'+
+        '<span style="border-left:2px solid rgba(239,68,68,.7);padding-left:6px">Today</span>'+
+        '<span style="color:#ef4444">┅ Unmet dependency</span><span style="color:#475569">— Satisfied dependency</span></div>';
+    })
+    .catch(err => {
+      wrap.innerHTML = '<div class="small muted" style="padding:20px;text-align:center">Could not load timeline: '+esc((err&&err.message)||'')+'</div>';
+    });
+}
+window.renderEpicGantt = renderEpicGantt;
+
+function openGanttFeature(featureId) {
+  const f = _ganttFeaturesById[featureId];
+  if (!f) return;
+  openFeatureModal(f.epicId, f.epicName, f);
+}
+window.openGanttFeature = openGanttFeature;
 
 function renderPhaseKanban() {
   const lanes = {'not-started':document.getElementById('phaseLane0'),'in-progress':document.getElementById('phaseLane1'),'complete':document.getElementById('phaseLane2'),'blocked':document.getElementById('phaseLane3')};
@@ -14932,8 +15065,9 @@ window.updateTaskStatus = updateTaskStatus;
 // ── Sprints (new top-level subcollection) ──────────────────────────────
 
 function loadSprints(jobId) {
-  return coll('jobs').doc(jobId).collection('sprints').orderBy('startDate').get()
-    .then(snap => snap.docs.map(d => ({ id: d.id, ...d.data() })));
+  return coll('jobs').doc(jobId).collection('sprints').get()
+    .then(snap => snap.docs.map(d => ({ id: d.id, ...d.data() }))
+      .sort((a,b) => (a.startDate||'').localeCompare(b.startDate||'')));
 }
 window.loadSprints = loadSprints;
 
