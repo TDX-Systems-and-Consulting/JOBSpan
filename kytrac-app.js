@@ -1,4 +1,4 @@
-// JOBSpan Application JavaScript v2.34.0 · 14/Jul/2026
+// JOBSpan Application JavaScript v2.35.0 · 14/Jul/2026
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -11227,9 +11227,8 @@ function renderProposalDocumentHtml(data, job, co) {
 
   return `<!DOCTYPE html><html><head><title>Proposal — ${esc(job?.name||'')}</title>
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap');
-    * { box-sizing: border-box; }
-    body { font-family: 'Inter', Arial, sans-serif; max-width: 820px; margin: 0 auto; padding: 48px 40px; color: #1f2937; line-height: 1.5; }
+    * { box-sizing: border-box; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; max-width: 820px; margin: 0 auto; padding: 48px 40px; color: #1f2937; line-height: 1.5; }
     .header { display: flex; justify-content: space-between; align-items: flex-start; padding-bottom: 24px; margin-bottom: 8px; border-bottom: 4px solid #d97706; }
     .co-name { font-size: 1.25rem; font-weight: 800; color: #111827; }
     .co-contact { color: #6b7280; font-size: .82rem; margin-top: 2px; }
@@ -11314,7 +11313,7 @@ function renderProposalDocumentHtml(data, job, co) {
     ${esc(co.companyName||'')} · ${esc(co.phone||'')} · ${esc(co.email||'')}${co.license?' · License #'+esc(co.license):''}
   </div>
 
-  <script>window.print();<\/script></body></html>`;
+  <script>window.onload = () => setTimeout(() => window.print(), 250);<\/script></body></html>`;
 }
 
 // ── Proposal version history (Draft → Pending → Approved/Declined) ──
