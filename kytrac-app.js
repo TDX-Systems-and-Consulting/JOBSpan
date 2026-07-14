@@ -1,4 +1,4 @@
-// JOBSpan Application JavaScript v2.35.0 · 14/Jul/2026
+// JOBSpan Application JavaScript v2.36.0 · 14/Jul/2026
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -11331,9 +11331,45 @@ function loadProposals(jobId) {
       conProposals = [];
       snap.forEach(d => conProposals.push({ id: d.id, ...d.data() }));
       renderProposalHistory();
+      // Catches customer signatures made through the anonymous portal —
+      // the portal can't write to the job doc itself (only to the
+      // proposal, per its security rule), so this is where that gets
+      // reconciled: the next time an authenticated app user loads this
+      // job's proposals, advance the pipeline status if it's due.
+      if (conProposals[0] && conProposals[0].status === 'approved') {
+        maybeAdvanceJobStatusForApproval(jobId);
+      }
     })
     .catch(e => console.error('Proposal history load error:', e));
 }
+
+// Auto-advances a job's pipeline status to "Approved" the first time one
+// of its proposals is approved — but never regresses a job that's already
+// further along the pipeline (e.g. already in Design Phase or beyond).
+// Triggered from the internal "Mark Approved" action (immediate) and from
+// loadProposals (catches portal-driven customer signatures).
+function maybeAdvanceJobStatusForApproval(jobId) {
+  const job = conJobs.find(j => j.id === jobId);
+  if (!job) return;
+  const APPROVED_NAME = 'Approved';
+  const currentIdx = CON_JOB_STATUSES.indexOf(job.status);
+  const approvedIdx = CON_JOB_STATUSES.indexOf(APPROVED_NAME);
+  if (currentIdx === -1 || approvedIdx === -1 || currentIdx >= approvedIdx) return;
+
+  const prevStatus = job.status;
+  coll('jobs').doc(jobId).update({
+    status: APPROVED_NAME,
+    statusDate: new Date().toISOString().split('T')[0],
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    updatedBy: conCurrentUser ? conCurrentUser.email : 'unknown'
+  }).then(() => {
+    job.status = APPROVED_NAME;
+    logStatusChangeActivity(jobId, prevStatus, APPROVED_NAME, 'Auto-advanced: Proposal was approved/signed');
+    if (typeof conRenderBoard === 'function') conRenderBoard();
+    if (typeof renderJobsBoard === 'function') renderJobsBoard();
+  }).catch(e => console.error('Auto-advance job status error:', e));
+}
+window.maybeAdvanceJobStatusForApproval = maybeAdvanceJobStatusForApproval;
 
 function saveProposalSnapshot(jobId, data) {
   if (!conDb || !jobId) return;
@@ -11361,8 +11397,12 @@ function markProposalStatus(proposalId, newStatus) {
   const extra = {};
   if (newStatus === 'pending') extra.sentAt = firebase.firestore.FieldValue.serverTimestamp();
   if (newStatus === 'approved' || newStatus === 'declined') extra.respondedAt = firebase.firestore.FieldValue.serverTimestamp();
+  const jobIdForThisCall = conCurrentJobId;
   coll('jobs').doc(conCurrentJobId).collection('proposals').doc(proposalId).update({ status: newStatus, ...extra })
-    .then(() => loadProposals(conCurrentJobId))
+    .then(() => {
+      loadProposals(jobIdForThisCall);
+      if (newStatus === 'approved') maybeAdvanceJobStatusForApproval(jobIdForThisCall);
+    })
     .catch(e => alert('Error updating proposal status: ' + e.message));
 }
 window.markProposalStatus = markProposalStatus;
