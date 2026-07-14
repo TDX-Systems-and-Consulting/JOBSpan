@@ -1,4 +1,4 @@
-// JOBSpan Application JavaScript v2.26.0 · 14/Jul/2026
+// JOBSpan Application JavaScript v2.27.0 · 14/Jul/2026
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -1479,7 +1479,8 @@ function sendJobMessage() {
     authorEmail: conCurrentUser?.email || '',
     authorName: conCurrentUser?.displayName || conCurrentUser?.email || 'Unknown',
     createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-    createdMs: Date.now()
+    createdMs: Date.now(),
+    companyId: currentCompanyId
   };
   if (input) input.value = '';
   coll('jobs').doc(conCurrentJobId).collection('messages').add(data)
@@ -4011,8 +4012,9 @@ function renderHomeDashboard() {
     }).join('');
   }
 
-  // Bottom three panels
+  // Bottom panels
   renderNeedsAttention();
+  renderWhatsChanged();
   renderRecentLogs();
   renderUpcomingPhases();
 }
@@ -4209,7 +4211,99 @@ function renderUpcomingPhases() {
     });
 }
 
+// ── WHAT'S CHANGED TODAY ──
+// A small, curated "what happened today" glance — new customer messages and
+// new document uploads across all jobs. Deliberately NOT a full activity
+// firehose (that's what the per-job Activity tab is for) — just today's
+// two categories Needs Attention doesn't already surface.
+function renderWhatsChanged() {
+  const el = document.getElementById('homeWhatsChanged');
+  if (!el || !conDb) return;
+  const todayStr = new Date().toISOString().split('T')[0];
+  const isToday = (ts) => {
+    if (!ts) return false;
+    const d = ts.toDate ? ts.toDate() : new Date(ts);
+    return d.toISOString().split('T')[0] === todayStr;
+  };
+  const items = [];
+  let pending = 2;
+  const finish = () => {
+    pending--;
+    if (pending > 0) return;
+    if (!items.length) { el.innerHTML = '<div class="small muted" style="font-style:italic;padding:10px 0;text-align:center">Nothing new today</div>'; return; }
+    items.sort((a,b) => (b.ms||0) - (a.ms||0));
+    el.innerHTML = items.map(i => `
+      <div onclick="openJobDetail('${i.jobId}')" style="display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-bottom:1px solid rgba(110,145,210,.07);cursor:pointer">
+        <span style="font-size:1rem;flex-shrink:0">${i.icon}</span>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:.83rem;font-weight:700;color:#eaf0fb;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(i.text)}</div>
+          <div style="font-size:.74rem;color:var(--amber)">${esc(i.sub)}</div>
+        </div>
+      </div>`).join('');
+  };
+
+  // New messages today (business-wide via collectionGroup, falls back to per-job)
+  conDb.collectionGroup('messages').where('companyId','==',currentCompanyId)
+    .orderBy('createdMs','desc').limit(20).get()
+    .then(snap => {
+      snap.forEach(doc => {
+        const m = doc.data();
+        if (!isToday(m.createdMs)) return;
+        const jobId = doc.ref.parent.parent.id;
+        const job = conJobs.find(j => j.id === jobId);
+        items.push({ icon:'💬', text: (m.authorName||'Someone') + ': ' + (m.text||''), sub: job ? job.name : '', jobId, ms: m.createdMs||0 });
+      });
+      finish();
+    })
+    .catch(() => {
+      // Older messages may predate the companyId field, or index isn't ready — per-job fallback
+      if (!conJobs.length) { finish(); return; }
+      let jp = conJobs.length;
+      conJobs.forEach(job => {
+        coll('jobs').doc(job.id).collection('messages').orderBy('createdMs','desc').limit(5).get()
+          .then(snap => snap.forEach(doc => {
+            const m = doc.data();
+            if (!isToday(m.createdMs)) return;
+            items.push({ icon:'💬', text: (m.authorName||'Someone') + ': ' + (m.text||''), sub: job.name, jobId: job.id, ms: m.createdMs||0 });
+          }))
+          .catch(() => {})
+          .finally(() => { jp--; if (jp === 0) finish(); });
+      });
+    });
+
+  // New document uploads today
+  conDb.collectionGroup('documents').where('companyId','==',currentCompanyId)
+    .orderBy('uploadedAt','desc').limit(20).get()
+    .then(snap => {
+      snap.forEach(doc => {
+        const d = doc.data();
+        if (!isToday(d.uploadedAt)) return;
+        const jobId = doc.ref.parent.parent.id;
+        const job = conJobs.find(j => j.id === jobId);
+        const ms = d.uploadedAt?.toDate ? d.uploadedAt.toDate().getTime() : 0;
+        items.push({ icon:'📎', text: d.name||'Document uploaded', sub: job ? job.name : '', jobId, ms });
+      });
+      finish();
+    })
+    .catch(() => {
+      if (!conJobs.length) { finish(); return; }
+      let jp = conJobs.length;
+      conJobs.forEach(job => {
+        coll('jobs').doc(job.id).collection('documents').orderBy('uploadedAt','desc').limit(5).get()
+          .then(snap => snap.forEach(doc => {
+            const d = doc.data();
+            if (!isToday(d.uploadedAt)) return;
+            const ms = d.uploadedAt?.toDate ? d.uploadedAt.toDate().getTime() : 0;
+            items.push({ icon:'📎', text: d.name||'Document uploaded', sub: job.name, jobId: job.id, ms });
+          }))
+          .catch(() => {})
+          .finally(() => { jp--; if (jp === 0) finish(); });
+      });
+    });
+}
+
 window.renderNeedsAttention = renderNeedsAttention;
+window.renderWhatsChanged = renderWhatsChanged;
 window.renderRecentLogs = renderRecentLogs;
 window.renderUpcomingPhases = renderUpcomingPhases;
 window.ktFilterJobs = ktFilterJobs;
