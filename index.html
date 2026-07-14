@@ -925,7 +925,7 @@
     <div class="kt-logo">
       <div class="kt-logo-mark">JOBSpan</div>
       <div class="kt-logo-tag" id="ktCompanyTag">7 Pillars Contracting</div>
-      <div class="kt-logo-version" id="ktVersionTag">Version 2.30.0 · 14/Jul/2026</div>
+      <div class="kt-logo-version" id="ktVersionTag">Version 2.31.0 · 14/Jul/2026</div>
     </div>
 
     <nav class="kt-nav">
@@ -1099,7 +1099,7 @@
         <!-- Upcoming Phases -->
         <div class="kt-card">
           <div class="kt-card-head" style="padding:14px 16px 10px">
-            <h3 style="font-size:.9rem">📅 Upcoming Phases</h3>
+            <h3 style="font-size:.9rem">📅 Upcoming Sprints</h3>
           </div>
           <div style="padding:10px 14px;max-height:280px;overflow-y:auto" id="homeUpcomingPhases">
             <div class="small muted" style="font-style:italic;padding:10px 0">Loading...</div>
@@ -2985,17 +2985,27 @@
 
   <!-- ── Add Phase Modal ── -->
   <div id="addPhaseModal" class="modal-overlay">
-    <div class="modal-box" style="max-width:520px">
+    <div class="modal-box" style="max-width:460px">
       <div class="modal-head">
-        <h3 style="margin:0" id="addPhaseModalTitle">Add Phase</h3>
+        <h3 style="margin:0">+ Add Feature</h3>
         <button class="btn" onclick="kClose('addPhaseModal')">Close</button>
       </div>
       <div class="modal-body">
-        <input type="hidden" id="editPhaseId" />
         <div class="form-grid">
           <div class="full">
-            <label class="small muted">Phase Name *</label>
-            <input id="phaseName" placeholder="e.g. Cabinet Installation" list="phaseNameSuggestions" />
+            <label class="small muted">Epic (Room / Category)</label>
+            <select id="newFeatureEpicSel" onchange="onNewFeatureEpicChange()">
+              <option value="">— Loading —</option>
+              <option value="__new__">+ New Epic (one-off / unusual)</option>
+            </select>
+          </div>
+          <div class="full" id="newFeatureEpicNameRow" style="display:none">
+            <label class="small muted">New Epic Name</label>
+            <input id="newFeatureEpicName" placeholder='e.g. "Storm Damage Repair" or "Warranty Callback"' />
+          </div>
+          <div class="full">
+            <label class="small muted">Feature Name *</label>
+            <input id="newFeatureName" placeholder="e.g. Cabinet Installation" list="phaseNameSuggestions" />
             <datalist id="phaseNameSuggestions">
               <option>Demo</option><option>Site Prep</option><option>Foundation</option><option>Framing</option>
               <option>Roofing</option><option>Rough Electrical</option><option>Rough Plumbing</option>
@@ -3007,65 +3017,12 @@
               <option>Landscaping</option><option>Final Inspection</option><option>Punch List</option>
             </datalist>
           </div>
-          <div>
-            <label class="small muted">Trade / Category</label>
-            <select id="phaseTrade">
-              <option value="">General</option>
-              <option>Carpentry</option><option>Electrical</option><option>Plumbing</option>
-              <option>HVAC</option><option>Flooring</option><option>Tile</option>
-              <option>Painting</option><option>Roofing</option><option>Concrete</option>
-              <option>Landscaping</option><option>Demo</option><option>Other</option>
-            </select>
-          </div>
-          <div>
-            <label class="small muted">Assigned To</label>
-            <select id="phaseAssigned"></select>
-          </div>
-          <div>
-            <label class="small muted">Start Date</label>
-            <input id="phaseStart" type="date" />
-          </div>
-          <div>
-            <label class="small muted">End Date</label>
-            <input id="phaseEnd" type="date" />
-          </div>
-          <div>
-            <label class="small muted">Est. Hours</label>
-            <input id="phaseEstHours" type="number" min="0" step="0.25" placeholder="0.0" />
-          </div>
-          <div>
-            <label class="small muted">Status</label>
-            <select id="phaseStatus">
-              <option value="not-started">Not Started</option>
-              <option value="in-progress">In Progress</option>
-              <option value="complete">Complete</option>
-              <option value="blocked">Blocked</option>
-            </select>
-          </div>
-          <div class="full">
-            <label class="small muted">Color Label</label>
-            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px" id="phaseColorPicker">
-              <div class="phase-color-opt" data-color="#d97706" style="background:#d97706" onclick="selectPhaseColor('#d97706',this)"></div>
-              <div class="phase-color-opt" data-color="#3b82f6" style="background:#3b82f6" onclick="selectPhaseColor('#3b82f6',this)"></div>
-              <div class="phase-color-opt" data-color="#10b981" style="background:#10b981" onclick="selectPhaseColor('#10b981',this)"></div>
-              <div class="phase-color-opt" data-color="#8b5cf6" style="background:#8b5cf6" onclick="selectPhaseColor('#8b5cf6',this)"></div>
-              <div class="phase-color-opt" data-color="#ef4444" style="background:#ef4444" onclick="selectPhaseColor('#ef4444',this)"></div>
-              <div class="phase-color-opt" data-color="#06b6d4" style="background:#06b6d4" onclick="selectPhaseColor('#06b6d4',this)"></div>
-              <div class="phase-color-opt" data-color="#f59e0b" style="background:#f59e0b" onclick="selectPhaseColor('#f59e0b',this)"></div>
-              <div class="phase-color-opt" data-color="#64748b" style="background:#64748b" onclick="selectPhaseColor('#64748b',this)"></div>
-            </div>
-            <input type="hidden" id="phaseColor" value="#d97706" />
-          </div>
-          <div class="full">
-            <label class="small muted">Notes</label>
-            <textarea id="phaseNotes" rows="2" placeholder="Scope notes, materials needed, special instructions..."></textarea>
-          </div>
+          <p class="small muted full" style="margin:0">After creating it, you'll go straight into the Feature editor to set status, assigned Team Lead, sprint, and dependencies.</p>
         </div>
       </div>
       <div class="modal-foot">
-        <button class="btn btn-danger" id="deletePhaseBtn" onclick="deleteCurrentPhase()" style="display:none">Delete</button>
         <button class="btn" onclick="kClose('addPhaseModal')">Cancel</button>
-        <button class="btn-amber" onclick="savePhase()">Save Phase</button>
+        <button class="btn-amber" onclick="saveNewFeature()">Create & Continue →</button>
       </div>
     </div>
   </div>
@@ -3874,6 +3831,6 @@
   </div>
 </div>
 
-<script src="kytrac-app.js?v=202607140455"></script>
+<script src="kytrac-app.js?v=202607140530"></script>
 </body>
 </html>

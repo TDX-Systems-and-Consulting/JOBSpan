@@ -1,4 +1,4 @@
-// JOBSpan Application JavaScript v2.30.0 · 14/Jul/2026
+// JOBSpan Application JavaScript v2.31.0 · 14/Jul/2026
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -1985,7 +1985,7 @@ function conLoadPhases(jobId) {
     conPhases.sort((a,b) => (a.order ?? 0) - (b.order ?? 0));
     loadPhaseActualHours(jobId).then(() => {
       renderPhaseList();
-      updatePhaseHoursSummary();
+      updateScheduleHoursSummary(jobId);
       if (typeof renderEpicBoard === 'function') renderEpicBoard();
     });
   }, () => {
@@ -1993,7 +1993,7 @@ function conLoadPhases(jobId) {
       conPhases = [];
       snap.forEach(doc => conPhases.push({ id: doc.id, ...doc.data() }));
       renderPhaseList();
-      updatePhaseHoursSummary();
+      updateScheduleHoursSummary(jobId);
       if (typeof renderEpicBoard === 'function') renderEpicBoard();
     });
   });
@@ -2013,14 +2013,30 @@ async function loadPhaseActualHours(jobId) {
   }
 }
 
-function updatePhaseHoursSummary() {
+// Combined summary covering both legacy phase docs (if any remain unmigrated
+// for this job) and real Features — so the header widget shows something
+// meaningful regardless of which system a given job is on.
+async function updateScheduleHoursSummary(jobId) {
   const el = document.getElementById('phaseHoursSummary');
-  if (!el || !conPhases.length) return;
-  const totalEst = conPhases.reduce((s,p) => s + (p.estHours||0), 0);
-  const totalAct = conPhases.reduce((s,p) => s + (p._actualHours||0), 0);
-  const done = conPhases.filter(p => p.status === 'complete').length;
-  const color = totalAct > totalEst && totalEst > 0 ? '#f87171' : '#34d399';
-  el.innerHTML = '<span style="color:'+color+';font-weight:700">'+totalAct.toFixed(1)+'h actual</span> / '+totalEst.toFixed(1)+'h est · '+done+'/'+conPhases.length+' complete';
+  if (!el) return;
+  const legacyAct = conPhases.reduce((s,p) => s + (p._actualHours||0), 0);
+  const legacyDone = conPhases.filter(p => p.status === 'complete').length;
+
+  let featTotal = 0, featDone = 0, featAct = 0;
+  try {
+    const [epics, hoursByFeature] = await Promise.all([loadEpicTree(jobId), loadFeatureActualHours(jobId)]);
+    epics.forEach(epic => epic.features.forEach(f => {
+      featTotal++;
+      if (f.status === 'complete') featDone++;
+      featAct += hoursByFeature[f.id] || 0;
+    }));
+  } catch(e) {}
+
+  const totalAct = legacyAct + featAct;
+  const totalDone = legacyDone + featDone;
+  const totalCount = conPhases.length + featTotal;
+  if (!totalCount) { el.innerHTML = ''; return; }
+  el.innerHTML = '<span style="color:#34d399;font-weight:700">'+totalAct.toFixed(1)+'h logged</span> · '+totalDone+'/'+totalCount+' complete';
 }
 
 let _currentPhaseView = 'board';
@@ -2179,49 +2195,57 @@ function getWeekNum(d) {
   return 1+Math.round(((date.getTime()-week1.getTime())/86400000-3+(week1.getDay()+6)%7)/7);
 }
 
-function renderPhaseList() {
+async function renderPhaseList() {
   const el = document.getElementById('phaseList');
-  if (!el) return;
-  if (!conPhases.length) { el.innerHTML = '<p class="muted">No phases added yet.</p>'; return; }
+  if (!el || !conCurrentJobId) return;
+  el.innerHTML = '<p class="muted">Loading...</p>';
+
+  const [epics, hoursByFeature] = await Promise.all([
+    loadEpicTree(conCurrentJobId),
+    loadFeatureActualHours(conCurrentJobId),
+  ]);
+  const allFeatures = [];
+  epics.forEach(epic => epic.features.forEach(f => allFeatures.push({ ...f, epicId: epic.id, epicName: epic.name })));
+  _newFeatureListById = {};
+  allFeatures.forEach(f => { _newFeatureListById[f.id] = f; });
+
+  if (!allFeatures.length) { el.innerHTML = '<p class="muted">No Features yet. Hit + Add Feature to start.</p>'; return; }
 
   const sc = {'not-started':'#64748b','in-progress':'#3b82f6','complete':'#10b981','blocked':'#ef4444'};
   const sl = {'not-started':'Not Started','in-progress':'In Progress','complete':'Complete','blocked':'Blocked'};
-  const today = new Date().toISOString().split('T')[0];
 
   const table = document.createElement('table');
   table.style.cssText = 'width:100%;border-collapse:collapse;font-size:.84rem';
   table.innerHTML = '<thead><tr style="border-bottom:2px solid rgba(110,145,210,.15)">' +
-    '<th style="text-align:left;padding:8px 10px;font-size:.72rem;color:var(--muted);text-transform:uppercase">Phase</th>' +
-    '<th style="text-align:left;padding:8px 10px;font-size:.72rem;color:var(--muted);text-transform:uppercase">Assigned</th>' +
-    '<th style="text-align:left;padding:8px 10px;font-size:.72rem;color:var(--muted);text-transform:uppercase">Dates</th>' +
-    '<th style="text-align:right;padding:8px 10px;font-size:.72rem;color:var(--muted);text-transform:uppercase">Est Hrs</th>' +
-    '<th style="text-align:right;padding:8px 10px;font-size:.72rem;color:var(--muted);text-transform:uppercase">Act Hrs</th>' +
+    '<th style="text-align:left;padding:8px 10px;font-size:.72rem;color:var(--muted);text-transform:uppercase">Feature</th>' +
+    '<th style="text-align:left;padding:8px 10px;font-size:.72rem;color:var(--muted);text-transform:uppercase">Epic</th>' +
+    '<th style="text-align:left;padding:8px 10px;font-size:.72rem;color:var(--muted);text-transform:uppercase">Team Lead</th>' +
+    '<th style="text-align:left;padding:8px 10px;font-size:.72rem;color:var(--muted);text-transform:uppercase">Tasks</th>' +
+    '<th style="text-align:right;padding:8px 10px;font-size:.72rem;color:var(--muted);text-transform:uppercase">Hrs Logged</th>' +
     '<th style="text-align:left;padding:8px 10px;font-size:.72rem;color:var(--muted);text-transform:uppercase">Status</th>' +
     '</tr></thead>';
 
   const tbody = document.createElement('tbody');
-  conPhases.forEach(p => {
-    const color = p.color || sc[p.status||'not-started'] || '#64748b';
-    const actH = p._actualHours || 0;
-    const estH = p.estHours || 0;
-    const over = actH > estH && estH > 0;
-    const behind = p.endDate && p.endDate < today && p.status !== 'complete';
+  allFeatures.forEach(f => {
+    const color = sc[f.status||'not-started'] || '#64748b';
+    const actH = hoursByFeature[f.id] || 0;
+    const doneCount = (f.tasks||[]).filter(t => t.taskStatus === 'done').length;
 
     const tr = document.createElement('tr');
     tr.style.cssText = 'border-bottom:1px solid rgba(110,145,210,.07);cursor:pointer';
     tr.onmouseover = function() { this.style.background = 'rgba(217,119,6,.05)'; };
     tr.onmouseout = function() { this.style.background = ''; };
-    tr.onclick = function() { openEditPhaseModal(p.id); };
+    tr.onclick = function() { openFeatureModal(f.epicId, f.epicName, f); };
 
     tr.innerHTML =
       '<td style="padding:10px"><div style="display:flex;align-items:center;gap:8px">' +
       '<div style="width:4px;height:30px;background:'+color+';border-radius:2px;flex-shrink:0"></div>' +
-      '<div><div style="font-weight:700">'+esc(p.name)+'</div><div style="font-size:.73rem;color:var(--muted)">'+esc(p.trade||'')+'</div></div></div></td>' +
-      '<td style="padding:10px;color:var(--muted)">'+esc(p.assigned||'\u2014')+'</td>' +
-      '<td style="padding:10px;color:var(--muted);font-size:.8rem">'+(p.startDate||'\u2014')+(p.endDate?' \u2192 '+p.endDate:'')+(behind?' <span style="color:#f87171">\u26a0</span>':'')+'</td>' +
-      '<td style="padding:10px;text-align:right;font-weight:700">'+(estH||'\u2014')+'</td>' +
-      '<td style="padding:10px;text-align:right;font-weight:700;color:'+(over?'#f87171':actH>0?'#34d399':'var(--muted)')+'>'+(actH>0?actH.toFixed(1):'\u2014')+'</td>' +
-      '<td style="padding:10px"><span style="background:'+sc[p.status||'not-started']+'22;color:'+sc[p.status||'not-started']+';padding:2px 8px;border-radius:999px;font-size:.75rem;font-weight:700">'+sl[p.status||'not-started']+'</span></td>';
+      '<div style="font-weight:700">'+esc(f.name)+'</div></div></td>' +
+      '<td style="padding:10px;color:var(--muted)">'+esc(f.epicName||'\u2014')+'</td>' +
+      '<td style="padding:10px;color:var(--muted)">'+esc(f.assignedTeamLead||'\u2014')+'</td>' +
+      '<td style="padding:10px;color:var(--muted)">'+doneCount+'/'+(f.tasks||[]).length+'</td>' +
+      '<td style="padding:10px;text-align:right;font-weight:700;color:'+(actH>0?'#34d399':'var(--muted)')+'">'+(actH>0?actH.toFixed(1):'\u2014')+'</td>' +
+      '<td style="padding:10px"><span style="background:'+color+'22;color:'+color+';padding:2px 8px;border-radius:999px;font-size:.75rem;font-weight:700">'+(sl[f.status||'not-started'])+'</span></td>';
 
     tbody.appendChild(tr);
   });
@@ -2230,126 +2254,115 @@ function renderPhaseList() {
   el.innerHTML = '';
   el.appendChild(table);
 }
+let _newFeatureListById = {};
 
-
-function populatePhaseAssigneeDropdown(currentValue) {
-  const sel = document.getElementById('phaseAssigned');
-  if (!sel) return;
-  const buildOptions = (members) => {
-    let html = '<option value="">Unassigned</option>';
-    let matched = false;
-    Object.values(members).forEach(m => {
-      const val = m.email || m.name || '';
-      if (val === currentValue) matched = true;
-      html += `<option value="${esc(val)}" ${val===currentValue?'selected':''}>${esc(m.name||m.email)}</option>`;
+// ── Actual hours, keyed by Feature id (timeentries.phaseId now holds the
+// clocked-against Feature's id going forward — see loadClockPhases/
+// loadManualPhases/clockIn/saveManualTimeEntry below) ──
+async function loadFeatureActualHours(jobId) {
+  try {
+    const snap = await coll('timeentries').where('jobId','==',jobId).get();
+    const hours = {};
+    snap.forEach(d => {
+      const t = d.data();
+      if (t.phaseId && t.hours) hours[t.phaseId] = (hours[t.phaseId]||0) + t.hours;
     });
-    // Preserve legacy free-text values (e.g. names typed before this was a
-    // dropdown) that don't match any current team member, so editing an
-    // older phase never silently blanks out who it was assigned to.
-    if (currentValue && !matched) {
-      html += `<option value="${esc(currentValue)}" selected>${esc(currentValue)} (not on team)</option>`;
+    return hours;
+  } catch(e) { return {}; }
+}
+
+
+let _newFeatureEpics = [];
+
+async function openAddPhaseModal() {
+  if (!conCurrentJobId) return;
+  const sel = document.getElementById('newFeatureEpicSel');
+  sel.innerHTML = '<option value="">— Loading —</option>';
+  document.getElementById('newFeatureEpicNameRow').style.display = 'none';
+  document.getElementById('newFeatureEpicName').value = '';
+  document.getElementById('newFeatureName').value = '';
+
+  const epics = await loadEpicTree(conCurrentJobId);
+  _newFeatureEpics = epics;
+  sel.innerHTML = epics.map(e => '<option value="'+e.id+'">'+esc(e.name)+'</option>').join('') +
+    '<option value="__new__">+ New Epic (one-off / unusual)</option>';
+  kOpen('addPhaseModal');
+}
+
+async function migrateLegacyPhaseToFeature(phaseId, phaseName, phaseStatus) {
+  if (!confirm('Migrate "'+phaseName+'" into a real Feature? This replaces the old legacy card.')) return;
+  try {
+    const epics = await loadEpicTree(conCurrentJobId);
+    let legacyEpic = epics.find(e => e.name === 'Legacy Phases');
+    let epicId = legacyEpic ? legacyEpic.id : null;
+    if (!epicId) {
+      const epicRef = await coll('jobs').doc(conCurrentJobId).collection('estimateGroups').add({
+        name: 'Legacy Phases', order: epics.length, sprintEnabled: true,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      });
+      epicId = epicRef.id;
     }
-    sel.innerHTML = html;
-  };
-  if (!conDb) { buildOptions({}); return; }
-  coll('settings').doc('team').get().then(doc => {
-    buildOptions(doc.exists ? extractTeamMembers(doc.data()) : {});
-  }).catch(() => buildOptions({}));
-}
-
-function openAddPhaseModal() {
-  document.getElementById('addPhaseModalTitle').textContent='Add Phase';
-  document.getElementById('editPhaseId').value='';
-  document.getElementById('phaseName').value='';
-  document.getElementById('phaseTrade').value='';
-  document.getElementById('phaseStart').value='';
-  document.getElementById('phaseEnd').value='';
-  populatePhaseAssigneeDropdown('');
-  document.getElementById('phaseEstHours').value='';
-  document.getElementById('phaseStatus').value='not-started';
-  document.getElementById('phaseNotes').value='';
-  document.getElementById('phaseColor').value='#d97706';
-  document.getElementById('deletePhaseBtn').style.display='none';
-  document.querySelectorAll('.phase-color-opt').forEach(e=>e.classList.remove('selected'));
-  const firstOpt=document.querySelector('.phase-color-opt[data-color="#d97706"]');
-  if(firstOpt) firstOpt.classList.add('selected');
-  kOpen('addPhaseModal');
-}
-
-function openEditPhaseModal(phaseId) {
-  const p=conPhases.find(x=>x.id===phaseId);if(!p) return;
-  document.getElementById('addPhaseModalTitle').textContent='Edit Phase';
-  document.getElementById('editPhaseId').value=phaseId;
-  document.getElementById('phaseName').value=p.name||'';
-  document.getElementById('phaseTrade').value=p.trade||'';
-  document.getElementById('phaseStart').value=p.startDate||'';
-  document.getElementById('phaseEnd').value=p.endDate||'';
-  populatePhaseAssigneeDropdown(p.assigned||'');
-  document.getElementById('phaseEstHours').value=p.estHours||'';
-  document.getElementById('phaseStatus').value=p.status||'not-started';
-  document.getElementById('phaseNotes').value=p.notes||'';
-  document.getElementById('phaseColor').value=p.color||'#d97706';
-  document.getElementById('deletePhaseBtn').style.display='inline-flex';
-  document.querySelectorAll('.phase-color-opt').forEach(el=>el.classList.toggle('selected',el.dataset.color===(p.color||'#d97706')));
-  kOpen('addPhaseModal');
-}
-
-function selectPhaseColor(color,el) {
-  document.getElementById('phaseColor').value=color;
-  document.querySelectorAll('.phase-color-opt').forEach(e=>e.classList.remove('selected'));
-  if(el) el.classList.add('selected');
-}
-
-function savePhase() {
-  if(!conCurrentJobId||!conDb) return;
-  const name=document.getElementById('phaseName').value.trim();
-  if(!name){alert('Phase name is required.');return;}
-  const data={
-    name,trade:document.getElementById('phaseTrade').value,
-    startDate:document.getElementById('phaseStart').value,
-    endDate:document.getElementById('phaseEnd').value,
-    assigned:document.getElementById('phaseAssigned').value.trim(),
-    estHours:parseFloat(document.getElementById('phaseEstHours').value)||0,
-    status:document.getElementById('phaseStatus').value,
-    notes:document.getElementById('phaseNotes').value.trim(),
-    color:document.getElementById('phaseColor').value||'#d97706',
-    updatedAt:firebase.firestore.FieldValue.serverTimestamp(),
-  };
-  const editId=document.getElementById('editPhaseId').value;
-  const ref=coll('jobs').doc(conCurrentJobId).collection('phases');
-  if(editId){
-    ref.doc(editId).update(data).then(()=>kClose('addPhaseModal')).catch(e=>alert('Error: '+e.message));
-  } else {
-    data.order=conPhases.length;data.createdAt=firebase.firestore.FieldValue.serverTimestamp();
-    ref.add(subDoc(data)).then(()=>kClose('addPhaseModal')).catch(e=>alert('Error: '+e.message));
+    await coll('jobs').doc(conCurrentJobId).collection('estimateGroups').doc(epicId)
+      .collection('subgroups').add({
+        name: phaseName, order: (legacyEpic?.features||[]).length,
+        status: phaseStatus || 'not-started', dependsOn: [],
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      });
+    await coll('jobs').doc(conCurrentJobId).collection('phases').doc(phaseId).delete();
+    renderEpicBoard();
+  } catch (e) {
+    alert('Migration error: ' + e.message);
   }
 }
+window.migrateLegacyPhaseToFeature = migrateLegacyPhaseToFeature;
 
-function deleteCurrentPhase() {
-  const editId=document.getElementById('editPhaseId').value;
-  if(!editId||!conCurrentJobId) return;
-  if(!confirm('Delete this phase?')) return;
-  coll('jobs').doc(conCurrentJobId).collection('phases').doc(editId).delete().then(()=>kClose('addPhaseModal'));
+function onNewFeatureEpicChange() {
+  const val = document.getElementById('newFeatureEpicSel').value;
+  document.getElementById('newFeatureEpicNameRow').style.display = val === '__new__' ? 'block' : 'none';
 }
 
-function updatePhaseStatus(phaseId,status) {
-  if(!conCurrentJobId||!conDb) return;
-  coll('jobs').doc(conCurrentJobId).collection('phases').doc(phaseId).update({status});
-}
+async function saveNewFeature() {
+  const name = document.getElementById('newFeatureName').value.trim();
+  if (!name) { alert('Feature name is required.'); return; }
+  const epicSel = document.getElementById('newFeatureEpicSel').value;
+  if (!epicSel) { alert('Pick an Epic, or choose "New Epic" for a one-off situation.'); return; }
 
-function deletePhase(phaseId) {
-  if(!confirm('Delete this phase?')) return;
-  coll('jobs').doc(conCurrentJobId).collection('phases').doc(phaseId).delete();
+  let epicId = epicSel, epicName;
+  try {
+    if (epicSel === '__new__') {
+      const newEpicName = document.getElementById('newFeatureEpicName').value.trim();
+      if (!newEpicName) { alert('Name the new Epic.'); return; }
+      const epicRef = await coll('jobs').doc(conCurrentJobId).collection('estimateGroups').add({
+        name: newEpicName,
+        order: _newFeatureEpics.length,
+        sprintEnabled: true,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      });
+      epicId = epicRef.id;
+      epicName = newEpicName;
+    } else {
+      epicName = (_newFeatureEpics.find(e => e.id === epicId) || {}).name || '';
+    }
+
+    const order = (_newFeatureEpics.find(e => e.id === epicId)?.features || []).length;
+    const featRef = await coll('jobs').doc(conCurrentJobId).collection('estimateGroups')
+      .doc(epicId).collection('subgroups').add({
+        name, order, status: 'not-started', dependsOn: [],
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      });
+
+    kClose('addPhaseModal');
+    if (typeof renderEpicBoard === 'function') renderEpicBoard();
+    openFeatureModal(epicId, epicName, { id: featRef.id, name, status: 'not-started', dependsOn: [], tasks: [] });
+  } catch (e) {
+    alert('Error creating Feature: ' + e.message);
+  }
 }
 
 window.switchPhaseView=switchPhaseView;
 window.openAddPhaseModal=openAddPhaseModal;
-window.openEditPhaseModal=openEditPhaseModal;
-window.selectPhaseColor=selectPhaseColor;
-window.savePhase=savePhase;
-window.deleteCurrentPhase=deleteCurrentPhase;
-window.updatePhaseStatus=updatePhaseStatus;
-window.deletePhase=deletePhase;
+window.onNewFeatureEpicChange=onNewFeatureEpicChange;
+window.saveNewFeature=saveNewFeature;
 
 
 // ── Daily Logs ──
@@ -4161,8 +4174,10 @@ function renderUpcomingPhases() {
   const today = new Date().toISOString().split('T')[0];
   const in7 = new Date(Date.now() + 7*86400000).toISOString().split('T')[0];
 
-  // Query phases across all jobs starting in next 7 days
-  conDb.collectionGroup('phases').where('companyId','==',currentCompanyId)
+  // Query Sprints across all jobs starting in next 7 days — Sprints are the
+  // date-bearing entity in the current Epic/Feature/Task model (Features
+  // themselves don't carry dates, only their assigned Sprint does).
+  conDb.collectionGroup('sprints').where('companyId','==',currentCompanyId)
     .orderBy('startDate')
     .startAt(today)
     .endAt(in7)
@@ -4170,55 +4185,54 @@ function renderUpcomingPhases() {
     .get()
     .then(snap => {
       if (snap.empty) {
-        el.innerHTML = '<div class="small muted" style="font-style:italic;padding:10px 0;text-align:center">No phases in the next 7 days</div>';
+        el.innerHTML = '<div class="small muted" style="font-style:italic;padding:10px 0;text-align:center">No sprints in the next 7 days</div>';
         return;
       }
       el.innerHTML = snap.docs.map(doc => {
-        const phase = doc.data();
+        const sprint = doc.data();
         const jobId = doc.ref.parent.parent.id;
         const job = conJobs.find(j => j.id === jobId);
-        const statusColors = { 'not-started':'var(--muted)', 'in-progress':'var(--amber)', 'complete':'#1dbb87' };
-        const col = statusColors[phase.status] || 'var(--muted)';
-        const isToday = phase.startDate === today;
+        const statusColors = { 'planned':'var(--muted)', 'active':'var(--amber)', 'complete':'#1dbb87' };
+        const col = statusColors[sprint.status] || 'var(--muted)';
+        const isToday = sprint.startDate === today;
         return `<div onclick="openJobDetail('${jobId}')" style="padding:8px 0;border-bottom:1px solid rgba(110,145,210,.07);cursor:pointer">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px">
-            <div style="font-size:.82rem;font-weight:700;color:#eaf0fb">${esc(phase.name||'Phase')}</div>
-            <div style="font-size:.7rem;font-weight:700;color:${isToday?'var(--amber)':'var(--muted)'}">${isToday?'TODAY':phase.startDate||''}</div>
+            <div style="font-size:.82rem;font-weight:700;color:#eaf0fb">${esc(sprint.name||'Sprint')}</div>
+            <div style="font-size:.7rem;font-weight:700;color:${isToday?'var(--amber)':'var(--muted)'}">${isToday?'TODAY':sprint.startDate||''}</div>
           </div>
           <div style="font-size:.74rem;color:var(--amber);margin-bottom:2px">${esc(job ? job.name : '')}</div>
           <div style="display:flex;align-items:center;gap:6px">
             <div style="width:7px;height:7px;border-radius:50%;background:${col}"></div>
-            <span style="font-size:.7rem;color:${col}">${phase.status||'not-started'}</span>
-            ${phase.assigned?`<span style="font-size:.7rem;color:var(--muted)">· ${esc(phase.assigned)}</span>`:''}
+            <span style="font-size:.7rem;color:${col}">${sprint.status||'planned'}</span>
           </div>
         </div>`;
       }).join('');
     })
     .catch(() => {
       // collectionGroup index not ready — fall back to per-job fetch
-      if (!conJobs.length) { el.innerHTML = '<div class="small muted" style="font-style:italic;padding:10px 0;text-align:center">No upcoming phases yet</div>'; return; }
-      const allPhases = [];
+      if (!conJobs.length) { el.innerHTML = '<div class="small muted" style="font-style:italic;padding:10px 0;text-align:center">No upcoming sprints yet</div>'; return; }
+      const allSprints = [];
       let pending = conJobs.length;
       conJobs.forEach(job => {
-        coll('jobs').doc(job.id).collection('phases')
+        coll('jobs').doc(job.id).collection('sprints')
           .where('startDate','>=',today).where('startDate','<=',in7).get()
-          .then(snap => { snap.forEach(doc => allPhases.push({ ...doc.data(), jobId: job.id, jobName: job.name })); })
+          .then(snap => { snap.forEach(doc => allSprints.push({ ...doc.data(), jobId: job.id, jobName: job.name })); })
           .catch(() => {})
           .finally(() => {
             pending--;
             if (pending === 0) {
-              allPhases.sort((a,b) => (a.startDate||'').localeCompare(b.startDate||''));
-              if (!allPhases.length) { el.innerHTML = '<div class="small muted" style="font-style:italic;padding:10px 0;text-align:center">No phases in the next 7 days</div>'; return; }
-              const statusColors = { 'not-started':'var(--muted)', 'in-progress':'var(--amber)', 'complete':'#1dbb87' };
-              el.innerHTML = allPhases.map(phase => {
-                const col = statusColors[phase.status] || 'var(--muted)';
-                const isToday = phase.startDate === today;
-                return `<div onclick="openJobDetail('${phase.jobId}')" style="padding:8px 0;border-bottom:1px solid rgba(110,145,210,.07);cursor:pointer">
+              allSprints.sort((a,b) => (a.startDate||'').localeCompare(b.startDate||''));
+              if (!allSprints.length) { el.innerHTML = '<div class="small muted" style="font-style:italic;padding:10px 0;text-align:center">No sprints in the next 7 days</div>'; return; }
+              const statusColors = { 'planned':'var(--muted)', 'active':'var(--amber)', 'complete':'#1dbb87' };
+              el.innerHTML = allSprints.map(sprint => {
+                const col = statusColors[sprint.status] || 'var(--muted)';
+                const isToday = sprint.startDate === today;
+                return `<div onclick="openJobDetail('${sprint.jobId}')" style="padding:8px 0;border-bottom:1px solid rgba(110,145,210,.07);cursor:pointer">
                   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px">
-                    <div style="font-size:.82rem;font-weight:700;color:#eaf0fb">${esc(phase.name||'Phase')}</div>
-                    <div style="font-size:.7rem;font-weight:700;color:${isToday?'var(--amber)':'var(--muted)'}">${isToday?'TODAY':phase.startDate||''}</div>
+                    <div style="font-size:.82rem;font-weight:700;color:#eaf0fb">${esc(sprint.name||'Sprint')}</div>
+                    <div style="font-size:.7rem;font-weight:700;color:${isToday?'var(--amber)':'var(--muted)'}">${isToday?'TODAY':sprint.startDate||''}</div>
                   </div>
-                  <div style="font-size:.74rem;color:var(--amber)">${esc(phase.jobName||'')}</div>
+                  <div style="font-size:.74rem;color:var(--amber)">${esc(sprint.jobName||'')}</div>
                 </div>`;
               }).join('');
             }
@@ -6561,14 +6575,17 @@ function handleClockToggle() {
   }
 }
 
+let _clockFeatures = [];
+
 function clockIn() {
   const jobId = document.getElementById('clockJobSelect')?.value || '';
   if (!jobId) { alert('Please select a job first.'); return; }
   if (!conDb || !conCurrentUser) return;
 
   const job = conJobs.find(j => j.id === jobId);
-  const phaseId = document.getElementById('clockPhaseSelect')?.value || '';
-  const phase = phaseId ? conPhases.find(p => p.id === phaseId) : null;
+  const selVal = document.getElementById('clockPhaseSelect')?.value || '';
+  const [epicId, featureId] = selVal ? selVal.split('|') : ['', ''];
+  const feature = featureId ? _clockFeatures.find(f => f.id === featureId) : null;
   const now = new Date();
 
   const entry = {
@@ -6577,8 +6594,8 @@ function clockIn() {
     userName: conCurrentUser.displayName || conCurrentUser.email || '',
     jobId,
     jobName: job?.name || '',
-    phaseId: phaseId || '',
-    phaseName: phase?.name || '',
+    phaseId: featureId || '', // Feature id — kept as "phaseId" so existing hour-rollup code needs no changes
+    phaseName: feature?.name || '',
     clockIn: firebase.firestore.FieldValue.serverTimestamp(),
     clockInISO: now.toISOString(),
     clockOut: null,
@@ -6611,27 +6628,30 @@ function clockOut() {
   }).catch(e => alert('Error clocking out: ' + e.message));
 }
 
-// ── Phase selectors for time entry ──
+// ── Feature selectors for time entry (Epic/Feature/Task model) ──
+// Option values are "epicId|featureId" composite strings since a Feature's
+// Firestore path needs both to locate it. Sorted active-first, same as before.
 async function loadClockPhases(jobId) {
   const sel = document.getElementById('clockPhaseSelect');
   if (!sel) return;
-  sel.innerHTML = '<option value="">No phase selected</option>';
+  sel.innerHTML = '<option value="">No Feature selected</option>';
+  _clockFeatures = [];
   if (!jobId) return;
 
   try {
-    const snap = await coll('jobs').doc(jobId).collection('phases').get();
-    const phases = [];
-    snap.forEach(d => phases.push({ id: d.id, ...d.data() }));
-    // Sort by order/status — active phases first
-    phases.sort((a,b) => {
+    const epics = await loadEpicTree(jobId);
+    const features = [];
+    epics.forEach(epic => epic.features.forEach(f => features.push({ ...f, epicId: epic.id })));
+    features.sort((a,b) => {
       const order = {'in-progress':0,'not-started':1,'blocked':2,'complete':3};
       return (order[a.status]||1) - (order[b.status]||1);
     });
-    phases.forEach(p => {
+    _clockFeatures = features;
+    features.forEach(f => {
       const opt = document.createElement('option');
-      opt.value = p.id;
-      const statusLabel = p.status === 'in-progress' ? '🔵' : p.status === 'complete' ? '✅' : p.status === 'blocked' ? '🚫' : '⬜';
-      opt.textContent = statusLabel + ' ' + p.name + (p.assigned ? ' — ' + p.assigned : '');
+      opt.value = f.epicId + '|' + f.id;
+      const statusLabel = f.status === 'in-progress' ? '🔵' : f.status === 'complete' ? '✅' : f.status === 'blocked' ? '🚫' : '⬜';
+      opt.textContent = statusLabel + ' ' + f.name + (f.assignedTeamLead ? ' — ' + f.assignedTeamLead : '');
       sel.appendChild(opt);
     });
   } catch(e) {}
@@ -6640,16 +6660,17 @@ async function loadClockPhases(jobId) {
 async function loadManualPhases(jobId) {
   const sel = document.getElementById('manualPhaseSelect');
   if (!sel) return;
-  sel.innerHTML = '<option value="">No phase</option>';
+  sel.innerHTML = '<option value="">No Feature</option>';
   if (!jobId) return;
   try {
-    const snap = await coll('jobs').doc(jobId).collection('phases').get();
-    snap.forEach(d => {
-      const p = d.data();
-      const opt = document.createElement('option');
-      opt.value = d.id;
-      opt.textContent = p.name + (p.trade ? ' (' + p.trade + ')' : '');
-      sel.appendChild(opt);
+    const epics = await loadEpicTree(jobId);
+    epics.forEach(epic => {
+      epic.features.forEach(f => {
+        const opt = document.createElement('option');
+        opt.value = epic.id + '|' + f.id;
+        opt.textContent = f.name + ' (' + epic.name + ')';
+        sel.appendChild(opt);
+      });
     });
   } catch(e) {}
 }
@@ -6660,11 +6681,11 @@ function saveManualTimeEntry() {
   const date = document.getElementById('manualDate')?.value;
   if (!jobId || !hours || !date) { alert('Job, hours, and date are required.'); return; }
 
-  const phaseId = document.getElementById('manualPhaseSelect')?.value || '';
+  const selVal = document.getElementById('manualPhaseSelect')?.value || '';
+  const [epicId, featureId] = selVal ? selVal.split('|') : ['', ''];
   const crew = document.getElementById('manualCrew')?.value.trim();
   const notes = document.getElementById('manualNotes')?.value.trim();
   const job = conJobs.find(j => j.id === jobId);
-  const phase = phaseId ? { id: phaseId } : null;
 
   const entry = {
     userId: crew ? '' : (conCurrentUser?.uid || ''),
@@ -6672,7 +6693,7 @@ function saveManualTimeEntry() {
     userName: crew || conCurrentUser?.displayName || conCurrentUser?.email || '',
     jobId,
     jobName: job?.name || '',
-    phaseId,
+    phaseId: featureId || '', // Feature id — kept as "phaseId" so existing hour-rollup code needs no changes
     phaseName: '',
     date,
     hours,
@@ -6683,9 +6704,10 @@ function saveManualTimeEntry() {
     createdBy: conCurrentUser?.email || '',
   };
 
-  // Get phase name
-  if (phaseId) {
-    coll('jobs').doc(jobId).collection('phases').doc(phaseId).get().then(d => {
+  // Get Feature name
+  if (featureId && epicId) {
+    coll('jobs').doc(jobId).collection('estimateGroups').doc(epicId)
+      .collection('subgroups').doc(featureId).get().then(d => {
       if (d.exists) entry.phaseName = d.data().name || '';
       return coll('timeentries').add(entry);
     }).then(() => {
@@ -14964,6 +14986,7 @@ function createSprint(jobId, sprintFields) {
   }
   return coll('jobs').doc(jobId).collection('sprints').add({
     name: name, startDate: startDate, endDate: endDate, status: status,
+    companyId: currentCompanyId,
     createdAt: firebase.firestore.FieldValue.serverTimestamp(),
   });
 }
@@ -15065,10 +15088,11 @@ function renderEpicBoard() {
 
       const card = document.createElement('div');
       card.className = 'phase-card';
-      card.onclick = () => openEditPhaseModal(phase.id);
+      card.title = 'Click to migrate this into a real Feature';
+      card.onclick = () => migrateLegacyPhaseToFeature(phase.id, phase.name, phase.status);
       card.innerHTML =
         '<div class="phase-card-accent" style="background:' + color + '"></div>' +
-        '<div class="phase-card-name">' + esc(phase.name) + '</div>' +
+        '<div class="phase-card-name">' + esc(phase.name) + ' <span style="font-size:.68rem;color:var(--amber);font-weight:700">(legacy — click to migrate)</span></div>' +
         '<div class="phase-card-meta">' +
           (phase.assigned ? '👤 ' + esc(phase.assigned) + '<br>' : '') +
           (phase.trade ? '🔧 ' + esc(phase.trade) + '<br>' : '') +
