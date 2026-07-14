@@ -1,4 +1,4 @@
-// JOBSpan Application JavaScript v2.31.0 · 14/Jul/2026
+// JOBSpan Application JavaScript v2.32.0 · 14/Jul/2026
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -1564,7 +1564,52 @@ function renderJobReports(jobId) {
   html += `<div style="height:9px;background:rgba(110,145,210,.12);border-radius:6px;overflow:clip"><div style="height:100%;width:${collectedPct}%;background:#1dbb87"></div></div>`;
   html += '</div>';
 
+  html += '<div id="laborHoursReport" style="margin-top:16px"></div>';
+
   el.innerHTML = html;
+  renderLaborHoursSection(jobId);
+}
+
+// ── Labor Hours: estimated (from Labor line items in the estimate) vs
+// actual (from clocked/logged time entries), red/yellow/green. Estimated
+// hours come straight from the estimate — no separate hours field needed,
+// since Labor-costType line items already store qty as hours. ──
+function isLaborItem(t) { return t.costType === 'Labor' || (t.unit||'').toLowerCase() === 'hr'; }
+
+async function computeJobLaborHours(jobId) {
+  const [epics, hoursByFeature] = await Promise.all([loadEpicTree(jobId), loadFeatureActualHours(jobId)]);
+  let estHours = 0, actHours = 0;
+  epics.forEach(epic => epic.features.forEach(f => {
+    (f.tasks||[]).forEach(t => { if (isLaborItem(t)) estHours += Number(t.qty)||0; });
+    actHours += hoursByFeature[f.id] || 0;
+  }));
+  return { estHours, actHours };
+}
+
+function laborHoursHealth(estHours, actHours) {
+  if (!estHours) return { color: 'var(--muted)', label: 'No labor hours estimated' };
+  const pctUsed = actHours / estHours * 100;
+  if (pctUsed <= 100) return { color: '#1dbb87', label: 'On/under budget' };
+  if (pctUsed <= 115) return { color: '#f59e0b', label: 'Slightly over' };
+  return { color: '#ef5350', label: 'Over budget' };
+}
+
+async function renderLaborHoursSection(jobId) {
+  const el = document.getElementById('laborHoursReport');
+  if (!el) return;
+  const { estHours, actHours } = await computeJobLaborHours(jobId);
+  const health = laborHoursHealth(estHours, actHours);
+  const pctUsed = estHours ? (actHours/estHours*100) : 0;
+  el.innerHTML = `<div class="kt-card" style="padding:16px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <div style="font-weight:800;font-size:.92rem">⏱️ Labor Hours</div>
+      <span style="background:${health.color}22;color:${health.color};padding:2px 10px;border-radius:999px;font-size:.74rem;font-weight:700">${health.label}</span>
+    </div>
+    <div style="font-size:.82rem;color:var(--muted);margin-bottom:8px">${actHours.toFixed(1)}h logged of ${estHours.toFixed(1)}h estimated ${estHours?'('+pctUsed.toFixed(0)+'%)':''}</div>
+    <div style="height:9px;background:rgba(110,145,210,.12);border-radius:6px;overflow:clip">
+      <div style="height:100%;width:${Math.min(pctUsed,100)}%;background:${health.color}"></div>
+    </div>
+  </div>`;
 }
 
 // ── Estimate cost sync (rolls estimate line items into job.estCost) ──
@@ -4046,6 +4091,7 @@ function renderHomeDashboard() {
   renderWhatsChanged();
   renderRecentLogs();
   renderUpcomingPhases();
+  renderCompanyLaborEfficiency();
 }
 window.renderHomeDashboard = renderHomeDashboard;
 
@@ -4246,6 +4292,53 @@ function renderUpcomingPhases() {
 // new document uploads across all jobs. Deliberately NOT a full activity
 // firehose (that's what the per-job Activity tab is for) — just today's
 // two categories Needs Attention doesn't already surface.
+// ── Company Labor Efficiency (Weekly Scorecard number) ──
+// Rolls up estimated-vs-actual labor hours across every active job. This is
+// the company-wide version of the per-job Labor Hours section in Reports —
+// if this trends consistently under 100%, estimates may be padded too high;
+// consistently over 100% means bids may need to go up. Feed the resulting
+// percentage into your KYTHROS Weekly Metrics manually each week — JOBSpan
+// and KYTHROS aren't linked yet (KYTHROS is still local-only, pre-SaaS-rebuild).
+async function renderCompanyLaborEfficiency() {
+  const el = document.getElementById('homeLaborEfficiency');
+  if (!el || !conDb) return;
+  const closedStatuses = ['Closed Won','Closed Lost','Closed Hipshot Sent'];
+  const activeJobs = conJobs.filter(j => !closedStatuses.includes(j.status));
+  if (!activeJobs.length) { el.innerHTML = '<div class="small muted" style="font-style:italic">No active jobs yet</div>'; return; }
+
+  try {
+    const results = await Promise.all(activeJobs.map(j => computeJobLaborHours(j.id).then(r => ({ ...r, job: j }))));
+    let totalEst = 0, totalAct = 0;
+    const perJob = results.filter(r => r.estHours > 0);
+    perJob.forEach(r => { totalEst += r.estHours; totalAct += r.actHours; });
+
+    if (!totalEst) { el.innerHTML = '<div class="small muted" style="font-style:italic">No labor hours estimated yet across active jobs</div>'; return; }
+
+    const pctUsed = totalAct / totalEst * 100;
+    const health = laborHoursHealth(totalEst, totalAct);
+
+    // Flag jobs individually running hot, so the "why" behind the number is visible, not just the number itself.
+    const hot = perJob.filter(r => (r.actHours / r.estHours) > 1.15)
+      .sort((a,b) => (b.actHours/b.estHours) - (a.actHours/a.estHours)).slice(0,3);
+
+    el.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <div style="font-size:1.6rem;font-weight:900;color:${health.color}">${pctUsed.toFixed(1)}%</div>
+        <span style="background:${health.color}22;color:${health.color};padding:3px 12px;border-radius:999px;font-size:.76rem;font-weight:700">${health.label}</span>
+      </div>
+      <div style="font-size:.8rem;color:var(--muted);margin-bottom:10px">${totalAct.toFixed(1)}h logged of ${totalEst.toFixed(1)}h estimated across ${perJob.length} active job${perJob.length!==1?'s':''}</div>
+      <div style="height:10px;background:rgba(110,145,210,.12);border-radius:6px;overflow:clip;margin-bottom:${hot.length?'12px':'0'}">
+        <div style="height:100%;width:${Math.min(pctUsed,100)}%;background:${health.color}"></div>
+      </div>
+      ${hot.length ? '<div style="font-size:.74rem;color:var(--muted);margin-bottom:4px">Running hottest:</div>' + hot.map(r =>
+        `<div style="font-size:.78rem;display:flex;justify-content:space-between;padding:3px 0"><span>${esc(r.job.name)}</span><span style="color:#ef5350;font-weight:700">${(r.actHours/r.estHours*100).toFixed(0)}%</span></div>`
+      ).join('') : ''}
+    `;
+  } catch (e) {
+    el.innerHTML = '<div class="small muted" style="font-style:italic">Could not compute labor efficiency</div>';
+  }
+}
+
 function renderWhatsChanged() {
   const el = document.getElementById('homeWhatsChanged');
   if (!el || !conDb) return;
@@ -14867,6 +14960,8 @@ function loadEpicTree(jobId) {
               price: t.unitPrice || t.price || 0,
               taskStatus: t.taskStatus || 'todo',
               assignedTo: t.assignedTo || null,
+              costType: t.costType || '',
+              unit: t.unit || '',
             });
           });
 
