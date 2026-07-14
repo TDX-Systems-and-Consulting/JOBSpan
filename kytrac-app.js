@@ -1,4 +1,4 @@
-// JOBSpan Application JavaScript v2.38.0 · 14/Jul/2026
+// JOBSpan Application JavaScript v2.39.0 · 14/Jul/2026
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -98,6 +98,35 @@ function logStatusChangeActivity(jobId, prevStatus, newStatus, reason) {
     createdAt: firebase.firestore.FieldValue.serverTimestamp(),
   }).catch(e => console.error('Status change log error:', e));
 }
+
+// ── Theme toggle (Blue default / Black / Light) ──
+// Per-browser preference via localStorage, applied instantly on click
+// (no reload needed) and re-applied before paint on every future load
+// via the inline script at the top of index.html.
+function setTheme(theme) {
+  if (theme === 'blue') {
+    document.documentElement.removeAttribute('data-theme');
+    try { localStorage.removeItem('kt_theme'); } catch (e) {}
+  } else {
+    document.documentElement.setAttribute('data-theme', theme);
+    try { localStorage.setItem('kt_theme', theme); } catch (e) {}
+  }
+  highlightActiveThemeSwatch();
+}
+window.setTheme = setTheme;
+
+function highlightActiveThemeSwatch() {
+  const current = document.documentElement.getAttribute('data-theme') || 'blue';
+  const wrap = document.getElementById('themeToggle');
+  if (!wrap) return;
+  const buttons = wrap.querySelectorAll('button');
+  const order = ['blue', 'black', 'light'];
+  buttons.forEach((btn, i) => {
+    btn.style.borderColor = order[i] === current ? 'var(--amber)' : 'var(--line)';
+    btn.style.boxShadow = order[i] === current ? '0 0 0 2px var(--amber-dim)' : 'none';
+  });
+}
+window.highlightActiveThemeSwatch = highlightActiveThemeSwatch;
 
 function initDragDrop(boardId) {
   const board = document.getElementById(boardId);
@@ -305,6 +334,7 @@ function ktFilterJobs(q) {
 function conShowMain(user) {
   document.getElementById('ktAuthWall').style.display = 'none';
   document.getElementById('ktApp').style.display = 'flex';
+  highlightActiveThemeSwatch();
   const name = user.displayName || user.email || 'User';
   document.getElementById('ktUserName').textContent = name.split(' ')[0] || name;
   const avatarImg = document.getElementById('ktAvatarImg');

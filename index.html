@@ -4,6 +4,20 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <title>JOBSpan — Track Your Job From Estimate to Completion</title>
+  <script>
+    // Applied here, before <style> and before body renders, so the page
+    // never flashes the default Blue theme for a frame before switching
+    // to a saved Black/Light preference. Per-browser preference
+    // (localStorage), not synced across devices — each person picks
+    // their own theme, same idea as Travis wanting dark and Jason
+    // wanting light on the same shared app.
+    (function() {
+      try {
+        const saved = localStorage.getItem('kt_theme');
+        if (saved === 'light' || saved === 'black') document.documentElement.setAttribute('data-theme', saved);
+      } catch (e) {}
+    })();
+  </script>
   <style>
     :root {
       --bg: #050e1c;
@@ -22,12 +36,66 @@
       --shadow: 0 8px 32px rgba(0,0,0,.35);
       --sidebar-w: 220px;
       --topbar-h: 60px;
+      --sidebar-grad-1: rgba(8,18,38,.99);
+      --sidebar-grad-2: rgba(5,12,26,.99);
+      --input-bg: rgba(7,17,33,.94);
+      --date-scheme: dark;
     }
+    /* Black theme: mostly just darker/neutral backgrounds. The app's
+       dominant hardcoded text color (#eaf0fb and friends, used ~125+
+       times directly in JS-generated HTML) is a light color meant for
+       dark backgrounds — it already reads fine on black, so this theme
+       needs almost no extra override work beyond the variables below. */
+    html[data-theme="black"] {
+      --bg: #000000;
+      --surface: rgba(14,14,14,.96);
+      --surface2: rgba(20,20,20,.95);
+      --line: rgba(150,150,150,.14);
+      --text: #f2f2f2;
+      --muted: #8a8a8a;
+      --shadow: 0 8px 32px rgba(0,0,0,.6);
+      --sidebar-grad-1: rgba(6,6,6,.99);
+      --sidebar-grad-2: rgba(0,0,0,.99);
+      --input-bg: rgba(10,10,10,.95);
+      --date-scheme: dark;
+    }
+    /* Light theme: the one direction that genuinely needs help, since
+       flipping to a light background makes hardcoded near-white text
+       colors (baked directly into JS-generated HTML throughout the app)
+       invisible unless overridden. Handled below via attribute-selector
+       overrides on the exact hardcoded color values, scoped so they can
+       never affect print/email documents (those render in a completely
+       separate browser window/document and this stylesheet has no reach
+       into them at all). */
+    html[data-theme="light"] {
+      --bg: #f5f6f8;
+      --surface: rgba(255,255,255,.98);
+      --surface2: rgba(247,248,250,.98);
+      --line: rgba(30,41,59,.12);
+      --text: #1a2233;
+      --muted: #64748b;
+      --amber-dim: rgba(217,119,6,.10);
+      --amber-border: rgba(217,119,6,.32);
+      --shadow: 0 4px 18px rgba(15,23,42,.10);
+      --sidebar-grad-1: #101d34;
+      --sidebar-grad-2: #0a1526;
+      --input-bg: #ffffff;
+      --date-scheme: light;
+    }
+    /* Dominant hardcoded in-app text colors, overridden only under Light.
+       !important is required since inline styles otherwise beat any
+       stylesheet rule — this is the standard technique for retrofitting
+       theme support onto code with scattered inline colors. */
+    html[data-theme="light"] [style*="#eaf0fb"] { color: #1a2233 !important; }
+    html[data-theme="light"] [style*="#a3f2d2"] { color: #047857 !important; }
+    html[data-theme="light"] [style*="#9ca3af"] { color: #6b7280 !important; }
+    html[data-theme="light"] [style*="#94a3b8"] { color: #64748b !important; }
+    html[data-theme="light"] [style*="#8ea3c8"] { color: #64748b !important; }
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; margin: 0; padding: 0; }
-    html, body { min-height: 100vh; background: #050e1c; color: var(--text); font-family: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif; }
+    html, body { min-height: 100vh; background: var(--bg); color: var(--text); font-family: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif; }
     button, input, select, textarea { font: inherit; touch-action: manipulation; }
-    input, select, textarea { width: 100%; background: rgba(7,17,33,.94); color: var(--text); border: 1px solid var(--line); border-radius: 12px; padding: 10px 13px; outline: none; }
-    input[type="date"], input[type="time"] { color-scheme: dark; }
+    input, select, textarea { width: 100%; background: var(--input-bg); color: var(--text); border: 1px solid var(--line); border-radius: 12px; padding: 10px 13px; outline: none; }
+    input[type="date"], input[type="time"] { color-scheme: var(--date-scheme); }
     textarea { min-height: 100px; resize: vertical; }
     .small { font-size: .84rem; }
     .muted { color: var(--muted); }
@@ -40,7 +108,7 @@
     /* ══ SIDEBAR ══ */
     .kt-sidebar {
       width: var(--sidebar-w);
-      background: linear-gradient(180deg, rgba(8,18,38,.99) 0%, rgba(5,12,26,.99) 100%);
+      background: linear-gradient(180deg, var(--sidebar-grad-1) 0%, var(--sidebar-grad-2) 100%);
       border-right: 1px solid var(--amber-border);
       display: flex;
       flex-direction: column;
@@ -925,7 +993,12 @@
     <div class="kt-logo">
       <div class="kt-logo-mark">JOBSpan</div>
       <div class="kt-logo-tag" id="ktCompanyTag">7 Pillars Contracting</div>
-      <div class="kt-logo-version" id="ktVersionTag">Version 2.38.0 · 14/Jul/2026</div>
+      <div class="kt-logo-version" id="ktVersionTag">Version 2.39.0 · 14/Jul/2026</div>
+      <div id="themeToggle" style="display:flex;gap:4px;margin-top:8px">
+        <button onclick="setTheme('blue')" title="Blue (default)" style="flex:1;padding:4px 0;border-radius:6px;border:1px solid var(--line);background:linear-gradient(135deg,#0a162d,#1a2c52);cursor:pointer"></button>
+        <button onclick="setTheme('black')" title="Black" style="flex:1;padding:4px 0;border-radius:6px;border:1px solid var(--line);background:#000;cursor:pointer"></button>
+        <button onclick="setTheme('light')" title="Light" style="flex:1;padding:4px 0;border-radius:6px;border:1px solid var(--line);background:#f5f6f8;cursor:pointer"></button>
+      </div>
     </div>
 
     <nav class="kt-nav">
@@ -3845,6 +3918,6 @@
   </div>
 </div>
 
-<script src="kytrac-app.js?v=202607141830"></script>
+<script src="kytrac-app.js?v=202607141915"></script>
 </body>
 </html>
