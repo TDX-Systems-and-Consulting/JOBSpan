@@ -1,4 +1,4 @@
-// JOBSpan Application JavaScript v2.33.0 · 14/Jul/2026
+// JOBSpan Application JavaScript v2.34.0 · 14/Jul/2026
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -3163,9 +3163,6 @@ window.openJobDetail = openJobDetail;
 window.editCurrentJob = editCurrentJob;
 window.saveActualCost = saveActualCost;
 window.openAddPhaseModal = openAddPhaseModal;
-window.savePhase = savePhase;
-window.updatePhaseStatus = updatePhaseStatus;
-window.deletePhase = deletePhase;
 window.openAddLogModal = openAddLogModal;
 window.saveLog = saveLog;
 window.deleteLog = deleteLog;
@@ -3905,7 +3902,6 @@ window.openAddCOModal = openAddCOModal;
 window.openEditCO = openEditCO;
 window.saveCO = saveCO;
 window.deleteCO = deleteCO;
-window.quickApproveCO = quickApproveCO;
 window.openAddSubModal = openAddSubModal;
 window.openEditSub = openEditSub;
 window.saveSub = saveSub;
