@@ -1,4 +1,4 @@
-// JOBSpan Application JavaScript v2.32.0 · 14/Jul/2026
+// JOBSpan Application JavaScript v2.33.0 · 14/Jul/2026
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -4462,10 +4462,10 @@ function loadCatalog() {
   if (!conDb) return;
   if (catalogListener) catalogListener(); // unsubscribe previous
   catalogListener = coll('catalog')
-    .orderBy('category')
     .onSnapshot(snap => {
       catalogItems = [];
       snap.forEach(doc => catalogItems.push({ id: doc.id, ...doc.data() }));
+      catalogItems.sort((a,b) => (a.category||'').localeCompare(b.category||''));
       renderCatalog();
       renderCatalogStats();
     }, err => console.warn('Catalog load error:', err));
@@ -5556,11 +5556,16 @@ window.openJobDetail = function(jobId) {
 const _origConLoadJobsInv = conLoadJobs;
 function conLoadJobs() {
   if (!conDb) return;
-  coll('jobs').orderBy('createdAt','desc').onSnapshot(snap => {
+  coll('jobs').onSnapshot(snap => {
     conJobs = [];
     snap.forEach(doc => {
       const job = { id: doc.id, ...doc.data() };
       if (!job.archived) conJobs.push(job);
+    });
+    conJobs.sort((a,b) => {
+      const ta = a.createdAt?.toMillis ? a.createdAt.toMillis() : 0;
+      const tb = b.createdAt?.toMillis ? b.createdAt.toMillis() : 0;
+      return tb - ta;
     });
     conRenderBoard();
     conRenderList();
@@ -6288,10 +6293,14 @@ let _todoFilter = 'all';
 function loadTodos() {
   if (!conDb) return;
   coll('todos')
-    .orderBy('createdAt', 'desc')
     .onSnapshot(snap => {
       allTodos = [];
       snap.forEach(doc => allTodos.push({ id: doc.id, ...doc.data() }));
+      allTodos.sort((a,b) => {
+        const ta = a.createdAt?.toMillis ? a.createdAt.toMillis() : 0;
+        const tb = b.createdAt?.toMillis ? b.createdAt.toMillis() : 0;
+        return tb - ta;
+      });
       renderTodos();
       updateTodoBadge();
       populateTodoJobFilter();
@@ -9613,10 +9622,14 @@ let _poLineItems = [];
 function loadPOs() {
   if (!conDb) return;
   coll('purchaseOrders')
-    .orderBy('createdAt', 'desc')
     .onSnapshot(snap => {
       allPOs = [];
       snap.forEach(doc => allPOs.push({ id: doc.id, ...doc.data() }));
+      allPOs.sort((a,b) => {
+        const ta = a.createdAt?.toMillis ? a.createdAt.toMillis() : 0;
+        const tb = b.createdAt?.toMillis ? b.createdAt.toMillis() : 0;
+        return tb - ta;
+      });
       renderPOs();
       updatePOBadge();
       populatePOFilters();
