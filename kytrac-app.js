@@ -1,4 +1,4 @@
-// JOBSpan Application JavaScript v2.36.0 · 14/Jul/2026
+// JOBSpan Application JavaScript v2.37.0 · 14/Jul/2026
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -6159,6 +6159,11 @@ function loadTeamMembers() {
           <div style="flex:1;min-width:0">
             <div style="font-weight:700;font-size:.9rem">${esc(m.name||m.email||'')}</div>
             <div style="font-size:.78rem;color:var(--muted)">${esc(m.email||'')}</div>
+            <div style="display:flex;align-items:center;gap:6px;margin-top:5px">
+              <input id="qbEmpId_${(m.email||'').replace(/\./g,'_')}" value="${esc(m.qbEmployeeId||'')}" placeholder="QuickBooks Employee ID (for payroll sync)"
+                style="font-size:.72rem;padding:3px 8px;width:220px;background:rgba(8,19,37,.6);border:1px solid var(--line);border-radius:6px;color:var(--muted)" />
+              <button class="btn" style="padding:2px 8px;font-size:.7rem" onclick="saveTeamMemberQBId('${(m.email||'').replace(/\./g,'_')}')">Save</button>
+            </div>
           </div>
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
             <select onchange="updateMemberRole('${(m.email||'').replace(/\./g,'_')}',this.value)"
@@ -6198,6 +6203,22 @@ function addTeamMember() {
     alert(`${name} added as ${role}. They can now sign in with ${email}.`);
   }).catch(e => alert('Error: ' + e.message));
 }
+
+// Stores the QuickBooks Employee ID mapping for a team member — needed
+// before the daily payroll clock-out sync can push anything for that
+// person. Doesn't sync anything itself, just records the mapping.
+function saveTeamMemberQBId(key) {
+  if (currentUserRole !== 'Owner') return;
+  const input = document.getElementById('qbEmpId_' + key);
+  if (!input) return;
+  const qbEmployeeId = input.value.trim();
+  coll('settings').doc('team').set(
+    { members: { [key]: { qbEmployeeId, updatedAt: new Date().toISOString() } } },
+    { merge: true }
+  ).then(() => { input.style.borderColor = '#1dbb87'; setTimeout(() => { input.style.borderColor = ''; }, 1200); })
+   .catch(e => alert('Error saving QuickBooks Employee ID: ' + e.message));
+}
+window.saveTeamMemberQBId = saveTeamMemberQBId;
 
 function updateMemberRole(key, newRole) {
   if (currentUserRole !== 'Owner') return;
@@ -11442,9 +11463,28 @@ function renderProposalHistory() {
     const viewedText = p.viewedAt?.toDate
       ? `<span style="font-size:.72rem;color:#1dbb87" title="Customer opened this proposal in the portal">👁 Viewed ${p.viewedAt.toDate().toLocaleDateString()}</span>`
       : (p.status === 'pending' ? `<span style="font-size:.72rem;color:var(--muted)">Not yet viewed</span>` : '');
-    return `<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-bottom:1px solid var(--line)">
+
+    // Real email audit trail (Postmark) — only shows once an email has
+    // actually been sent through the "Send via Email" button. The mailto:
+    // links elsewhere in the app never populate these, since JOBSpan has
+    // no way to track an email it didn't itself send.
+    const emailBits = [];
+    if (p.emailBounced) {
+      emailBits.push(`<span style="font-size:.72rem;color:#ef4444" title="${esc(p.emailBounceReason || 'Delivery failed')}">⚠ Bounced</span>`);
+    } else if (p.emailSentAt?.toDate) {
+      emailBits.push(`<span style="font-size:.72rem;color:#93c5fd" title="Sent via email">📧 Sent ${p.emailSentAt.toDate().toLocaleDateString()}</span>`);
+      if (p.emailLinkClickedAt?.toDate) {
+        emailBits.push(`<span style="font-size:.72rem;color:#1dbb87" title="Customer clicked the link in the email">🔗 Clicked ${p.emailLinkClickedAt.toDate().toLocaleDateString()}</span>`);
+      } else if (p.emailOpenedAt?.toDate) {
+        emailBits.push(`<span style="font-size:.72rem;color:#fbbf24" title="Customer opened the email">✉ Opened ${p.emailOpenedAt.toDate().toLocaleDateString()}</span>`);
+      }
+    }
+    const emailText = emailBits.join(' ');
+
+    return `<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-bottom:1px solid var(--line);flex-wrap:wrap">
       <span style="font-weight:700;color:var(--amber);min-width:90px">${esc(label)}</span>
       <span style="text-transform:uppercase;font-size:.7rem;font-weight:800;color:${color};background:${color}22;padding:2px 8px;border-radius:6px">${esc(p.status)}</span>
+      ${emailText}
       ${viewedText}
       <span style="margin-left:auto;display:flex;gap:6px">${actions.join('')}</span>
     </div>`;
@@ -11463,6 +11503,64 @@ function printProposal() {
   win.document.close();
 }
 window.printProposal = printProposal;
+
+// Sends the latest proposal via real email (Postmark), with genuine
+// sent/opened/clicked tracking — as opposed to every other "email" action
+// in the app, which is just a mailto: link. Requires the Postmark Cloud
+// Functions to be deployed (see postmark-functions.js handoff); until
+// then this will fail gracefully with a clear message rather than
+// silently doing nothing.
+function sendProposalViaEmail(btn) {
+  const job = conJobs.find(j => j.id === conCurrentJobId);
+  if (!job) return;
+  const prop = conProposals[0];
+  if (!prop) { alert('Print a Proposal first before sending it by email.'); return; }
+  if (!job.email) { alert('This job has no customer email on file. Add one in the job details first.'); return; }
+  if (!conFunctions) { alert("Email sending isn't set up yet — this needs the Postmark Cloud Functions deployed first."); return; }
+
+  if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }
+
+  const finish = (msg) => {
+    if (btn) { btn.disabled = false; btn.textContent = '📧 Send via Email'; }
+    if (msg) alert(msg);
+  };
+
+  const proceed = (portalUrl) => {
+    conFunctions.httpsCallable('sendProposalEmail')({
+      companyId: currentCompanyId,
+      jobId: conCurrentJobId,
+      proposalId: prop.id,
+      toEmail: job.email,
+      toName: job.client || job.name || '',
+      jobNumber: job.jobNumber || '',
+      grandTotal: prop.snapshot?.grandTotal || 0,
+      portalUrl,
+      companyName: companyProfile?.companyName || ''
+    }).then(() => {
+      finish('Proposal emailed to ' + job.email + '.');
+      if (prop.status === 'draft') markProposalStatus(prop.id, 'pending');
+      else loadProposals(conCurrentJobId);
+    }).catch(e => finish('Error sending email: ' + e.message));
+  };
+
+  // Reuse an existing portal token for this job if one exists, otherwise
+  // create one — same token scheme shareCustomerPortal() already uses.
+  conDb.collection('portalTokens').where('jobId', '==', conCurrentJobId).limit(1).get()
+    .then(snap => {
+      if (!snap.empty) {
+        proceed(window.location.origin + window.location.pathname + '?portal=' + snap.docs[0].id);
+      } else {
+        const token = conCurrentJobId + '-hash-' + Math.random().toString(36).slice(2, 10);
+        conDb.collection('portalTokens').doc(token).set({
+          jobId: conCurrentJobId, jobName: job.name || '', companyId: currentCompanyId,
+          created: Date.now(), createdBy: conCurrentUser?.email || '', expires: null, shareInvoices: true
+        }).then(() => proceed(window.location.origin + window.location.pathname + '?portal=' + token))
+          .catch(e => finish('Error creating portal link: ' + e.message));
+      }
+    })
+    .catch(e => finish('Error looking up portal link: ' + e.message));
+}
+window.sendProposalViaEmail = sendProposalViaEmail;
 
 function printEstimate() {
   const job = conJobs.find(j => j.id === conCurrentJobId);
