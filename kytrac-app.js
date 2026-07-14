@@ -1,4 +1,4 @@
-// JOBSpan Application JavaScript v2.29.0 · 14/Jul/2026
+// JOBSpan Application JavaScript v2.30.0 · 14/Jul/2026
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -1984,7 +1984,6 @@ function conLoadPhases(jobId) {
     snap.forEach(doc => conPhases.push({ id: doc.id, ...doc.data() }));
     conPhases.sort((a,b) => (a.order ?? 0) - (b.order ?? 0));
     loadPhaseActualHours(jobId).then(() => {
-      renderPhaseKanban();
       renderPhaseList();
       updatePhaseHoursSummary();
       if (typeof renderEpicBoard === 'function') renderEpicBoard();
@@ -1993,7 +1992,6 @@ function conLoadPhases(jobId) {
     coll('jobs').doc(jobId).collection('phases').onSnapshot(snap => {
       conPhases = [];
       snap.forEach(doc => conPhases.push({ id: doc.id, ...doc.data() }));
-      renderPhaseKanban();
       renderPhaseList();
       updatePhaseHoursSummary();
       if (typeof renderEpicBoard === 'function') renderEpicBoard();
@@ -2029,8 +2027,8 @@ let _currentPhaseView = 'board';
 
 function switchPhaseView(view) {
   _currentPhaseView = view;
-  const views = {kanban:'phaseKanbanView',board:'phaseBoardView',gantt:'phaseGanttView',list:'phaseListView'};
-  const btns = {kanban:'phaseViewKanban',board:'phaseViewBoard',gantt:'phaseViewGantt',list:'phaseViewList'};
+  const views = {board:'phaseBoardView',gantt:'phaseGanttView',list:'phaseListView'};
+  const btns = {board:'phaseViewBoard',gantt:'phaseViewGantt',list:'phaseViewList'};
   Object.entries(views).forEach(([k,id]) => { const el=document.getElementById(id); if(el) el.style.display=k===view?'block':'none'; });
   Object.entries(btns).forEach(([k,id]) => {
     const btn=document.getElementById(id); if(!btn) return;
@@ -2038,7 +2036,6 @@ function switchPhaseView(view) {
     else{btn.style.background='transparent';btn.style.color='var(--muted)';}
   });
   if(view==='gantt') renderEpicGantt();
-  if(view==='kanban') renderPhaseKanban();
   if(view==='list') renderPhaseList();
   if(view==='board') renderEpicBoard();
 }
@@ -2175,119 +2172,6 @@ function openGanttFeature(featureId) {
   openFeatureModal(f.epicId, f.epicName, f);
 }
 window.openGanttFeature = openGanttFeature;
-
-function renderPhaseKanban() {
-  const lanes = {'not-started':document.getElementById('phaseLane0'),'in-progress':document.getElementById('phaseLane1'),'complete':document.getElementById('phaseLane2'),'blocked':document.getElementById('phaseLane3')};
-  const counts = {'not-started':0,'in-progress':0,'complete':0,'blocked':0};
-  Object.values(lanes).forEach(l => { if(l) l.innerHTML=''; });
-
-  conPhases.forEach(phase => {
-    const status = phase.status||'not-started';
-    counts[status] = (counts[status]||0)+1;
-    const lane = lanes[status];
-    if(!lane) return;
-    const color = phase.color||'#d97706';
-    const estH = phase.estHours||0;
-    const actH = phase._actualHours||0;
-    const pct = estH>0 ? Math.min(actH/estH*100,120) : 0;
-    const over = actH>estH && estH>0;
-    const barColor = over?'#f87171':(actH>0?'#34d399':'rgba(255,255,255,.15)');
-    const today = new Date().toISOString().split('T')[0];
-    const isBehind = phase.endDate && phase.endDate<today && status!=='complete';
-
-    const hoursHtml = estH>0 ?
-      '<div style="display:flex;justify-content:space-between;font-size:.72rem;margin-top:6px;padding-left:8px">'+
-      '<span style="color:'+(over?'#f87171':'var(--muted)')+'">⏱ '+actH.toFixed(1)+'h actual</span>'+
-      '<span style="color:var(--muted)">'+estH+'h est</span></div>'+
-      '<div class="phase-hours-bar"><div class="phase-hours-fill" style="width:'+Math.min(pct,100)+'%;background:'+barColor+'"></div></div>' : '';
-
-    const div = document.createElement('div');
-    div.className = 'phase-card';
-    div.draggable = true;
-    div.dataset.phaseId = phase.id;
-    div.innerHTML =
-      '<div class="phase-card-accent" style="background:'+color+'"></div>'+
-      '<div class="phase-card-name">'+esc(phase.name)+(isBehind?' <span style="color:#f87171;font-size:.7rem">⚠ Behind</span>':'')+'</div>'+
-      '<div class="phase-card-meta">'+(phase.assigned?'👤 '+esc(phase.assigned)+'<br>':'')+(phase.startDate?'📅 '+phase.startDate+(phase.endDate?' → '+phase.endDate:'')+'<br>':'')+(phase.trade?'🔧 '+esc(phase.trade):'')+'</div>'+
-      hoursHtml;
-    div.addEventListener('dragstart', e => { e.dataTransfer.setData('phaseId', phase.id); });
-    div.onclick = () => openEditPhaseModal(phase.id);
-    lane.appendChild(div);
-  });
-
-  ['not-started','in-progress','complete','blocked'].forEach((s,i) => {
-    const el = document.getElementById('laneCount'+i);
-    if(el) el.textContent = counts[s]||0;
-  });
-  if(!conPhases.length) {
-    const lane = lanes['not-started'];
-    if(lane) lane.innerHTML='<div style="color:var(--muted);font-size:.82rem;text-align:center;padding:20px">No phases yet.<br>Hit + Add Phase to start.</div>';
-  }
-}
-
-function phaseDropped(event, newStatus) {
-  event.preventDefault();
-  const phaseId = event.dataTransfer.getData('phaseId');
-  if(!phaseId||!conCurrentJobId) return;
-  const updates = {status:newStatus,updatedAt:firebase.firestore.FieldValue.serverTimestamp()};
-  if(newStatus==='in-progress') updates.actualStart = new Date().toISOString().split('T')[0];
-  if(newStatus==='complete') updates.actualEnd = new Date().toISOString().split('T')[0];
-  coll('jobs').doc(conCurrentJobId).collection('phases').doc(phaseId).update(updates);
-}
-
-function renderPhaseGantt() {
-  const wrap = document.getElementById('ganttWrap');
-  if(!wrap) return;
-  if(!conPhases.length){wrap.innerHTML='<div class="small muted" style="padding:20px;text-align:center">No phases to show</div>';return;}
-  const dates = conPhases.flatMap(p=>[p.startDate,p.endDate].filter(Boolean));
-  if(!dates.length){wrap.innerHTML='<div class="small muted" style="padding:20px;text-align:center">Add start/end dates to phases to see the Gantt chart</div>';return;}
-
-  const minDate = new Date(dates.reduce((a,b)=>a<b?a:b));
-  const maxDate = new Date(dates.reduce((a,b)=>a>b?a:b));
-  minDate.setDate(minDate.getDate()-7);
-  maxDate.setDate(maxDate.getDate()+14);
-  const totalDays = Math.ceil((maxDate-minDate)/86400000);
-  const dayWidth = Math.max(24,Math.floor(800/totalDays));
-  const totalWidth = totalDays*dayWidth;
-  const today = new Date();
-  const todayOffset = Math.floor((today-minDate)/86400000)*dayWidth;
-
-  const weekWidth = dayWidth*7;
-  let weekHeaders='',d=new Date(minDate);
-  while(d<maxDate){
-    const label=d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
-    weekHeaders+='<div class="gantt-week-label" style="width:'+weekWidth+'px">Wk '+getWeekNum(d)+'<br><span style="font-size:.64rem">'+label+'</span></div>';
-    d.setDate(d.getDate()+7);
-  }
-
-  const statusColors={'not-started':'#64748b','in-progress':'#3b82f6','complete':'#10b981','blocked':'#ef4444'};
-  const rows = conPhases.map(phase => {
-    if(!phase.startDate) return '<div class="gantt-row"><div class="gantt-label">'+esc(phase.name)+'</div><div class="gantt-bar-area" style="width:'+totalWidth+'px"><span style="color:var(--muted);font-size:.74rem;padding:12px 8px;display:block">No dates</span></div></div>';
-    const start=new Date(phase.startDate);
-    const end=phase.endDate?new Date(phase.endDate):new Date(start.getTime()+86400000*3);
-    const left=Math.floor((start-minDate)/86400000)*dayWidth;
-    const width=Math.max(dayWidth*2,Math.ceil((end-start)/86400000)*dayWidth);
-    const color=phase.color||statusColors[phase.status]||'#64748b';
-    const todayStr=new Date().toISOString().split('T')[0];
-    const isBehind=phase.endDate&&phase.endDate<todayStr&&phase.status!=='complete';
-    const actH=phase._actualHours||0;const estH=phase.estHours||0;
-    const hoursLabel=estH>0?' · '+actH.toFixed(1)+'/'+estH+'h':'';
-    return '<div class="gantt-row">'+
-      '<div class="gantt-label">'+esc(phase.name)+'<div style="font-size:.7rem;color:var(--muted)">'+esc(phase.assigned||'')+'</div></div>'+
-      '<div class="gantt-bar-area" style="width:'+totalWidth+'px;position:relative">'+
-      '<div class="gantt-bar'+(isBehind?' behind':'')+' " onclick="openEditPhaseModal(\''+phase.id+'\')" style="left:'+left+'px;width:'+width+'px;background:'+color+';opacity:'+(phase.status==='complete'?0.7:1)+'">'+
-      esc(phase.name)+hoursLabel+'</div>'+
-      (isBehind?'<div style="position:absolute;left:'+(left+width)+'px;top:12px;font-size:.7rem;color:#f87171;font-weight:700;white-space:nowrap"> ⚠ Behind</div>':'')+
-      '</div></div>';
-  }).join('');
-
-  wrap.innerHTML='<div style="display:flex"><div style="width:160px;flex-shrink:0"></div>'+
-    '<div class="gantt-header" style="width:'+totalWidth+'px;position:relative">'+weekHeaders+
-    '<div class="gantt-today-line" style="left:'+todayOffset+'px"></div></div></div>'+
-    rows+'<div style="margin-top:12px;font-size:.74rem;color:var(--muted);display:flex;gap:16px;flex-wrap:wrap">'+
-    '<span>🔵 In Progress</span><span>✅ Complete</span><span style="color:#f87171">⚠ Behind</span>'+
-    '<span style="border-left:2px solid rgba(239,68,68,.7);padding-left:6px">Today</span></div>';
-}
 
 function getWeekNum(d) {
   const date=new Date(d);date.setHours(0,0,0,0);date.setDate(date.getDate()+3-(date.getDay()+6)%7);
@@ -2459,7 +2343,6 @@ function deletePhase(phaseId) {
 }
 
 window.switchPhaseView=switchPhaseView;
-window.phaseDropped=phaseDropped;
 window.openAddPhaseModal=openAddPhaseModal;
 window.openEditPhaseModal=openEditPhaseModal;
 window.selectPhaseColor=selectPhaseColor;
