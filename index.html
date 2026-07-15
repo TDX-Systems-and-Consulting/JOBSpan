@@ -616,10 +616,12 @@
 
     /* ══ MOBILE ══ */
     .kt-menu-btn { display: none; background: none; border: none; color: var(--amber); font-size: 1.4rem; cursor: pointer; padding: 4px 8px; }
+    .kt-sidebar-backdrop { display: none; }
     @media (max-width: 900px) {
       :root { --sidebar-w: 0px; }
       .kt-sidebar { transform: translateX(-220px); width: 220px; }
       .kt-sidebar.open { transform: translateX(0); }
+      .kt-sidebar.open ~ .kt-sidebar-backdrop { display: block; position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 99; }
       .kt-main { margin-left: 0; }
       .kt-menu-btn { display: block; }
       .kt-search { width: 160px; }
@@ -1017,7 +1019,7 @@
     <div class="kt-logo">
       <div class="kt-logo-mark">JOBSpan</div>
       <div class="kt-logo-tag" id="ktCompanyTag">7 Pillars Contracting</div>
-      <div class="kt-logo-version" id="ktVersionTag">Version 2.40.0 · 14/Jul/2026</div>
+      <div class="kt-logo-version" id="ktVersionTag">Version 2.41.0 · 14/Jul/2026</div>
       <div id="themeToggle" style="display:flex;gap:4px;margin-top:8px">
         <button onclick="setTheme('blue')" title="Blue (default)" style="flex:1;padding:4px 0;border-radius:6px;border:1px solid var(--line);background:linear-gradient(135deg,#0a162d,#1a2c52);cursor:pointer"></button>
         <button onclick="setTheme('black')" title="Black" style="flex:1;padding:4px 0;border-radius:6px;border:1px solid var(--line);background:#000;cursor:pointer"></button>
@@ -1097,6 +1099,7 @@
       <button class="kt-signout-btn" onclick="conSignOut()" title="Sign out">⏻</button>
     </div>
   </aside>
+  <div class="kt-sidebar-backdrop" onclick="document.getElementById('ktSidebar').classList.remove('open')"></div>
 
   <!-- MAIN -->
   <div class="kt-main">
@@ -3942,6 +3945,6 @@
   </div>
 </div>
 
-<script src="kytrac-app.js?v=202607142010"></script>
+<script src="kytrac-app.js?v=202607142100"></script>
 </body>
 </html>
