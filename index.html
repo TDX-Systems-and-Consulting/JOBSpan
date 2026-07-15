@@ -40,7 +40,7 @@
       --sidebar-grad-2: rgba(5,12,26,.99);
       --card-grad-1: rgba(var(--card-tint-rgb),.95);
       --card-grad-2: rgba(7,17,33,.95);
-      --input-bg: rgba(7,17,33,.94);
+      --input-bg: var(--card-grad-2);
       --btn-bg: rgba(17,34,65,.9);
       --btn-bg-hover: rgba(30,50,90,.9);
       --modal-bg: rgba(6,14,28,.99);
@@ -328,7 +328,7 @@
     .kt-auth-logo { font-size: 4rem; font-weight: 900; color: var(--amber); letter-spacing: -.04em; margin-bottom: 4px; }
     .kt-auth-tag { font-size: .9rem; color: var(--muted); letter-spacing: .06em; text-transform: uppercase; margin-bottom: 40px; }
     .kt-auth-card {
-      background: linear-gradient(180deg, rgba(var(--card-tint-rgb),.97), rgba(7,17,33,.97));
+      background: linear-gradient(180deg, rgba(var(--card-tint-rgb),.97), var(--card-grad-2));
       border: 1px solid var(--amber-border);
       border-radius: 24px;
       padding: 40px 48px;
@@ -575,7 +575,7 @@
 
     /* ══ JOB COSTING DASHBOARD ══ */
     .jcd-hero { display: grid; grid-template-columns: repeat(auto-fit,minmax(160px,1fr)); gap: 12px; margin-bottom: 18px; }
-    .jcd-kpi { background: linear-gradient(180deg,rgba(var(--card-tint-rgb),.95),rgba(7,17,33,.95)); border: 1px solid var(--amber-border); border-radius: 14px; padding: 15px 17px; position: relative; overflow: hidden; }
+    .jcd-kpi { background: linear-gradient(180deg, var(--card-grad-1), var(--card-grad-2)); border: 1px solid var(--amber-border); border-radius: 14px; padding: 15px 17px; position: relative; overflow: hidden; }
     .jcd-kpi-accent { position: absolute; top: 0; left: 0; right: 0; height: 2px; }
     .jcd-kpi-val { font-size: 1.65rem; font-weight: 900; line-height: 1; margin-bottom: 4px; color: var(--amber); }
     .jcd-kpi-label { font-size: .69rem; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; font-weight: 700; }
@@ -597,7 +597,7 @@
     .margin-bad { background: rgba(239,83,80,.13); color: #ffc0be; border: 1px solid rgba(239,83,80,.27); }
     .variance-bar-wrap { height: 5px; background: rgba(110,145,210,.12); border-radius: 999px; margin-top: 4px; overflow: hidden; min-width: 70px; }
     .variance-bar-fill { height: 5px; border-radius: 999px; transition: width .4s; }
-    .jcd-section { background: linear-gradient(180deg,rgba(var(--card-tint-rgb),.95),rgba(7,17,33,.95)); border: 1px solid var(--amber-border); border-radius: 16px; margin-bottom: 16px; }
+    .jcd-section { background: linear-gradient(180deg,rgba(var(--card-tint-rgb),.95),var(--card-grad-2)); border: 1px solid var(--amber-border); border-radius: 16px; margin-bottom: 16px; }
     .jcd-section-head { padding: 13px 17px 9px; border-bottom: 1px solid var(--amber-border); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
     .jcd-section-head h3 { margin: 0; font-size: .92rem; font-weight: 700; color: var(--amber); }
     .jcd-section-body { padding: 13px 17px; }
@@ -865,7 +865,7 @@
     .portal-stage-label { font-size:.62rem; color:var(--muted); text-align:center; font-weight:600; margin-top:4px; white-space:nowrap; }
     .portal-stage-label.active { color:var(--amber); font-weight:800; }
     .portal-stage-label.done { color:#1dbb87; }
-    .portal-section { background:linear-gradient(180deg,rgba(var(--card-tint-rgb),.95),rgba(7,17,33,.95)); border:1px solid var(--line); border-radius:14px; margin-bottom:16px; overflow:hidden; }
+    .portal-section { background:linear-gradient(180deg,rgba(var(--card-tint-rgb),.95),var(--card-grad-2)); border:1px solid var(--line); border-radius:14px; margin-bottom:16px; overflow:hidden; }
     .portal-section-head { padding:14px 18px; border-bottom:1px solid var(--line); display:flex; justify-content:space-between; align-items:center; }
     .portal-section-head h3 { margin:0; font-size:.95rem; color:var(--amber); font-weight:700; }
     .portal-section-body { padding:16px 18px; }
@@ -889,7 +889,7 @@
     .role-badge { display:inline-flex;align-items:center;padding:2px 8px;border-radius:999px;font-size:.68rem;font-weight:800;border:1px solid; }
 
     /* ══ COMPANY SETTINGS ══ */
-    .settings-section { background:linear-gradient(180deg,rgba(var(--card-tint-rgb),.95),rgba(7,17,33,.95)); border:1px solid var(--amber-border); border-radius:16px; overflow:hidden; margin-bottom:18px; }
+    .settings-section { background:linear-gradient(180deg,rgba(var(--card-tint-rgb),.95),var(--card-grad-2)); border:1px solid var(--amber-border); border-radius:16px; overflow:hidden; margin-bottom:18px; }
     .settings-head { padding:14px 20px 10px; border-bottom:1px solid var(--amber-border); }
     .settings-head h3 { margin:0; font-size:.95rem; font-weight:700; color:var(--amber); }
     .settings-head p { margin:4px 0 0; font-size:.8rem; color:var(--muted); }
@@ -1019,7 +1019,7 @@
     <div class="kt-logo">
       <div class="kt-logo-mark">JOBSpan</div>
       <div class="kt-logo-tag" id="ktCompanyTag">7 Pillars Contracting</div>
-      <div class="kt-logo-version" id="ktVersionTag">Version 2.41.0 · 14/Jul/2026</div>
+      <div class="kt-logo-version" id="ktVersionTag">Version 2.42.0 · 14/Jul/2026</div>
       <div id="themeToggle" style="display:flex;gap:4px;margin-top:8px">
         <button onclick="setTheme('blue')" title="Blue (default)" style="flex:1;padding:4px 0;border-radius:6px;border:1px solid var(--line);background:linear-gradient(135deg,#0a162d,#1a2c52);cursor:pointer"></button>
         <button onclick="setTheme('black')" title="Black" style="flex:1;padding:4px 0;border-radius:6px;border:1px solid var(--line);background:#000;cursor:pointer"></button>
@@ -3945,6 +3945,6 @@
   </div>
 </div>
 
-<script src="kytrac-app.js?v=202607142100"></script>
+<script src="kytrac-app.js?v=202607142145"></script>
 </body>
 </html>
