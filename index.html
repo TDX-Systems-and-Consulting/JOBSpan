@@ -629,8 +629,9 @@
       .jcd-hero { grid-template-columns: repeat(2,1fr); }
       .cost-cat-row { grid-template-columns: 1fr 80px 80px; }
       .form-grid { grid-template-columns: 1fr; }
-      #ktPageDashboard > div[style*="grid-template-columns:1fr 280px"] { grid-template-columns: 1fr; }
-      #ktPageDashboard > div[style*="grid-template-columns:1fr 1fr 1fr"] { grid-template-columns: 1fr; }
+      #ktPageDashboard > div[style*="grid-template-columns:1fr 280px"] { grid-template-columns: 1fr !important; }
+      #ktPageDashboard > div[style*="grid-template-columns:1fr 1fr 1fr"] { grid-template-columns: 1fr !important; }
+      [style*="grid-template-columns:1fr 340px"] { grid-template-columns: 1fr !important; }
     }
     @media (max-width: 500px) {
       .kt-topbar { padding: 0 14px; }
@@ -1019,7 +1020,7 @@
     <div class="kt-logo">
       <div class="kt-logo-mark">JOBSpan</div>
       <div class="kt-logo-tag" id="ktCompanyTag">7 Pillars Contracting</div>
-      <div class="kt-logo-version" id="ktVersionTag">Version 2.42.0 · 14/Jul/2026</div>
+      <div class="kt-logo-version" id="ktVersionTag">Version 2.43.0 · 14/Jul/2026</div>
       <div id="themeToggle" style="display:flex;gap:4px;margin-top:8px">
         <button onclick="setTheme('blue')" title="Blue (default)" style="flex:1;padding:4px 0;border-radius:6px;border:1px solid var(--line);background:linear-gradient(135deg,#0a162d,#1a2c52);cursor:pointer"></button>
         <button onclick="setTheme('black')" title="Black" style="flex:1;padding:4px 0;border-radius:6px;border:1px solid var(--line);background:#000;cursor:pointer"></button>
@@ -3945,6 +3946,6 @@
   </div>
 </div>
 
-<script src="kytrac-app.js?v=202607142145"></script>
+<script src="kytrac-app.js?v=202607142230"></script>
 </body>
 </html>
