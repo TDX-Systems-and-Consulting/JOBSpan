@@ -514,7 +514,7 @@
     .modal-overlay.fullscreen { padding: 0; align-items: stretch; }
     .modal-overlay.open { display: flex; }
     .modal-box { background: var(--modal-bg); border: 1px solid rgba(110,145,210,.2); border-radius: 22px; width: min(960px,calc(100vw - 24px)); margin: auto; box-shadow: 0 30px 80px rgba(0,0,0,.6); color: var(--text); max-height: 90vh; display: flex; flex-direction: column; }
-    .modal-head { padding: 18px 22px; border-bottom: 1px solid rgba(110,145,210,.14); display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+    .modal-head { padding: 18px 22px; border-bottom: 1px solid rgba(110,145,210,.14); display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 10px; }
     .modal-head h3 { margin: 0; font-size: 1.05rem; }
     .modal-body { padding: 0; overflow-y: auto; flex: 1; -webkit-overflow-scrolling: touch; }
     .modal-body .con-subtabs { padding: 16px 22px 0; position:sticky;top:0;background:rgba(6,14,28,.98);z-index:5; }
@@ -1025,7 +1025,7 @@
     <div class="kt-logo">
       <div class="kt-logo-mark">JOBSpan</div>
       <div class="kt-logo-tag" id="ktCompanyTag">7 Pillars Contracting</div>
-      <div class="kt-logo-version" id="ktVersionTag">Version 2.49.0 · 17/Jul/2026</div>
+      <div class="kt-logo-version" id="ktVersionTag">Version 2.50.0 · 17/Jul/2026</div>
       <div id="themeToggle" style="display:flex;gap:4px;margin-top:8px">
         <button onclick="setTheme('blue')" title="Blue (default)" style="flex:1;padding:4px 0;border-radius:6px;border:1px solid var(--line);background:linear-gradient(135deg,#0a162d,#1a2c52);cursor:pointer"></button>
         <button onclick="setTheme('black')" title="Black" style="flex:1;padding:4px 0;border-radius:6px;border:1px solid var(--line);background:#000;cursor:pointer"></button>
@@ -3965,6 +3965,6 @@
   </div>
 </div>
 
-<script src="kytrac-app.js?v=202607171430"></script>
+<script src="kytrac-app.js?v=202607171700"></script>
 </body>
 </html>

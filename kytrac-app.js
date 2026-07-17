@@ -1,4 +1,4 @@
-// JOBSpan Application JavaScript v2.49.0 · 17/Jul/2026
+// JOBSpan Application JavaScript v2.50.0 · 17/Jul/2026
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -14922,6 +14922,18 @@ window.saveJob = function(openEstimate) {
   const client = document.getElementById('jobClient').value.trim();
   if (!name || !client) { alert('Job name and client name are required.'); return; }
 
+  const newStatus = document.getElementById('jobStatus').value;
+  let closedLostReason = null;
+  if (conEditingJobId) {
+    const existingJob = conJobs.find(j => j.id === conEditingJobId);
+    const prevStatusForCheck = existingJob ? existingJob.status : '';
+    const closedLost = getClosedLostReasonIfNeeded(prevStatusForCheck, newStatus);
+    if (closedLost.needed) {
+      if (closedLost.aborted) return; // user cancelled — don't save any changes
+      closedLostReason = closedLost.reason;
+    }
+  }
+
   const customerId = document.getElementById('jobCustomerId')?.value.trim() || '';
 
   const data = {
@@ -14930,7 +14942,7 @@ window.saveJob = function(openEstimate) {
     phone: document.getElementById('jobPhone').value.trim(),
     email: document.getElementById('jobEmail').value.trim(),
     address: document.getElementById('jobAddress').value.trim(),
-    status: document.getElementById('jobStatus').value,
+    status: newStatus,
     statusDate: new Date().toISOString().split('T')[0],
     type: document.getElementById('jobType').value,
     contractValue: parseFloat(document.getElementById('jobContractValue').value) || 0,
@@ -14946,8 +14958,15 @@ window.saveJob = function(openEstimate) {
   };
 
   if (conEditingJobId) {
+    const existingJob = conJobs.find(j => j.id === conEditingJobId);
+    const prevStatus = existingJob ? existingJob.status : '';
     coll('jobs').doc(conEditingJobId).update(data)
-      .then(() => kClose('newJobModal'))
+      .then(() => {
+        kClose('newJobModal');
+        if (prevStatus && prevStatus !== newStatus) {
+          logStatusChangeActivity(conEditingJobId, prevStatus, newStatus, closedLostReason);
+        }
+      })
       .catch(e => alert('Error saving: ' + e.message));
   } else {
     data.jobNumber = conGenJobNumber();
