@@ -1,4 +1,4 @@
-// JOBSpan Application JavaScript v2.46.0 · 17/Jul/2026
+// JOBSpan Application JavaScript v2.47.0 · 17/Jul/2026
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -12426,15 +12426,15 @@ const TIERED_BUNDLES = {
       tiers: {
         low: { label: '42" Littleton White', priceRange: '~$56', lines: [
           { desc: 'Littleton 42 in. LED Indoor White Ceiling Fan with Light Kit', qty: 1, unitCost: 44.97, unitPrice: 56.21, unit: 'ea', type: 'material' },
-          { desc: 'Ceiling fan install Labor', qty: 1, unitCost: 100, unitPrice: 115, unit: 'hr', type: 'labor' },
+          { desc: 'Ceiling fan install Labor (real historical avg, 45 real jobs)', qty: 1, unitCost: 38.30, unitPrice: 44.05, unit: 'hr', type: 'labor' },
         ]},
         med: { label: '44" Hampton Bay Bronze', priceRange: '~$94', lines: [
           { desc: 'Hampton Bay Wellston II 44 in. Indoor LED Bronze Dry Rated Downrod Ceiling Fan with Light Kit and 5 Reversible Blades', qty: 1, unitCost: 74.97, unitPrice: 93.71, unit: 'ea', type: 'material' },
-          { desc: 'Ceiling fan install Labor', qty: 1, unitCost: 100, unitPrice: 115, unit: 'hr', type: 'labor' },
+          { desc: 'Ceiling fan install Labor (real historical avg, 45 real jobs)', qty: 1, unitCost: 38.30, unitPrice: 44.05, unit: 'hr', type: 'labor' },
         ]},
         high: { label: '52" Hampton Bay Menage', priceRange: '~$136', lines: [
           { desc: 'Hampton Bay Menage 52 in. Integrated LED Indoor Low Profile Oil Rubbed Bronze Ceiling Fan with Light Kit', qty: 1, unitCost: 109, unitPrice: 136.25, unit: 'ea', type: 'material' },
-          { desc: 'Ceiling fan install Labor', qty: 1, unitCost: 100, unitPrice: 115, unit: 'hr', type: 'labor' },
+          { desc: 'Ceiling fan install Labor (real historical avg, 45 real jobs)', qty: 1, unitCost: 38.30, unitPrice: 44.05, unit: 'hr', type: 'labor' },
         ]},
       }
     },
