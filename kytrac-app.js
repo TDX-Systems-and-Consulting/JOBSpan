@@ -1,4 +1,4 @@
-// JOBSpan Application JavaScript v2.45.0 · 17/Jul/2026
+// JOBSpan Application JavaScript v2.46.0 · 17/Jul/2026
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -1604,7 +1604,7 @@ function renderJobReports(jobId) {
 // actual (from clocked/logged time entries), red/yellow/green. Estimated
 // hours come straight from the estimate — no separate hours field needed,
 // since Labor-costType line items already store qty as hours. ──
-function isLaborItem(t) { return t.costType === 'Labor' || (t.unit||'').toLowerCase() === 'hr'; }
+function isLaborItem(t) { return t.costType !== 'Subcontractor' && (t.costType === 'Labor' || (t.unit||'').toLowerCase() === 'hr'); }
 
 async function computeJobLaborHours(jobId) {
   const [epics, hoursByFeature] = await Promise.all([loadEpicTree(jobId), loadFeatureActualHours(jobId)]);
@@ -11308,6 +11308,25 @@ function onEstSubgroupChange() {
   _editingSubgroupId = document.getElementById('estItemSubgroupSel')?.value || null;
 }
 
+// Real markup percentages per cost type, from Jason's actual QuickBooks/
+// JobTread cost-types export (margins converted to markup: markup =
+// margin/(1-margin)). Labor 15%, Materials & Subcontractor both 25%,
+// Other & Permit 15%. Equipment/Overhead aren't real cost types in that
+// export — no confirmed real rate for those, left at a generic default.
+const REAL_MARKUP_BY_COST_TYPE = {
+  'Labor': 15, 'Materials': 25, 'Subcontractor': 25,
+  'Other': 15, 'Permits & Fees': 15
+};
+function onEstItemCostTypeChange() {
+  const costType = document.getElementById('estItemCostType')?.value;
+  const markupEl = document.getElementById('estItemMarkup');
+  if (markupEl && costType in REAL_MARKUP_BY_COST_TYPE) {
+    markupEl.value = REAL_MARKUP_BY_COST_TYPE[costType];
+  }
+  calcEstItemPreview();
+}
+window.onEstItemCostTypeChange = onEstItemCostTypeChange;
+
 function calcEstItemPreview() {
   const qty = parseFloat(document.getElementById('estItemQty')?.value) || 1;
   const unitCost = parseFloat(document.getElementById('estItemUnitCost')?.value) || 0;
@@ -13563,7 +13582,7 @@ async function tplSelectTieredTier(tierKey) {
       .collection('subgroups').doc(subgroup.id)
       .collection('items').add({
         desc: line.desc, qty: line.qty, unit: line.unit,
-        costType: line.type === 'labor' ? 'Labor' : 'Materials',
+        costType: line.type === 'labor' ? 'Labor' : (line.type === 'subcontractor' ? 'Subcontractor' : 'Materials'),
         unitCost: line.unitCost, unitPrice: line.unitPrice,
         markup: Math.round((line.unitPrice / line.unitCost - 1) * 100),
         bundleTier: tierKey,
@@ -14170,7 +14189,7 @@ async function wizardAddBundleToEstimate() {
       desc: line.desc,
       qty: lineQty,
       unit: line.unit || 'ea',
-      costType: line.type === 'labor' ? 'Labor' : 'Materials',
+      costType: line.type === 'labor' ? 'Labor' : (line.type === 'subcontractor' ? 'Subcontractor' : 'Materials'),
       unitCost: line.unitCost || 0,
       unitPrice: line.unitPrice || 0,
       markup: line.unitCost > 0 ? Math.round((line.unitPrice / line.unitCost - 1) * 100) : 0,
@@ -14402,7 +14421,7 @@ async function wizAddTemplateToEstimate(templateId) {
       desc: line.desc || '',
       qty: lineQty,
       unit: line.unit || 'ea',
-      costType: line.type === 'labor' ? 'Labor' : 'Materials',
+      costType: line.type === 'labor' ? 'Labor' : (line.type === 'subcontractor' ? 'Subcontractor' : 'Materials'),
       unitCost: line.unitCost || 0,
       unitPrice: line.unitPrice || 0,
       markup: line.markup || 0,
