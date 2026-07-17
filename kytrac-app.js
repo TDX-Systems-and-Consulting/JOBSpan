@@ -1,4 +1,4 @@
-// JOBSpan Application JavaScript v2.54.0 · 17/Jul/2026
+// JOBSpan Application JavaScript v2.55.0 · 17/Jul/2026
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -6249,7 +6249,7 @@ function loadTeamMembers() {
           </div>
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
             <select onchange="updateMemberRole('${(m.email||'').replace(/\./g,'_')}',this.value)"
-              style="font-size:.78rem;padding:4px 8px;background:rgba(8,19,37,.9);border:1px solid ${roleData.color}44;color:${roleData.color};border-radius:7px;font-weight:700"
+              style="font-size:.78rem;padding:4px 8px;background:var(--input-bg);border:1px solid ${roleData.color}44;color:${roleData.color};border-radius:7px;font-weight:700"
               ${isCurrentUser && m.role==='Owner' ? 'title="You are the account Owner"' : ''}>
               ${Object.keys(KYTRAC_ROLES).map(r => `<option value="${r}" ${r===m.role?'selected':''}>${r}</option>`).join('')}
             </select>
