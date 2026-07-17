@@ -1,4 +1,4 @@
-// JOBSpan Application JavaScript v2.47.0 · 17/Jul/2026
+// JOBSpan Application JavaScript v2.48.0 · 17/Jul/2026
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -12434,6 +12434,27 @@ const TIERED_BUNDLES = {
         ]},
         high: { label: '52" Hampton Bay Menage', priceRange: '~$136', lines: [
           { desc: 'Hampton Bay Menage 52 in. Integrated LED Indoor Low Profile Oil Rubbed Bronze Ceiling Fan with Light Kit', qty: 1, unitCost: 109, unitPrice: 136.25, unit: 'ea', type: 'material' },
+          { desc: 'Ceiling fan install Labor (real historical avg, 45 real jobs)', qty: 1, unitCost: 38.30, unitPrice: 44.05, unit: 'hr', type: 'labor' },
+        ]},
+      }
+    },
+    // Separate from the indoor bundle above on purpose — every fan in the
+    // indoor bundle (and every fan in the real historical invoice data)
+    // is indoor-rated only, not safe/code-compliant for an actual
+    // exterior/patio install. This is a genuine product-type difference,
+    // not a quality tier, so it gets its own bundle rather than being
+    // squeezed into a 4th fake tier. Real product Travis sourced
+    // (Home Depot Pro, 7/17/26): Hunter Builder Elite 52in Indoor/Outdoor
+    // fan, explicitly UL-listed for patios. Labor reuses the same real
+    // historical rate — the electrical connection task itself doesn't
+    // change based on which fan gets wired in.
+    {
+      name: 'Ceiling Fan Install — Exterior/Outdoor Rated',
+      icon: '🌀',
+      desc: 'Fan install at existing junction box — patio/exterior locations',
+      tiers: {
+        low: { label: '52" Hunter Builder Elite (Indoor/Outdoor)', priceRange: '$224.99 + $44.05 labor', lines: [
+          { desc: 'Hunter Builder Elite 52 in. Indoor/Outdoor New Bronze Ceiling Fan', qty: 1, unitCost: 179.99, unitPrice: 224.99, unit: 'ea', type: 'material' },
           { desc: 'Ceiling fan install Labor (real historical avg, 45 real jobs)', qty: 1, unitCost: 38.30, unitPrice: 44.05, unit: 'hr', type: 'labor' },
         ]},
       }
