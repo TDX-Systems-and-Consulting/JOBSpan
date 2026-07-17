@@ -1,4 +1,4 @@
-// JOBSpan Application JavaScript v2.53.0 · 17/Jul/2026
+// JOBSpan Application JavaScript v2.54.0 · 17/Jul/2026
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -397,7 +397,7 @@ const CON_FIREBASE_CONFIG = {
 // ── ROLE DEFINITIONS ──
 const KYTRAC_ROLES = {
   'Owner': {
-    label: 'Owner',
+    label: 'Owner/Admin',
     color: '#f59e0b',
     level: 100,
     permissions: ['all']
