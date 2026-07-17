@@ -1,4 +1,4 @@
-// JOBSpan Application JavaScript v2.50.0 · 17/Jul/2026
+// JOBSpan Application JavaScript v2.51.0 · 17/Jul/2026
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -14208,67 +14208,75 @@ function wizChangeBundleQty(delta) {
 window.wizChangeBundleQty = wizChangeBundleQty;
 
 async function wizardAddBundleToEstimate() {
-  if (!_wizardBundle || !_wizardTier || !conCurrentJobId) return;
+  if (!_wizardBundle || !_wizardTier || !conCurrentJobId) {
+    alert('Could not add this — missing bundle/tier/job selection. Please close this and try again from Smart Add.');
+    return;
+  }
   const tier = _wizardBundle.tiers[_wizardTier];
   const qty = _wizardBundleQty || 1;
 
   kClose('smartAddModal');
 
-  // Find or create a group (Epic) based on room context, and a subgroup
-  // (Feature) based on trade context — same pattern as wizardAddToEstimate,
-  // so bundle-added items land in the same tree the Board/Estimate views read.
-  const roomName = _wizardRoom || _wizardCategory || 'General';
-  const tradeName = (_wizardTrade || '').split(' ').slice(1).join(' ') || 'General';
+  try {
+    // Find or create a group (Epic) based on room context, and a subgroup
+    // (Feature) based on trade context — same pattern as wizardAddToEstimate,
+    // so bundle-added items land in the same tree the Board/Estimate views read.
+    const roomName = _wizardRoom || _wizardCategory || 'General';
+    const tradeName = (_wizardTrade || '').split(' ').slice(1).join(' ') || 'General';
 
-  let group = estGroups.find(g => g.name.toLowerCase() === roomName.toLowerCase());
-  if (!group) {
-    const ref = await coll('jobs').doc(conCurrentJobId).collection('estimateGroups').add({
-      name: roomName, order: estGroups.length,
-      createdAt: firebase.firestore.FieldValue.serverTimestamp()
-    });
-    group = { id: ref.id, name: roomName, order: estGroups.length, subgroups: [], directItems: [] };
-    estGroups.push(group);
+    let group = estGroups.find(g => g.name.toLowerCase() === roomName.toLowerCase());
+    if (!group) {
+      const ref = await coll('jobs').doc(conCurrentJobId).collection('estimateGroups').add({
+        name: roomName, order: estGroups.length,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+      group = { id: ref.id, name: roomName, order: estGroups.length, subgroups: [], directItems: [] };
+      estGroups.push(group);
+    }
+    const groupId = group.id;
+
+    const subgroupName = _wizardBundle.name + (qty > 1 ? ' ×' + qty : '') + ' (' + tier.label + ')';
+    const subRef = await coll('jobs').doc(conCurrentJobId).collection('estimateGroups')
+      .doc(groupId).collection('subgroups').add({
+        name: subgroupName, order: group.subgroups?.length || 0,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+    const subgroup = { id: subRef.id, name: subgroupName, order: group.subgroups?.length || 0, items: [] };
+    if (!group.subgroups) group.subgroups = [];
+    group.subgroups.push(subgroup);
+    const subgroupId = subgroup.id;
+
+    // Add each line × qty
+    let order = 0;
+    for (const line of tier.lines) {
+      const lineQty = parseFloat((line.qty * qty).toFixed(4));
+      const data = {
+        desc: line.desc,
+        qty: lineQty,
+        unit: line.unit || 'ea',
+        costType: line.type === 'labor' ? 'Labor' : (line.type === 'subcontractor' ? 'Subcontractor' : 'Materials'),
+        unitCost: line.unitCost || 0,
+        unitPrice: line.unitPrice || 0,
+        markup: line.unitCost > 0 ? Math.round((line.unitPrice / line.unitCost - 1) * 100) : 0,
+        notes: '',
+        order: order++,
+        source: 'smartadd-bundle',
+        bundleName: _wizardBundle.name,
+        bundleTier: _wizardTier,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      };
+      await coll('jobs').doc(conCurrentJobId)
+        .collection('estimateGroups').doc(groupId)
+        .collection('subgroups').doc(subgroupId)
+        .collection('items').add(data);
+    }
+
+    // Refresh estimate
+    if (typeof loadEstimate === 'function') loadEstimate(conCurrentJobId);
+  } catch (e) {
+    console.error('wizardAddBundleToEstimate error:', e);
+    alert('Error adding to estimate: ' + e.message + '\n\nPlease screenshot this and send it over.');
   }
-  const groupId = group.id;
-
-  const subgroupName = _wizardBundle.name + (qty > 1 ? ' ×' + qty : '') + ' (' + tier.label + ')';
-  const subRef = await coll('jobs').doc(conCurrentJobId).collection('estimateGroups')
-    .doc(groupId).collection('subgroups').add({
-      name: subgroupName, order: group.subgroups?.length || 0,
-      createdAt: firebase.firestore.FieldValue.serverTimestamp()
-    });
-  const subgroup = { id: subRef.id, name: subgroupName, order: group.subgroups?.length || 0, items: [] };
-  if (!group.subgroups) group.subgroups = [];
-  group.subgroups.push(subgroup);
-  const subgroupId = subgroup.id;
-
-  // Add each line × qty
-  let order = 0;
-  for (const line of tier.lines) {
-    const lineQty = parseFloat((line.qty * qty).toFixed(4));
-    const data = {
-      desc: line.desc,
-      qty: lineQty,
-      unit: line.unit || 'ea',
-      costType: line.type === 'labor' ? 'Labor' : (line.type === 'subcontractor' ? 'Subcontractor' : 'Materials'),
-      unitCost: line.unitCost || 0,
-      unitPrice: line.unitPrice || 0,
-      markup: line.unitCost > 0 ? Math.round((line.unitPrice / line.unitCost - 1) * 100) : 0,
-      notes: '',
-      order: order++,
-      source: 'smartadd-bundle',
-      bundleName: _wizardBundle.name,
-      bundleTier: _wizardTier,
-      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-    };
-    await coll('jobs').doc(conCurrentJobId)
-      .collection('estimateGroups').doc(groupId)
-      .collection('subgroups').doc(subgroupId)
-      .collection('items').add(data);
-  }
-
-  // Refresh estimate
-  if (typeof loadEstimate === 'function') loadEstimate(conCurrentJobId);
 }
 window.wizardAddBundleToEstimate = wizardAddBundleToEstimate;
 
