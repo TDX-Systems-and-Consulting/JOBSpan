@@ -14273,6 +14273,12 @@ async function wizardAddBundleToEstimate() {
 
     // Refresh estimate
     if (typeof loadEstimate === 'function') loadEstimate(conCurrentJobId);
+
+    // TEMPORARY DIAGNOSTIC — remove once the Estimate-not-showing bug is
+    // confirmed fixed. Tells us definitively whether the writes actually
+    // landed (this alert only fires if every await above succeeded
+    // without throwing).
+    alert('DIAGNOSTIC: Bundle saved successfully.\nGroup: "' + roomName + '" (id ' + groupId + ')\nSubgroup: "' + subgroupName + '" (id ' + subgroupId + ')\n' + tier.lines.length + ' line item(s) written.\n\nIf the Estimate tab still shows empty after this, the problem is in the reload/display, not the save. Please screenshot this alert and send it over.');
   } catch (e) {
     console.error('wizardAddBundleToEstimate error:', e);
     alert('Error adding to estimate: ' + e.message + '\n\nPlease screenshot this and send it over.');
