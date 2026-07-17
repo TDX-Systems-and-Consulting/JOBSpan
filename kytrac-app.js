@@ -1,4 +1,4 @@
-// JOBSpan Application JavaScript v2.43.0 · 14/Jul/2026
+// JOBSpan Application JavaScript v2.44.0 · 17/Jul/2026
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -12814,6 +12814,113 @@ const TIERED_BUNDLES = {
         low: { label: 'Sika Textured Concrete Patch', priceRange: '$40.78 + $230 labor', lines: [
           { desc: 'Sika 1 Gal. Ready-Mix Concrete Patch and Repair, Textured Concrete Patch', qty: 1, unitCost: 32.62, unitPrice: 40.775, unit: 'ea', type: 'material' },
           { desc: 'Concrete Patch Labor', qty: 1, unitCost: 200, unitPrice: 230, unit: 'hr', type: 'labor' },
+        ]},
+      }
+    },
+  ],
+  // Real labor data recovered from actual historical invoices (real jobs,
+  // real customers, real payments) — NOT the raw catalog template, which
+  // (re-confirmed against a fuller 2,881-row export on 7/17) genuinely has
+  // zero real labor for these cost codes, only the $100/hr filler. Every
+  // rate below is a median across multiple (3-20) real historical
+  // instances, computed from each invoice line's real total price divided
+  // by the confirmed real $115/hr crew rate (the raw export doesn't
+  // separately break out hours/rate, only the final charged total).
+  // These are real historical AVERAGES, not precisely engineered per-unit
+  // specs — labeled as such in each description.
+  '0800 Siding': [
+    {
+      name: 'Siding Spot Repair',
+      icon: '🏚️',
+      desc: 'Real historical average from 4 completed jobs — small patch/repair, not full re-side',
+      tiers: {
+        low: { label: 'Vinyl Siding Patch', priceRange: '$9.56 + $54.97 labor (avg)', lines: [
+          { desc: 'Ply Gem Transformations Double 4.5 in. x 145 in. White Dutch Lap Vinyl Siding', qty: 1, unitCost: 7.65, unitPrice: 9.563, unit: 'ea', type: 'material' },
+          { desc: 'Labor to replace siding (real historical avg, 4 jobs)', qty: 1, unitCost: 47.80, unitPrice: 54.97, unit: 'hr', type: 'labor' },
+        ]},
+      }
+    },
+  ],
+  // Real labor data recovered from historical invoices, same sourcing as
+  // above. NOTE: real historical labor also exists for Daltile ceramic
+  // wall tile install (20 real jobs, median 2.25hr) — but that tile's
+  // MATERIAL price is still unrecoverable (confirmed corrupted in both
+  // the raw catalog AND the invoice history — real customers were
+  // apparently never charged separately for this specific tile's
+  // material, only labor). Not bundled until Travis provides a real
+  // material price for it.
+  '1800 Tiling': [
+    {
+      name: 'Cement Board Underlayment Install',
+      icon: '🧱',
+      desc: 'Real historical average from 5 completed jobs',
+      tiers: {
+        low: { label: 'USG Durock 1/2in x 3ft x 5ft', priceRange: '$14.50 + $66.01 labor (avg)', lines: [
+          { desc: 'USG Durock Brand 1/2 in. x 3 ft. x 5 ft. Cement Board with EdgeGuard', qty: 1, unitCost: 11.60, unitPrice: 14.50, unit: 'ea', type: 'material' },
+          { desc: 'Labor to install cement board (real historical avg, 5 jobs)', qty: 1, unitCost: 57.40, unitPrice: 66.01, unit: 'hr', type: 'labor' },
+        ]},
+      }
+    },
+  ],
+  '2200 Specialty Finishes': [
+    {
+      name: 'Tub Surround Install (5-Piece Glue-Up)',
+      icon: '🛁',
+      desc: 'Real historical average from 15 completed jobs',
+      tiers: {
+        low: { label: 'Delta Pro-Series 5-Piece', priceRange: '$136.25 + $54.97 labor (avg)', lines: [
+          { desc: 'Delta Pro-Series 60 in. W x 57 in. H Five Piece Glue Up Tub Surrounds in High Gloss White', qty: 1, unitCost: 109.00, unitPrice: 136.25, unit: 'ea', type: 'material' },
+          { desc: 'Labor to install tub surround (real historical avg, 15 jobs)', qty: 1, unitCost: 47.80, unitPrice: 54.97, unit: 'hr', type: 'labor' },
+        ]},
+      }
+    },
+    {
+      name: 'Alcove Bathtub/Shower Surround Install',
+      icon: '🚿',
+      desc: 'Real historical average from 4 completed jobs — larger 3-piece direct-to-stud surround',
+      tiers: {
+        low: { label: 'Delta Classic 500 3-Piece', priceRange: '$448.75 + $165.03 labor (avg)', lines: [
+          { desc: 'Delta Classic 500 60 in. W x 61.25 in. H x 32 in. D 3-Piece Direct-to-Stud Alcove Bathtub/Shower Surrounds in High Gloss White', qty: 1, unitCost: 359.00, unitPrice: 448.75, unit: 'ea', type: 'material' },
+          { desc: 'Labor to install surround (real historical avg, 4 jobs)', qty: 1, unitCost: 143.50, unitPrice: 165.03, unit: 'hr', type: 'labor' },
+        ]},
+      }
+    },
+    {
+      name: 'Bath Hardware Set Install',
+      icon: '🚽',
+      desc: 'Real historical average from 12 completed jobs — towel ring, TP holder, towel bar set',
+      tiers: {
+        low: { label: 'Delta Porter 3-Piece Set', priceRange: '$74.98 + $17.83 labor (avg)', lines: [
+          { desc: 'Delta Porter 3-Piece Bath Hardware Set with Towel Ring Toilet Paper Holder and 24 in. Towel Bar in Oil Rubbed Bronze', qty: 1, unitCost: 59.98, unitPrice: 74.975, unit: 'ea', type: 'material' },
+          { desc: 'Labor to install bath hardware set (real historical avg, 12 jobs)', qty: 1, unitCost: 15.50, unitPrice: 17.83, unit: 'hr', type: 'labor' },
+        ]},
+        high: { label: 'ARISTA Highlander 3-Piece Set', priceRange: '$35.44 + $11.04 labor (avg)', lines: [
+          { desc: 'ARISTA Highlander Collection 3-Piece Bathroom Hardware Kit in Satin Nickel', qty: 1, unitCost: 28.35, unitPrice: 35.438, unit: 'ea', type: 'material' },
+          { desc: 'Labor to install bathroom hardware kit (real historical avg, 5 jobs)', qty: 1, unitCost: 9.60, unitPrice: 11.04, unit: 'hr', type: 'labor' },
+        ]},
+      }
+    },
+  ],
+  '3100 Miscellaneous': [
+    {
+      name: 'Access Panel Install',
+      icon: '🔲',
+      desc: 'Real historical average from 4 completed jobs',
+      tiers: {
+        low: { label: '14x14 Access Panel', priceRange: '$22.48 + $6.90 labor (avg)', lines: [
+          { desc: '14 in. x 14 in. Access Panel with Frame', qty: 1, unitCost: 17.98, unitPrice: 22.475, unit: 'ea', type: 'material' },
+          { desc: 'Labor to install access panel (real historical avg, 4 jobs)', qty: 1, unitCost: 6.00, unitPrice: 6.90, unit: 'hr', type: 'labor' },
+        ]},
+      }
+    },
+    {
+      name: 'Sheet Metal Patch Install',
+      icon: '🔧',
+      desc: 'Real historical average from 3 completed jobs',
+      tiers: {
+        low: { label: 'Aluminum Sheet', priceRange: '$16.16 + $27.49 labor (avg)', lines: [
+          { desc: 'Everbilt 6 in. x 18 in. 22-Gauge Aluminum Metal Sheet', qty: 1, unitCost: 12.93, unitPrice: 16.163, unit: 'ea', type: 'material' },
+          { desc: 'Labor to install sheet metal patch (real historical avg, 3 jobs)', qty: 1, unitCost: 23.90, unitPrice: 27.49, unit: 'hr', type: 'labor' },
         ]},
       }
     },
