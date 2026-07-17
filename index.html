@@ -518,6 +518,11 @@
     .modal-head h3 { margin: 0; font-size: 1.05rem; }
     .modal-body { padding: 0; overflow-y: auto; flex: 1; -webkit-overflow-scrolling: touch; }
     .modal-body .con-subtabs { padding: 16px 22px 0; position:sticky;top:0;background:rgba(6,14,28,.98);z-index:5; }
+    .name-autocomplete-dropdown { position:absolute; top:100%; left:0; right:0; z-index:50; background:var(--modal-bg); border:1px solid var(--amber-border); border-radius:10px; margin-top:4px; max-height:220px; overflow-y:auto; box-shadow:0 12px 28px rgba(0,0,0,.4); }
+    .name-autocomplete-item { padding:9px 14px; cursor:pointer; font-size:.88rem; border-bottom:1px solid var(--line); }
+    .name-autocomplete-item:last-child { border-bottom:none; }
+    .name-autocomplete-item:hover, .name-autocomplete-item:active { background:var(--amber-dim); }
+    .name-autocomplete-item .role-tag { font-size:.72rem; color:var(--muted); margin-left:6px; }
     .modal-body > div[id^="detail"] { padding: 16px 22px; }
     .modal-foot { padding: 16px 22px; border-top: 1px solid rgba(110,145,210,.14); display: flex; justify-content: flex-end; gap: 10px; }
     .form-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; }
@@ -1020,7 +1025,7 @@
     <div class="kt-logo">
       <div class="kt-logo-mark">JOBSpan</div>
       <div class="kt-logo-tag" id="ktCompanyTag">7 Pillars Contracting</div>
-      <div class="kt-logo-version" id="ktVersionTag">Version 2.48.0 · 17/Jul/2026</div>
+      <div class="kt-logo-version" id="ktVersionTag">Version 2.49.0 · 17/Jul/2026</div>
       <div id="themeToggle" style="display:flex;gap:4px;margin-top:8px">
         <button onclick="setTheme('blue')" title="Blue (default)" style="flex:1;padding:4px 0;border-radius:6px;border:1px solid var(--line);background:linear-gradient(135deg,#0a162d,#1a2c52);cursor:pointer"></button>
         <button onclick="setTheme('black')" title="Black" style="flex:1;padding:4px 0;border-radius:6px;border:1px solid var(--line);background:#000;cursor:pointer"></button>
@@ -3073,8 +3078,22 @@
           <div><label class="small muted">Estimated Cost ($)</label><input id="jobEstCost" type="number" step="0.01" placeholder="0.00" /></div>
           <div><label class="small muted">Start Date</label><input id="jobStartDate" type="date" /></div>
           <div><label class="small muted">Target End Date</label><input id="jobEndDate" type="date" /></div>
-          <div><label class="small muted">Assigned Superintendent</label><input id="jobSuperintendent" placeholder="Name" /></div>
-          <div><label class="small muted">Project Manager</label><input id="jobPM" placeholder="Name" /></div>
+          <div style="position:relative">
+            <label class="small muted">Assigned Superintendent</label>
+            <input id="jobSuperintendent" placeholder="Name" autocomplete="off"
+              oninput="filterNameAutocomplete('jobSuperintendent','jobSuperintendentDropdown')"
+              onfocus="filterNameAutocomplete('jobSuperintendent','jobSuperintendentDropdown')"
+              onblur="setTimeout(()=>hideNameAutocomplete('jobSuperintendentDropdown'),150)" />
+            <div id="jobSuperintendentDropdown" class="name-autocomplete-dropdown" style="display:none"></div>
+          </div>
+          <div style="position:relative">
+            <label class="small muted">Project Manager</label>
+            <input id="jobPM" placeholder="Name" autocomplete="off"
+              oninput="filterNameAutocomplete('jobPM','jobPMDropdown')"
+              onfocus="filterNameAutocomplete('jobPM','jobPMDropdown')"
+              onblur="setTimeout(()=>hideNameAutocomplete('jobPMDropdown'),150)" />
+            <div id="jobPMDropdown" class="name-autocomplete-dropdown" style="display:none"></div>
+          </div>
           <div class="full"><label class="small muted">Notes</label><textarea id="jobNotes" rows="3" placeholder="Scope summary, special instructions..."></textarea></div>
           <div class="full">
             <label class="small muted" style="display:block;margin-bottom:6px">👷 Assigned Crew</label>
@@ -3946,6 +3965,6 @@
   </div>
 </div>
 
-<script src="kytrac-app.js?v=202607171345"></script>
+<script src="kytrac-app.js?v=202607171430"></script>
 </body>
 </html>

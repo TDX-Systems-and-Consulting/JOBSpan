@@ -1,4 +1,4 @@
-// JOBSpan Application JavaScript v2.48.0 · 17/Jul/2026
+// JOBSpan Application JavaScript v2.49.0 · 17/Jul/2026
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -1164,6 +1164,46 @@ async function commitImport() {
 // ── TEAM CACHE + shared option helpers ──
 // ════════════════════════════════════════════════════
 let allTeamMembers = [];
+// Real-time typeahead against the actual team roster (allTeamMembers,
+// already loaded at app startup via loadTeamCache) — not a native
+// <datalist>, since Safari/iOS has a real history of not supporting that
+// reliably. Still a free-text input underneath (not select-only), since a
+// Superintendent/PM might occasionally be someone not yet added to the
+// team roster.
+function filterNameAutocomplete(inputId, dropdownId) {
+  const input = document.getElementById(inputId);
+  const dropdown = document.getElementById(dropdownId);
+  if (!input || !dropdown) return;
+  const query = input.value.trim().toLowerCase();
+
+  const matches = allTeamMembers.filter(m => {
+    const name = m.name || m.displayName || m.email || '';
+    return name && name.toLowerCase().includes(query);
+  });
+
+  if (!matches.length) { dropdown.style.display = 'none'; dropdown.innerHTML = ''; return; }
+
+  dropdown.innerHTML = matches.map(m => {
+    const name = m.name || m.displayName || m.email || '';
+    return `<div class="name-autocomplete-item" onmousedown="selectNameAutocomplete('${inputId}','${dropdownId}','${esc(name).replace(/'/g,"\\'")}')">${esc(name)}${m.role ? `<span class="role-tag">${esc(m.role)}</span>` : ''}</div>`;
+  }).join('');
+  dropdown.style.display = 'block';
+}
+window.filterNameAutocomplete = filterNameAutocomplete;
+
+function selectNameAutocomplete(inputId, dropdownId, name) {
+  const input = document.getElementById(inputId);
+  if (input) input.value = name;
+  hideNameAutocomplete(dropdownId);
+}
+window.selectNameAutocomplete = selectNameAutocomplete;
+
+function hideNameAutocomplete(dropdownId) {
+  const dropdown = document.getElementById(dropdownId);
+  if (dropdown) dropdown.style.display = 'none';
+}
+window.hideNameAutocomplete = hideNameAutocomplete;
+
 function loadTeamCache() {
   if (!conDb) return;
   coll('settings').doc('team').get()
