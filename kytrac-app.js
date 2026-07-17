@@ -1,4 +1,4 @@
-// JOBSpan Application JavaScript v2.44.0 · 17/Jul/2026
+// JOBSpan Application JavaScript v2.45.0 · 17/Jul/2026
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -12994,6 +12994,43 @@ const TIERED_BUNDLES = {
         low: { label: 'Simpson Strong-Tie LUS (2x8)', priceRange: '$2.99 + $17.25 labor/hanger', lines: [
           { desc: 'Simpson Strong-Tie LUS ZMAX Galvanized Face-Mount Joist Hanger for 2x8 Nominal Lumber', qty: 1, unitCost: 2.39, unitPrice: 2.988, unit: 'ea', type: 'material' },
           { desc: 'Joist hanger labor', qty: 1, unitCost: 15, unitPrice: 17.25, unit: 'hr', type: 'labor' },
+        ]},
+      }
+    },
+    // Dimensional lumber labor rate confirmed directly by Jason: $100 cost
+    // per 8ft piece (2x4 reference), applied flat per-piece to the other
+    // dimensional lumber sizes below since he didn't specify length-scaling
+    // — this is his real number, not a proportional estimate.
+    {
+      name: 'Dimensional Lumber Install — 2x8x12',
+      icon: '🪵',
+      desc: 'Per piece — real Jason-confirmed labor rate',
+      tiers: {
+        low: { label: '2x8x12 Dimensional Lumber', priceRange: '$12.15 + $115 labor/piece', lines: [
+          { desc: '2 in. x 8 in. x 12 ft. Dimensional Lumber', qty: 1, unitCost: 9.72, unitPrice: 12.15, unit: 'ea', type: 'material' },
+          { desc: 'Labor to install dimensional lumber (Jason-confirmed, per 8ft piece)', qty: 1, unitCost: 100, unitPrice: 115, unit: 'hr', type: 'labor' },
+        ]},
+      }
+    },
+    {
+      name: 'Dimensional Lumber Install — 2x8x16 PT',
+      icon: '🪵',
+      desc: 'Per piece — real Jason-confirmed labor rate',
+      tiers: {
+        low: { label: '2x8x16 Pressure-Treated', priceRange: '$30.85 + $115 labor/piece', lines: [
+          { desc: '2 in. x 8 in. x 16 ft. #2 Pressure-Treated Lumber', qty: 1, unitCost: 24.68, unitPrice: 30.85, unit: 'ea', type: 'material' },
+          { desc: 'Labor to install dimensional lumber (Jason-confirmed, per 8ft piece)', qty: 1, unitCost: 100, unitPrice: 115, unit: 'hr', type: 'labor' },
+        ]},
+      }
+    },
+    {
+      name: 'Dimensional Lumber Install — 4x4x8 PT Post',
+      icon: '🪵',
+      desc: 'Per piece — real Jason-confirmed labor rate',
+      tiers: {
+        low: { label: '4x4x8 Pressure-Treated Post', priceRange: '$13.35 + $115 labor/piece', lines: [
+          { desc: '4 in. x 4 in. x 8 ft. #2 Pressure-Treated Timber', qty: 1, unitCost: 10.68, unitPrice: 13.35, unit: 'ea', type: 'material' },
+          { desc: 'Labor to install dimensional lumber (Jason-confirmed, per 8ft piece)', qty: 1, unitCost: 100, unitPrice: 115, unit: 'hr', type: 'labor' },
         ]},
       }
     },
