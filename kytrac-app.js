@@ -1,4 +1,4 @@
-// JOBSpan Application JavaScript v2.51.0 · 17/Jul/2026
+// JOBSpan Application JavaScript v2.52.0 · 17/Jul/2026
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -14207,11 +14207,28 @@ function wizChangeBundleQty(delta) {
 }
 window.wizChangeBundleQty = wizChangeBundleQty;
 
+let _wizardAddInProgress = false;
 async function wizardAddBundleToEstimate() {
   if (!_wizardBundle || !_wizardTier || !conCurrentJobId) {
     alert('Could not add this — missing bundle/tier/job selection. Please close this and try again from Smart Add.');
     return;
   }
+  // Real gap this closes: previously, if the wizard's room/trade context
+  // was ever empty for any reason (e.g. a rapid re-tap while a prior add
+  // was still in flight, or navigating oddly), this silently fell back to
+  // a generic "General" group instead of failing loudly — creating
+  // meaningless empty groups that had to be manually cleaned up. Now it
+  // refuses instead of guessing.
+  if (!_wizardRoom && !_wizardCategory) {
+    alert('Lost track of which room/trade this belongs to. Please close Smart Add and start again from the beginning (Start > Interior/Exterior/Systems) rather than retrying from here.');
+    return;
+  }
+  // Guards against rapid double-taps creating duplicate groups/items —
+  // the actual mechanism behind the two empty "General" groups found on
+  // the James Durbin job.
+  if (_wizardAddInProgress) return;
+  _wizardAddInProgress = true;
+
   const tier = _wizardBundle.tiers[_wizardTier];
   const qty = _wizardBundleQty || 1;
 
@@ -14221,7 +14238,7 @@ async function wizardAddBundleToEstimate() {
     // Find or create a group (Epic) based on room context, and a subgroup
     // (Feature) based on trade context — same pattern as wizardAddToEstimate,
     // so bundle-added items land in the same tree the Board/Estimate views read.
-    const roomName = _wizardRoom || _wizardCategory || 'General';
+    const roomName = _wizardRoom || _wizardCategory;
     const tradeName = (_wizardTrade || '').split(' ').slice(1).join(' ') || 'General';
 
     let group = estGroups.find(g => g.name.toLowerCase() === roomName.toLowerCase());
@@ -14273,15 +14290,11 @@ async function wizardAddBundleToEstimate() {
 
     // Refresh estimate
     if (typeof loadEstimate === 'function') loadEstimate(conCurrentJobId);
-
-    // TEMPORARY DIAGNOSTIC — remove once the Estimate-not-showing bug is
-    // confirmed fixed. Tells us definitively whether the writes actually
-    // landed (this alert only fires if every await above succeeded
-    // without throwing).
-    alert('DIAGNOSTIC: Bundle saved successfully.\nGroup: "' + roomName + '" (id ' + groupId + ')\nSubgroup: "' + subgroupName + '" (id ' + subgroupId + ')\n' + tier.lines.length + ' line item(s) written.\n\nIf the Estimate tab still shows empty after this, the problem is in the reload/display, not the save. Please screenshot this alert and send it over.');
   } catch (e) {
     console.error('wizardAddBundleToEstimate error:', e);
     alert('Error adding to estimate: ' + e.message + '\n\nPlease screenshot this and send it over.');
+  } finally {
+    _wizardAddInProgress = false;
   }
 }
 window.wizardAddBundleToEstimate = wizardAddBundleToEstimate;
@@ -14460,11 +14473,15 @@ async function wizAddTemplateToEstimate(templateId) {
   const t = window._wizTemplateData;
   const qty = window._wizTemplateQty || 1;
   if (!t || !conCurrentJobId) return;
+  if (!_wizardRoom && !_wizardCategory) {
+    alert('Lost track of which room/trade this belongs to. Please close Smart Add and start again from the beginning rather than retrying from here.');
+    return;
+  }
 
   document.getElementById('wizTemplateOverlay')?.remove();
   kClose('smartAddModal');
 
-  const roomName = _wizardRoom || _wizardCategory || 'General';
+  const roomName = _wizardRoom || _wizardCategory;
   const tradeName = t.name || (_wizardTrade || '').split(' ').slice(1).join(' ') || 'General';
 
   let group = estGroups.find(g => g.name.toLowerCase() === roomName.toLowerCase());
@@ -14716,11 +14733,15 @@ function wizardGoStep(idx) {
 async function wizardAddToEstimate() {
   if (_wizardSelectedItems.size === 0) { alert('Select at least one item.'); return; }
   if (!conDb || !conCurrentJobId) return;
+  if (!_wizardRoom && !_wizardCategory) {
+    alert('Lost track of which room/trade this belongs to. Please close Smart Add and start again from the beginning rather than retrying from here.');
+    return;
+  }
 
   // Pick or create group based on room
   let groupId = null;
   let subgroupId = null;
-  const roomName = _wizardRoom || _wizardCategory || 'General';
+  const roomName = _wizardRoom || _wizardCategory;
   const tradeName = (_wizardTrade || '').split(' ').slice(1).join(' ') || 'General';
 
   // Find existing group matching room name
