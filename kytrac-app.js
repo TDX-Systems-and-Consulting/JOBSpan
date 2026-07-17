@@ -1,4 +1,4 @@
-// JOBSpan Application JavaScript v2.52.0 · 17/Jul/2026
+// JOBSpan Application JavaScript v2.53.0 · 17/Jul/2026
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -471,7 +471,14 @@ const CAL_USER_COLORS = [
 let calendarEvents = []; // personal/team events
 let _teamColors = {}; // email -> color
 
+// A person can be LABELED with a limited role (e.g. "Sales", for
+// reporting/display purposes - who's actually doing sales work) while
+// still having full Owner-level permissions underneath, via a per-person
+// override on their team record. Real use case: Jason - role label
+// "Sales" to reflect what he actually does day to day, but retains full
+// access per the TDX Holdings transition.
 function hasPermission(perm) {
+  if (currentUserTeamData?.fullAccessOverride) return true;
   if (!currentUserRole) return false;
   const role = KYTRAC_ROLES[currentUserRole];
   if (!role) return false;
@@ -480,6 +487,7 @@ function hasPermission(perm) {
 }
 
 function isOwnerOrAdmin() {
+  if (currentUserTeamData?.fullAccessOverride) return true;
   return currentUserRole === 'Owner' || currentUserRole === 'Project Manager';
 }
 
@@ -5675,7 +5683,7 @@ let companyProfile = {};
 
 // Default profile — used only if no company settings doc exists yet in Firestore
 const DEFAULT_COMPANY_PROFILE = {
-  companyName: '7 Pillars Contracting',
+  companyName: 'TDX Holdings, LLC',
   phone: '',
   email: '',
   website: '',
@@ -6234,6 +6242,10 @@ function loadTeamMembers() {
                 style="font-size:.72rem;padding:3px 8px;width:220px;background:rgba(8,19,37,.6);border:1px solid var(--line);border-radius:6px;color:var(--muted)" />
               <button class="btn" style="padding:2px 8px;font-size:.7rem" onclick="saveTeamMemberQBId('${(m.email||'').replace(/\./g,'_')}')">Save</button>
             </div>
+            <label style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:.72rem;color:var(--muted);cursor:pointer">
+              <input type="checkbox" ${m.fullAccessOverride ? 'checked' : ''} onchange="setTeamMemberFullAccessOverride('${(m.email||'').replace(/\./g,'_')}',this.checked)" />
+              Full Access Override <span style="color:#9ca3af">(keeps their role label, but grants Owner-level permissions everywhere except adding/removing/promoting other team members — that stays Owner-only)</span>
+            </label>
           </div>
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
             <select onchange="updateMemberRole('${(m.email||'').replace(/\./g,'_')}',this.value)"
@@ -6289,6 +6301,20 @@ function saveTeamMemberQBId(key) {
    .catch(e => alert('Error saving QuickBooks Employee ID: ' + e.message));
 }
 window.saveTeamMemberQBId = saveTeamMemberQBId;
+
+// Sets/clears the full-access override for a team member - Owner-only,
+// same security boundary as other team management actions (this is what
+// grants Owner-level permissions to someone with a different role label,
+// e.g. Jason: role label "Sales", full access underneath).
+function setTeamMemberFullAccessOverride(key, checked) {
+  if (currentUserRole !== 'Owner') return;
+  coll('settings').doc('team').set(
+    { members: { [key]: { fullAccessOverride: checked, updatedAt: new Date().toISOString() } } },
+    { merge: true }
+  ).then(() => loadTeamMembers())
+   .catch(e => alert('Error: ' + e.message));
+}
+window.setTeamMemberFullAccessOverride = setTeamMemberFullAccessOverride;
 
 function updateMemberRole(key, newRole) {
   if (currentUserRole !== 'Owner') return;
@@ -9483,6 +9509,7 @@ let eosMetrics = [];
 let eosIssues = [];
 
 function eosCanEdit() {
+  if (currentUserTeamData?.fullAccessOverride) return true;
   return (KYTRAC_ROLES[currentUserRole]?.level || 0) >= 55;
 }
 
