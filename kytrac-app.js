@@ -1,4 +1,4 @@
-// JOBSpan Application JavaScript v2.55.0 · 17/Jul/2026
+// JOBSpan Application JavaScript v2.56.0 · 17/Jul/2026
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -12676,6 +12676,35 @@ const TIERED_BUNDLES = {
         ]},
       }
     },
+    // NOTE for Travis: this is vinyl (LVT) styled to LOOK like tile
+    // ("LVP Tile" is the real catalog product name), NOT real ceramic or
+    // porcelain tile. A client asking for "a tile floor" in a bathroom
+    // most likely means real tile for proper wet-area durability. Real
+    // ceramic tile install labor IS confirmed real (20 historical jobs),
+    // but the actual tile material still has no recoverable real price
+    // anywhere (catalog or invoice history) - flagged separately.  This
+    // is a legitimate lower-cost option if a tile LOOK (not real tile) is
+    // acceptable, using the same real LVP install labor rate already
+    // established above.
+    {
+      name: 'LVP Tile-Look Flooring Install',
+      icon: '⬜',
+      desc: 'Vinyl (LVT) styled to look like tile — NOT real ceramic/porcelain tile',
+      tiers: {
+        low: { label: 'LVP Tile: Marble', priceRange: '$2.99/sqft + $5.75 labor/sqft', lines: [
+          { desc: 'LVP Tile: Marble, 12"x24"x5mm/20mil', qty: 200, unitCost: 2.39, unitPrice: 2.988, unit: 'sqft', type: 'material' },
+          { desc: 'LVP Flooring Labor', qty: 200, unitCost: 5, unitPrice: 5.75, unit: 'sqft', type: 'labor' },
+        ]},
+        med: { label: 'LVP Tile: Slate', priceRange: '$2.99/sqft + $5.75 labor/sqft', lines: [
+          { desc: 'LVP Tile: Slate, 12"x24"x5mm/20mil', qty: 200, unitCost: 2.39, unitPrice: 2.988, unit: 'sqft', type: 'material' },
+          { desc: 'LVP Flooring Labor', qty: 200, unitCost: 5, unitPrice: 5.75, unit: 'sqft', type: 'labor' },
+        ]},
+        high: { label: 'LVP Tile: Stone', priceRange: '$2.99/sqft + $5.75 labor/sqft', lines: [
+          { desc: 'LVP Tile: Stone, 12"x24"x5mm/20mil', qty: 200, unitCost: 2.39, unitPrice: 2.988, unit: 'sqft', type: 'material' },
+          { desc: 'LVP Flooring Labor', qty: 200, unitCost: 5, unitPrice: 5.75, unit: 'sqft', type: 'labor' },
+        ]},
+      }
+    },
     {
       name: 'Carpet Remove & Replace',
       icon: '🏠',
@@ -13340,12 +13369,17 @@ let _wizardCurrentItems = [];
 // placeholder for now — "paint only right now, then we'll build out."
 // ══════════════════════════════════════════════════════════════════
 
-const TPL_ROOMS = [
-  'Global', 'Mechanicals', 'Exterior', 'Basement', 'Entry', 'Dining Room',
-  'Living Room', 'Kitchen', 'Hallway', 'Stairwell', 'Bedroom 1', 'Bedroom 2',
-  'Bedroom 3', 'Bedroom 4', 'Bedroom 5', 'Full Bath 1', 'Full Bath 2',
-  'Half Bath', 'Laundry', 'Bonus Room', 'Garage'
-];
+const TPL_ROOM_GROUPS = {
+  'Interior': [
+    'Entry', 'Living Room', 'Dining Room', 'Kitchen', 'Hallway', 'Stairwell',
+    'Bedroom 1', 'Bedroom 2', 'Bedroom 3', 'Bedroom 4', 'Bedroom 5',
+    'Full Bath 1', 'Full Bath 2', 'Half Bath', 'Laundry', 'Bonus Room',
+    'Basement', 'Garage'
+  ],
+  'Exterior': ['Exterior'],
+  'Global / Whole-House': ['Global', 'Mechanicals']
+};
+const TPL_ROOMS = Object.values(TPL_ROOM_GROUPS).flat();
 
 const TPL_CATEGORIES = [
   'Framing', 'Electrical: rough', 'HVAC: Rough', 'Plumbing: rough',
@@ -13388,6 +13422,7 @@ const TPL_ITEMS_BY_CATEGORY = {
   ],
   'Flooring': [
     { key: 'lvpflooring', label: 'LVP Flooring Install', tieredRef: { trade: '1700 Flooring', name: 'LVP Flooring Install' } },
+    { key: 'lvptile', label: 'LVP Tile-Look Install (vinyl, not real tile)', tieredRef: { trade: '1700 Flooring', name: 'LVP Tile-Look Flooring Install' } },
     { key: 'carpetreplace', label: 'Carpet Remove & Replace', tieredRef: { trade: '1700 Flooring', name: 'Carpet Remove & Replace' } }
   ]
 };
@@ -13487,15 +13522,17 @@ function paintPackagesForSqft(sqft) {
   return Math.ceil(sqft / 1000);
 }
 
+let _tplSelectedArea = null;
 let _tplSelectedRoom = null;
 let _tplSelectedCategory = null;
 let _tplSelectedGrade = 'low';
 
 function openTemplatePicker() {
+  _tplSelectedArea = null;
   _tplSelectedRoom = null;
   _tplSelectedCategory = null;
   _tplSelectedGrade = 'low';
-  tplGoToRooms();
+  tplGoToAreas();
   kOpen('templatePickerModal');
 }
 window.openTemplatePicker = openTemplatePicker;
@@ -13503,23 +13540,49 @@ window.openTemplatePicker = openTemplatePicker;
 function tplUpdateBreadcrumb() {
   const el = document.getElementById('tplBreadcrumb');
   if (!el) return;
-  let html = '<span onclick="tplGoToRooms()">Rooms</span>';
+  let html = '<span onclick="tplGoToAreas()">Rooms</span>';
+  if (_tplSelectedArea) html += ' › <span onclick="tplGoToRooms(\'' + esc(_tplSelectedArea) + '\')">' + esc(_tplSelectedArea) + '</span>';
   if (_tplSelectedRoom) html += ' › <span onclick="tplGoToCategories()">' + esc(_tplSelectedRoom) + '</span>';
   if (_tplSelectedCategory) html += ' › <span onclick="tplGoToItems()">' + esc(_tplSelectedCategory) + '</span>';
   el.innerHTML = html;
 }
 
-function tplGoToRooms() {
+function tplGoToAreas() {
+  _tplSelectedArea = null;
   _tplSelectedRoom = null;
   _tplSelectedCategory = null;
+  document.getElementById('tplStepAreas').style.display = 'block';
+  document.getElementById('tplStepRooms').style.display = 'none';
+  document.getElementById('tplStepCategories').style.display = 'none';
+  document.getElementById('tplStepItems').style.display = 'none';
+  document.getElementById('tplStepPaintForm').style.display = 'none';
+  document.getElementById('tplStepLinearForm').style.display = 'none';
+  document.getElementById('tplStepTieredForm').style.display = 'none';
+  const grid = document.getElementById('tplAreaGrid');
+  const icons = { 'Interior': '🏠', 'Exterior': '🌳', 'Global / Whole-House': '🏗️' };
+  grid.innerHTML = Object.keys(TPL_ROOM_GROUPS).map(area =>
+    `<div class="wizard-category-card" onclick="tplGoToRooms('${esc(area)}')">${icons[area] || ''} ${esc(area)}</div>`
+  ).join('');
+  tplUpdateBreadcrumb();
+}
+window.tplGoToAreas = tplGoToAreas;
+
+function tplGoToRooms(area) {
+  _tplSelectedArea = area || _tplSelectedArea;
+  _tplSelectedRoom = null;
+  _tplSelectedCategory = null;
+  document.getElementById('tplStepAreas').style.display = 'none';
   document.getElementById('tplStepRooms').style.display = 'block';
   document.getElementById('tplStepCategories').style.display = 'none';
   document.getElementById('tplStepItems').style.display = 'none';
   document.getElementById('tplStepPaintForm').style.display = 'none';
   document.getElementById('tplStepLinearForm').style.display = 'none';
   document.getElementById('tplStepTieredForm').style.display = 'none';
+  const titleEl = document.getElementById('tplRoomAreaTitle');
+  if (titleEl) titleEl.textContent = _tplSelectedArea + ' — which room?';
   const grid = document.getElementById('tplRoomGrid');
-  grid.innerHTML = TPL_ROOMS.map(r =>
+  const rooms = TPL_ROOM_GROUPS[_tplSelectedArea] || TPL_ROOMS;
+  grid.innerHTML = rooms.map(r =>
     `<div class="wizard-category-card" onclick="tplSelectRoom('${esc(r)}')">${esc(r)}</div>`
   ).join('');
   tplUpdateBreadcrumb();

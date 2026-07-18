@@ -1025,7 +1025,7 @@
     <div class="kt-logo">
       <div class="kt-logo-mark">JOBSpan</div>
       <div class="kt-logo-tag" id="ktCompanyTag">7 Pillars Contracting</div>
-      <div class="kt-logo-version" id="ktVersionTag">Version 2.55.0 · 17/Jul/2026</div>
+      <div class="kt-logo-version" id="ktVersionTag">Version 2.56.0 · 17/Jul/2026</div>
       <div id="themeToggle" style="display:flex;gap:4px;margin-top:8px">
         <button onclick="setTheme('blue')" title="Blue (default)" style="flex:1;padding:4px 0;border-radius:6px;border:1px solid var(--line);background:linear-gradient(135deg,#0a162d,#1a2c52);cursor:pointer"></button>
         <button onclick="setTheme('black')" title="Black" style="flex:1;padding:4px 0;border-radius:6px;border:1px solid var(--line);background:#000;cursor:pointer"></button>
@@ -2899,15 +2899,22 @@
     <div class="modal-head" style="flex-shrink:0">
       <div>
         <h3 style="margin:0">📐 Templates</h3>
-        <div class="wizard-breadcrumb" id="tplBreadcrumb"><span onclick="tplGoToRooms()">Rooms</span></div>
+        <div class="wizard-breadcrumb" id="tplBreadcrumb"><span onclick="tplGoToAreas()">Rooms</span></div>
       </div>
       <button class="btn" onclick="kClose('templatePickerModal')">Close</button>
     </div>
     <div class="modal-body" style="flex:1;overflow-y:auto">
 
+      <!-- Step 0: Interior / Exterior / Global -->
+      <div id="tplStepAreas">
+        <div style="font-weight:700;margin-bottom:4px">Interior or Exterior?</div>
+        <div class="small muted" style="margin-bottom:12px">Rehab Template — room by room breakdown</div>
+        <div id="tplAreaGrid" class="wizard-category-grid"></div>
+      </div>
+
       <!-- Step 1: Room list -->
-      <div id="tplStepRooms">
-        <div style="font-weight:700;margin-bottom:4px">Which room?</div>
+      <div id="tplStepRooms" style="display:none">
+        <div style="font-weight:700;margin-bottom:4px" id="tplRoomAreaTitle">Which room?</div>
         <div class="small muted" style="margin-bottom:12px">Rehab Template — room by room breakdown</div>
         <div id="tplRoomGrid" class="wizard-category-grid"></div>
       </div>
@@ -3965,6 +3972,6 @@
   </div>
 </div>
 
-<script src="kytrac-app.js?v=202607172130"></script>
+<script src="kytrac-app.js?v=202607172230"></script>
 </body>
 </html>
