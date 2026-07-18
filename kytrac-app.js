@@ -1,4 +1,4 @@
-// JOBSpan Application JavaScript v2.56.0 · 17/Jul/2026
+// JOBSpan Application JavaScript v2.57.0 · 17/Jul/2026
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -12648,6 +12648,17 @@ const TIERED_BUNDLES = {
         ]},
       }
     },
+    {
+      name: 'Outlet Replace (Standard, Non-GFCI)',
+      icon: '🔌',
+      desc: 'Per outlet — standard duplex outlet swap',
+      tiers: {
+        low: { label: 'Leviton 15A Residential Duplex', priceRange: '$0.96 + $28.75 labor', lines: [
+          { desc: 'Leviton 15 Amp Residential Grade Grounding Duplex Outlet, White', qty: 1, unitCost: 0.77, unitPrice: 0.963, unit: 'ea', type: 'material' },
+          { desc: 'Labor to Install outlet', qty: 1, unitCost: 25.00, unitPrice: 28.75, unit: 'hr', type: 'labor' },
+        ]},
+      }
+    },
   ],
 
   '1700 Flooring': [
@@ -12725,6 +12736,28 @@ const TIERED_BUNDLES = {
     },
   ],
   '2300 Painting': [
+    // NOTE: this uses the two rates that genuinely scale per sqft
+    // (material + labor). The real catalog also has a flat materials-
+    // package surcharge (brush/tape/paper, ~$95 per 1000 sqft, rounded
+    // up) that doesn't fit a simple per-sqft scale - small enough
+    // relative to the per-sqft costs that it's left as a separate manual
+    // add for large jobs rather than baked into a rushed, untested
+    // calculator here.
+    {
+      name: 'Wall/Ceiling Paint (per sqft)',
+      icon: '🎨',
+      desc: 'Materials + labor per sqft, 1 coat',
+      tiers: {
+        low: { label: 'Standard Grade', priceRange: '$0.75/sqft + $3.45 labor/sqft', lines: [
+          { desc: 'Paint (1 coat, standard grade)', qty: 1, unitCost: 0.60, unitPrice: 0.75, unit: 'sqft', type: 'material' },
+          { desc: 'Paint Labor (1 coat, standard grade)', qty: 1, unitCost: 3.00, unitPrice: 3.45, unit: 'sqft', type: 'labor' },
+        ]},
+        high: { label: 'High Grade', priceRange: '$2.25/sqft + $5.18 labor/sqft', lines: [
+          { desc: 'Paint (1 coat, high grade)', qty: 1, unitCost: 1.80, unitPrice: 2.25, unit: 'sqft', type: 'material' },
+          { desc: 'Paint Labor (1 coat, high grade)', qty: 1, unitCost: 4.50, unitPrice: 5.18, unit: 'sqft', type: 'labor' },
+        ]},
+      }
+    },
     {
       name: 'Paint Exterior Door',
       icon: '🚪',
@@ -12906,6 +12939,38 @@ const TIERED_BUNDLES = {
     },
   ],
   '2100 Trimwork': [
+    {
+      name: 'Baseboard Install',
+      icon: '📏',
+      desc: 'Per linear foot',
+      tiers: {
+        low: { label: 'Pine Primed Finger-Jointed', priceRange: '$1.24/lf + $3.80 labor/lf', lines: [
+          { desc: 'CMPC WM 356 11/16 in. x 2 1/4 in. x 168 in. Pine Primed Finger-Jointed Casing Pro Pack (12-Pieces)', qty: 1, unitCost: 0.99, unitPrice: 1.238, unit: 'lf', type: 'material' },
+          { desc: 'Labor to Install Baseboards per linear ft', qty: 1, unitCost: 3.30, unitPrice: 3.795, unit: 'lf', type: 'labor' },
+        ]},
+      }
+    },
+    {
+      name: 'Quarter Round Install',
+      icon: '📏',
+      desc: 'Per linear foot — paint & install',
+      tiers: {
+        low: { label: 'Quarter Round (Paint & Install)', priceRange: '$9.20/lf (all-in)', lines: [
+          { desc: 'Quarter round (paint & install) per linear foot', qty: 1, unitCost: 8.00, unitPrice: 9.20, unit: 'lf', type: 'labor' },
+        ]},
+      }
+    },
+    {
+      name: 'Window Casing Install',
+      icon: '🪟',
+      desc: 'Per linear foot',
+      tiers: {
+        low: { label: 'Primed Finger-Jointed Pine', priceRange: '$1.75/lf + $3.80 labor/lf', lines: [
+          { desc: 'Alexandria Moulding 5/8 in. x 3-1/2 in. x 171 in. Primed Finger-Jointed Pine Wood Casing Molding Pro-Pack (6-Pack)', qty: 1, unitCost: 1.40, unitPrice: 1.75, unit: 'lf', type: 'material' },
+          { desc: 'Labor to Install Window Casing per linear ft', qty: 1, unitCost: 3.30, unitPrice: 3.795, unit: 'lf', type: 'labor' },
+        ]},
+      }
+    },
   ],
   '0200 Demolition': [
     {
@@ -14244,6 +14309,17 @@ function wizardSelectTier(tierKey) {
 }
 window.wizardSelectTier = wizardSelectTier;
 
+// Detects whether a tier's pricing is naturally area/length-based (sqft
+// or linear ft) rather than a simple per-each count - lets the quantity
+// step ask for the real measurement (e.g. "how many square feet?")
+// instead of a generic "how many to add" count the person would have to
+// do their own math to get right.
+function bundleTierAreaInfo(tier) {
+  const areaLine = tier.lines.find(l => l.unit === 'sqft' || l.unit === 'lf');
+  if (!areaLine) return null;
+  return { unit: areaLine.unit, baselineQty: areaLine.qty };
+}
+
 function wizardRenderQtySelect() {
   if (!_wizardBundle || !_wizardTier) return;
   const itemListEl = document.getElementById('wizardItemList');
@@ -14254,6 +14330,22 @@ function wizardRenderQtySelect() {
   const tierEmoji = { low: '🟢', med: '🟡', high: '🔴' };
   const color = tierColors[_wizardTier];
   const baseTotal = tier.lines.reduce((s, l) => s + (l.qty * l.unitPrice), 0);
+  const areaInfo = bundleTierAreaInfo(tier);
+
+  const qtyStepHtml = areaInfo
+    ? '<div style="background:rgba(110,145,210,.06);border:1px solid rgba(110,145,210,.15);border-radius:14px;padding:16px;margin-bottom:16px">' +
+      '<div style="font-weight:700;font-size:.88rem;color:#eaf0fb;margin-bottom:12px">How many <span style="color:var(--amber)">' + (areaInfo.unit === 'sqft' ? 'square feet' : 'linear feet') + '</span> for <span style="color:var(--amber)">' + esc(_wizardBundle.name) + '</span>?</div>' +
+      '<input type="number" id="wizAreaQtyInput" min="0" step="any" placeholder="e.g. ' + areaInfo.baselineQty + '" ' +
+      'oninput="wizUpdateAreaQty(this.value,' + areaInfo.baselineQty + ')" ' +
+      'style="font-size:1.3rem;font-weight:800;text-align:center;padding:12px;border-radius:10px;border:2px solid var(--amber-border);background:var(--input-bg);color:var(--text);width:100%" />' +
+      '<div style="text-align:center;font-size:.76rem;color:var(--muted);margin-top:8px">Pricing below is baselined on ' + areaInfo.baselineQty + ' ' + areaInfo.unit + ' — entering your real measurement scales it automatically</div></div>'
+    : '<div style="background:rgba(110,145,210,.06);border:1px solid rgba(110,145,210,.15);border-radius:14px;padding:16px;margin-bottom:16px">' +
+      '<div style="font-weight:700;font-size:.88rem;color:#eaf0fb;margin-bottom:12px">How many <span style="color:var(--amber)">' + esc(_wizardBundle.name) + '</span> to add?</div>' +
+      '<div style="display:flex;align-items:center;gap:16px;justify-content:center">' +
+      '<button onclick="wizChangeBundleQty(-1)" style="width:44px;height:44px;border-radius:10px;border:2px solid var(--amber-border);background:transparent;color:var(--amber);font-size:1.4rem;cursor:pointer;line-height:1">−</button>' +
+      '<div id="wizBundleQtyDisplay" style="font-size:2rem;font-weight:900;color:var(--amber);min-width:48px;text-align:center">1</div>' +
+      '<button onclick="wizChangeBundleQty(1)" style="width:44px;height:44px;border-radius:10px;border:2px solid var(--amber-border);background:transparent;color:var(--amber);font-size:1.4rem;cursor:pointer;line-height:1">＋</button>' +
+      '</div><div style="text-align:center;font-size:.76rem;color:var(--muted);margin-top:8px">All quantities and prices will multiply by this number</div></div>';
 
   itemListEl.innerHTML =
     '<div style="background:rgba(217,119,6,.07);border:1px solid rgba(217,119,6,.2);border-radius:14px;padding:16px;margin-bottom:16px">' +
@@ -14268,13 +14360,7 @@ function wizardRenderQtySelect() {
     ).join('') +
     '<div style="display:flex;justify-content:space-between;margin-top:8px;font-weight:900;font-size:.95rem">' +
     '<span style="color:#eaf0fb">Bundle Total</span><span style="color:var(--amber)" id="wizBundleTotalDisplay">$' + baseTotal.toFixed(2) + '</span></div></div>' +
-    '<div style="background:rgba(110,145,210,.06);border:1px solid rgba(110,145,210,.15);border-radius:14px;padding:16px;margin-bottom:16px">' +
-    '<div style="font-weight:700;font-size:.88rem;color:#eaf0fb;margin-bottom:12px">How many <span style="color:var(--amber)">' + esc(_wizardBundle.name) + '</span> to add?</div>' +
-    '<div style="display:flex;align-items:center;gap:16px;justify-content:center">' +
-    '<button onclick="wizChangeBundleQty(-1)" style="width:44px;height:44px;border-radius:10px;border:2px solid var(--amber-border);background:transparent;color:var(--amber);font-size:1.4rem;cursor:pointer;line-height:1">−</button>' +
-    '<div id="wizBundleQtyDisplay" style="font-size:2rem;font-weight:900;color:var(--amber);min-width:48px;text-align:center">1</div>' +
-    '<button onclick="wizChangeBundleQty(1)" style="width:44px;height:44px;border-radius:10px;border:2px solid var(--amber-border);background:transparent;color:var(--amber);font-size:1.4rem;cursor:pointer;line-height:1">＋</button>' +
-    '</div><div style="text-align:center;font-size:.76rem;color:var(--muted);margin-top:8px">All quantities and prices will multiply by this number</div></div>' +
+    qtyStepHtml +
     '<button onclick="wizardRenderTierSelect()" style="background:none;border:none;color:var(--muted);font-size:.8rem;cursor:pointer">← Back to tier select</button>';
 
   const footer = document.getElementById('wizardFooter');
@@ -14282,6 +14368,18 @@ function wizardRenderQtySelect() {
     '<button class="btn" onclick="kClose(\'smartAddModal\')">Cancel</button>' +
     '<button class="btn-amber" onclick="wizardAddBundleToEstimate()" style="min-width:180px;font-size:.92rem">➕ Add to Estimate</button>';
 }
+
+function wizUpdateAreaQty(value, baselineQty) {
+  const entered = parseFloat(value);
+  _wizardBundleQty = (entered > 0) ? (entered / baselineQty) : 0.0001; // avoid a hard zero multiplier
+  if (_wizardBundle && _wizardTier) {
+    const tier = _wizardBundle.tiers[_wizardTier];
+    const baseTotal = tier.lines.reduce((s, l) => s + (l.qty * l.unitPrice), 0);
+    const totalEl = document.getElementById('wizBundleTotalDisplay');
+    if (totalEl) totalEl.textContent = '$' + (baseTotal * _wizardBundleQty).toFixed(2);
+  }
+}
+window.wizUpdateAreaQty = wizUpdateAreaQty;
 
 function wizChangeBundleQty(delta) {
   _wizardBundleQty = Math.max(1, (_wizardBundleQty || 1) + delta);
