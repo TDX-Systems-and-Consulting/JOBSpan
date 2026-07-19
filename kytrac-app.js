@@ -1,4 +1,4 @@
-// JOBSpan Application JavaScript v2.58.0 · 19/Jul/2026
+// JOBSpan Application JavaScript v2.59.0 · 19/Jul/2026
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -13094,6 +13094,37 @@ const TIERED_BUNDLES = {
     },
   ],
   '2200 Specialty Finishes': [
+    // NEW - closes the "Karana" gap: tub removed, full shower installed.
+    // Built from real confirmed components (shower pan, real shower valve
+    // labor rate - not filler, shower door). Deliberately does NOT
+    // include a tub removal/demo labor line - checked the entire catalog,
+    // no real rate exists anywhere for that specific task, not even
+    // filler. Add that line manually with a real number until Travis
+    // provides one; don't want to silently omit a real cost from the
+    // customer's bid.
+    {
+      name: 'Tub-to-Shower Conversion',
+      icon: '🚿',
+      desc: 'Remove tub, install shower pan + valve + door — tub demo labor not included, add manually (no real rate found anywhere in catalog)',
+      tiers: {
+        low: { label: 'Standard (Basco Sliding Door)', priceRange: '~$1,062 (excl. tub demo)', lines: [
+          { desc: 'DreamLine SlimLine 60"x32" Shower Pan Base', qty: 1, unitCost: 289.99, unitPrice: 362.488, unit: 'ea', type: 'material' },
+          { desc: 'Glacier Bay Aragon 3-Handle Tub/Shower Faucet (Valve Included)', qty: 1, unitCost: 99.00, unitPrice: 123.75, unit: 'ea', type: 'material' },
+          { desc: 'Shower Valve Replacement Labor (real rate, distinct from generic filler)', qty: 1, unitCost: 150.00, unitPrice: 172.50, unit: 'hr', type: 'labor' },
+          { desc: 'Shower Pan Install Labor', qty: 1, unitCost: 100.00, unitPrice: 115.00, unit: 'hr', type: 'labor' },
+          { desc: 'Basco Classic 60"x70" Semi-Frameless Sliding Shower Door', qty: 1, unitCost: 326.29, unitPrice: 407.863, unit: 'ea', type: 'material' },
+          { desc: 'Shower Door Install Labor', qty: 1, unitCost: 100.00, unitPrice: 115.00, unit: 'hr', type: 'labor' },
+        ]},
+        high: { label: 'Premium (STERLING Framed Door)', priceRange: '~$1,272 (excl. tub demo)', lines: [
+          { desc: 'DreamLine SlimLine 60"x32" Shower Pan Base', qty: 1, unitCost: 289.99, unitPrice: 362.488, unit: 'ea', type: 'material' },
+          { desc: 'Glacier Bay Aragon 3-Handle Tub/Shower Faucet (Valve Included)', qty: 1, unitCost: 99.00, unitPrice: 123.75, unit: 'ea', type: 'material' },
+          { desc: 'Shower Valve Replacement Labor (real rate, distinct from generic filler)', qty: 1, unitCost: 150.00, unitPrice: 172.50, unit: 'hr', type: 'labor' },
+          { desc: 'Shower Pan Install Labor', qty: 1, unitCost: 100.00, unitPrice: 115.00, unit: 'hr', type: 'labor' },
+          { desc: 'STERLING Deluxe 46"x65.5" Framed Sliding Shower Door', qty: 1, unitCost: 536.36, unitPrice: 670.45, unit: 'ea', type: 'material' },
+          { desc: 'Shower Door Install Labor', qty: 1, unitCost: 100.00, unitPrice: 115.00, unit: 'hr', type: 'labor' },
+        ]},
+      }
+    },
     {
       name: 'Tub Surround Install (5-Piece Glue-Up)',
       icon: '🛁',
