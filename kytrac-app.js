@@ -1,4 +1,4 @@
-// JOBSpan Application JavaScript v2.57.0 · 17/Jul/2026
+// JOBSpan Application JavaScript v2.58.0 · 19/Jul/2026
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -12659,6 +12659,21 @@ const TIERED_BUNDLES = {
         ]},
       }
     },
+    // NEW - real gap found in invoice history (10 real jobs each for
+    // material + labor). Catalog prices the detector as a 4-pack
+    // ($16.24/$20.30) - per-unit price below is that pack price divided
+    // by 4, a transparent real unit conversion, not a fabricated number.
+    {
+      name: 'Smoke Detector Install',
+      icon: '🚨',
+      desc: 'Per detector, battery powered photoelectric',
+      tiers: {
+        low: { label: 'Kidde Compact Battery-Powered', priceRange: '$5.08 + $11.50 labor', lines: [
+          { desc: 'Kidde Compact Battery Powered Smoke Detector (Photoelectric) - priced per unit from real 4-pack cost', qty: 1, unitCost: 4.06, unitPrice: 5.075, unit: 'ea', type: 'material' },
+          { desc: 'Labor to install smoke detector (real historical avg, 10 real jobs)', qty: 1, unitCost: 10.00, unitPrice: 11.50, unit: 'hr', type: 'labor' },
+        ]},
+      }
+    },
   ],
 
   '1700 Flooring': [
@@ -12944,9 +12959,9 @@ const TIERED_BUNDLES = {
       icon: '📏',
       desc: 'Per linear foot',
       tiers: {
-        low: { label: 'Pine Primed Finger-Jointed', priceRange: '$1.24/lf + $3.80 labor/lf', lines: [
+        low: { label: 'Pine Primed Finger-Jointed', priceRange: '$1.24/lf + $5.18 labor/lf', lines: [
           { desc: 'CMPC WM 356 11/16 in. x 2 1/4 in. x 168 in. Pine Primed Finger-Jointed Casing Pro Pack (12-Pieces)', qty: 1, unitCost: 0.99, unitPrice: 1.238, unit: 'lf', type: 'material' },
-          { desc: 'Labor to Install Baseboards per linear ft', qty: 1, unitCost: 3.30, unitPrice: 3.795, unit: 'lf', type: 'labor' },
+          { desc: 'Baseboard Install Labor (real historical avg, 43 real jobs)', qty: 1, unitCost: 4.50, unitPrice: 5.175, unit: 'lf', type: 'labor' },
         ]},
       }
     },
@@ -12965,9 +12980,24 @@ const TIERED_BUNDLES = {
       icon: '🪟',
       desc: 'Per linear foot',
       tiers: {
-        low: { label: 'Primed Finger-Jointed Pine', priceRange: '$1.75/lf + $3.80 labor/lf', lines: [
+        low: { label: 'Primed Finger-Jointed Pine', priceRange: '$1.75/lf + $5.18 labor/lf', lines: [
           { desc: 'Alexandria Moulding 5/8 in. x 3-1/2 in. x 171 in. Primed Finger-Jointed Pine Wood Casing Molding Pro-Pack (6-Pack)', qty: 1, unitCost: 1.40, unitPrice: 1.75, unit: 'lf', type: 'material' },
-          { desc: 'Labor to Install Window Casing per linear ft', qty: 1, unitCost: 3.30, unitPrice: 3.795, unit: 'lf', type: 'labor' },
+          { desc: 'Trim Install Labor (same crew rate as baseboard - no separate real rate exists for casing specifically)', qty: 1, unitCost: 4.50, unitPrice: 5.175, unit: 'lf', type: 'labor' },
+        ]},
+      }
+    },
+    // NEW - real, high-frequency gap found in invoice history (45 + 55
+    // real invoiced instances respectively for material + labor - this
+    // was previously ONLY reachable as a small drywall PATCH, not a real
+    // whole-room/whole-house drywall install).
+    {
+      name: 'Drywall Install',
+      icon: '🧱',
+      desc: 'Per square foot, material + labor',
+      tiers: {
+        low: { label: '1/2" Drywall (Standard)', priceRange: '$1.175/sqft + $7.48 labor/sqft', lines: [
+          { desc: '1/2" Drywall install per sqft', qty: 1, unitCost: 0.94, unitPrice: 1.175, unit: 'sqft', type: 'material' },
+          { desc: 'Drywall Labor (real historical avg, 55 real jobs)', qty: 1, unitCost: 6.50, unitPrice: 7.475, unit: 'sqft', type: 'labor' },
         ]},
       }
     },
@@ -13103,6 +13133,20 @@ const TIERED_BUNDLES = {
     },
   ],
   '3100 Miscellaneous': [
+    // NEW - by far the most frequently recurring item in the entire
+    // invoice history (31 real invoiced instances across 16 distinct
+    // jobs, more than any other single line item). Rate matches the
+    // standard general-labor crew rate used consistently across jobs.
+    {
+      name: 'Trash Removal / Job Cleanup',
+      icon: '🗑️',
+      desc: 'Per hour, general labor rate',
+      tiers: {
+        low: { label: 'General Cleanup Labor', priceRange: '$115/hr (real historical rate, 31 real jobs)', lines: [
+          { desc: 'Trash removal / job cleanup labor', qty: 1, unitCost: 100.00, unitPrice: 115.00, unit: 'hr', type: 'labor' },
+        ]},
+      }
+    },
     {
       name: 'Access Panel Install',
       icon: '🔲',
