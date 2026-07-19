@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>JOBSpan — Create JTXD Office Remodel Job</title>
+<style>
+  body { font-family: monospace; background: #0a1628; color: #eaf0fb; padding: 20px; }
+  h2 { color: #d97706; }
+  .btn { background: #d97706; color: #fff; border: none; padding: 10px 24px; border-radius: 8px; font-size: 1rem; cursor: pointer; margin: 8px 4px; }
+  .btn-google { background: #fff; color: #333; }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+  .log { background: #0d1f3c; border: 1px solid #1e3a5f; border-radius: 8px; padding: 16px; margin-top: 16px; max-height: 500px; overflow-y: auto; font-size: .85rem; line-height: 1.8; }
+  .ok { color: #34d399; } .err { color: #f87171; } .info { color: #60a5fa; } .warn { color: #fbbf24; }
+  p.sub { color: #94a3b8; font-size: .9rem; }
+  label { display: block; margin-top: 10px; font-size: .85rem; color: #94a3b8; }
+  input { background: #0d1f3c; border: 1px solid #1e3a5f; color: #eaf0fb; padding: 8px; border-radius: 6px; width: 320px; font-family: monospace; }
+</style>
+</head>
+<body>
+<h2>Create Job — JTXD Contracting Office Remodel</h2>
+<p class="sub">One-time utility: creates the job + draft paint estimate (primer + 2 coats, walls only) at 2205 Droste Rd, St Charles, MO 63301. Square footage below is a photo-based rough estimate — adjust to real dimensions once measured. Run once, then delete this file or ignore it going forward.</p>
+
+<div id="authSection">
+  <button class="btn btn-google" onclick="signIn()">Sign in with Google</button>
+</div>
+
+<div id="mainSection" style="display:none">
+  <p>Signed in as: <span id="userEmail"></span></p>
+
+  <label>Client name (defaulting to TDX Holdings, LLC — internal job)</label>
+  <input id="clientName" value="TDX Holdings, LLC" />
+
+  <label>Wall square footage (rough photo estimate — adjust to real measurement)</label>
+  <input id="sqft" type="number" value="2500" />
+
+  <div style="margin-top:14px">
+    <button class="btn" id="createBtn" onclick="runCreate()">Create Job + Draft Estimate</button>
+  </div>
+  <div class="log" id="log"><span class="info">Ready.</span></div>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+<script>
+firebase.initializeApp({apiKey:"AIzaSyDoFC2N0rrgwO-vY8SCPb3J-jKgSLYn5BQ",authDomain:"kytrac-72d91.firebaseapp.com",projectId:"kytrac-72d91"});
+const db = firebase.firestore(), auth = firebase.auth(), CID = 'mtOiSAzppjVbxKdHRJBH';
+
+auth.onAuthStateChanged(u => {
+  if (u) {
+    document.getElementById('authSection').style.display = 'none';
+    document.getElementById('mainSection').style.display = 'block';
+    document.getElementById('userEmail').textContent = u.email;
+  }
+});
+function signIn() { auth.signInWithPopup(new firebase.auth.GoogleAuthProvider()); }
+function log(msg, cls) { const el = document.getElementById('log'); el.innerHTML += `<div class="${cls||''}">${msg}</div>`; el.scrollTop = el.scrollHeight; }
+
+function genJobNumber() {
+  const year = new Date().getFullYear();
+  const num = String(Math.floor(Math.random() * 900) + 100);
+  return 'JOB-' + year + '-' + num;
+}
+
+async function runCreate() {
+  const btn = document.getElementById('createBtn');
+  btn.disabled = true;
+  document.getElementById('log').innerHTML = '';
+  log('Starting...', 'info');
+
+  const sqft = parseFloat(document.getElementById('sqft').value) || 2500;
+  const client = document.getElementById('clientName').value.trim() || 'TDX Holdings, LLC';
+
+  // Rough coverage assumptions: primer 1 coat @ ~375 sf/gal, topcoat 2 coats @ ~375 sf/gal each
+  const primerGal = Math.ceil(sqft / 375);
+  const paintGal = Math.ceil((sqft * 2) / 375);
+  const primeHours = Math.round((sqft / 275) * 10) / 10;
+  const paintHours = Math.round(((sqft * 2) / 175) * 10) / 10;
+  const maskHours = 3;
+  const cleanupHours = 2;
+
+  const jobData = {
+    name: 'JTXD Contracting Office Remodel',
+    client,
+    phone: '',
+    email: '',
+    address: '2205 Droste Rd, St Charles, MO 63301',
+    status: 'Work In Progress',
+    statusDate: new Date().toISOString().split('T')[0],
+    type: 'Commercial',
+    contractValue: 0,
+    estCost: 0,
+    startDate: '',
+    endDate: '',
+    superintendent: '',
+    pm: '',
+    notes: 'Repaint to grey — walls only, primer + 2 topcoats. Prep already done: items off walls, spackled, floor protection down. Square footage below is a rough photo-based estimate; refine once real dimensions are in.',
+    crew: [],
+    companyId: CID,
+    jobNumber: genJobNumber(),
+    actualCost: 0,
+    createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+    createdBy: auth.currentUser ? auth.currentUser.email : 'unknown',
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    updatedBy: auth.currentUser ? auth.currentUser.email : 'unknown'
+  };
+
+  try {
+    const jobRef = await db.collection('companies').doc(CID).collection('jobs').add(jobData);
+    log('Created job: ' + jobData.jobNumber + ' — ' + jobData.name, 'ok');
+
+    const groupRef = await jobRef.collection('estimateGroups').add({
+      name: 'Painting',
+      order: 0,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    log('Created estimate group: Painting', 'ok');
+
+    const items = [
+      { desc: 'Stain-blocking primer', qty: primerGal, unit: 'ea', costType: 'Materials', unitCost: 28, markup: 25 },
+      { desc: 'Interior grey paint (2 topcoats)', qty: paintGal, unit: 'ea', costType: 'Materials', unitCost: 35, markup: 25 },
+      { desc: 'Sundries (tape, plastic, brushes, rollers)', qty: 1, unit: 'ls', costType: 'Materials', unitCost: 120, markup: 25 },
+      { desc: 'Priming labor', qty: primeHours, unit: 'hr', costType: 'Labor', unitCost: 100, markup: 15 },
+      { desc: 'Painting labor (2 coats)', qty: paintHours, unit: 'hr', costType: 'Labor', unitCost: 100, markup: 15 },
+      { desc: 'Masking (panel, outlets, fixtures, hardware)', qty: maskHours, unit: 'hr', costType: 'Labor', unitCost: 100, markup: 15 },
+      { desc: 'Cleanup / final protection removal', qty: cleanupHours, unit: 'hr', costType: 'Labor', unitCost: 100, markup: 15 }
+    ];
+
+    let order = 0;
+    for (const it of items) {
+      const unitPrice = it.unitCost * (1 + it.markup / 100);
+      await groupRef.collection('items').add({
+        desc: it.desc, qty: it.qty, unit: it.unit, costType: it.costType,
+        unitCost: it.unitCost, markup: it.markup, unitPrice,
+        order: order++, notes: '', createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+      log('Added line item: ' + it.desc + ' (qty ' + it.qty + ')', 'ok');
+    }
+
+    log('Done! Job created — sqft basis was ' + sqft + ' sf (rough). Open the job in JOBSpan to refine once you have real measurements.', 'ok');
+    log('Reminder: prep labor already completed (item removal, spackle, floor protection) is NOT in this estimate — log it as a daily log entry instead of a forward estimate line.', 'warn');
+  } catch (e) {
+    log('ERROR: ' + e.message, 'err');
+  }
+  btn.disabled = false;
+}
+</script>
+</body>
+</html>
