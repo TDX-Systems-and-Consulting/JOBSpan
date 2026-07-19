@@ -116,7 +116,7 @@
     html[data-theme="light"] [style*="#94a3b8"] { color: #64748b !important; }
     html[data-theme="light"] [style*="#8ea3c8"] { color: #64748b !important; }
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; margin: 0; padding: 0; }
-    html, body { min-height: 100vh; background: var(--bg); color: var(--text); font-family: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif; }
+    html, body { min-height: 100vh; background: var(--bg); color: var(--text); font-family: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif; overflow-x: hidden; max-width: 100%; }
     button, input, select, textarea { font: inherit; touch-action: manipulation; }
     input, select, textarea { width: 100%; background: var(--input-bg); color: var(--text); border: 1px solid var(--line); border-radius: 12px; padding: 10px 13px; outline: none; }
     input[type="date"], input[type="time"] { color-scheme: var(--date-scheme); }
@@ -367,6 +367,7 @@
       background: linear-gradient(180deg, var(--card-grad-1), var(--card-grad-2));
       border: 1px solid var(--line);
       border-radius: 18px;
+      min-width: 0;
     }
     .kt-card-head {
       padding: 16px 20px 12px;
