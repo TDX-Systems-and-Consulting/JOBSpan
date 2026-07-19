@@ -1,4 +1,4 @@
-// JOBSpan Application JavaScript v2.60.0 · 19/Jul/2026
+// JOBSpan Application JavaScript v2.61.0 · 19/Jul/2026
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -4413,7 +4413,148 @@ async function renderCompanyLaborEfficiency() {
   }
 }
 
-function renderWhatsChanged() {
+// Comprehensive Activity Feed - the real ask behind "our dashboard doesn't
+// have a running items list". Pulls from every real event type across
+// every job (messages, documents, daily logs, status changes) via
+// collectionGroup queries, same pattern already proven out for messages/
+// documents above. Unlike the old "What's Changed Today" panel, this is
+// NOT limited to today - it's a genuine scrollable history, grouped by
+// date, matching what JobTread's Activity tab already does.
+function renderActivityFeed() {
+  const el = document.getElementById('homeWhatsChanged');
+  if (!el || !conDb) return;
+
+  const items = [];
+  let pending = 3;
+  const finish = () => {
+    pending--;
+    if (pending > 0) return;
+    if (!items.length) { el.innerHTML = '<div class="small muted" style="font-style:italic;padding:10px 0;text-align:center">No activity yet</div>'; return; }
+    items.sort((a,b) => (b.ms||0) - (a.ms||0));
+    const top = items.slice(0, 60);
+
+    // Group by date for JobTread-style date headers
+    const groups = [];
+    let lastDateKey = null;
+    top.forEach(i => {
+      const d = i.ms ? new Date(i.ms) : null;
+      const dateKey = d ? d.toISOString().split('T')[0] : 'unknown';
+      const todayKey = new Date().toISOString().split('T')[0];
+      const yestKey = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+      const label = dateKey === todayKey ? 'Today' : dateKey === yestKey ? 'Yesterday' :
+        (d ? d.toLocaleDateString('en-US', { weekday:'long', month:'short', day:'numeric' }) : '');
+      if (dateKey !== lastDateKey) { groups.push({ label, rows: [] }); lastDateKey = dateKey; }
+      groups[groups.length-1].rows.push(i);
+    });
+
+    el.innerHTML = groups.map(g =>
+      '<div style="font-size:.72rem;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--amber);margin:10px 0 4px">' + esc(g.label) + '</div>' +
+      g.rows.map(i => `
+        <div onclick="openJobDetail('${i.jobId}')" style="display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-bottom:1px solid rgba(110,145,210,.07);cursor:pointer">
+          <span style="font-size:1rem;flex-shrink:0">${i.icon}</span>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:.83rem;font-weight:700;color:#eaf0fb;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(i.text)}</div>
+            <div style="font-size:.74rem;color:var(--amber)">${esc(i.sub)}</div>
+          </div>
+        </div>`).join('')
+    ).join('');
+  };
+
+  // Messages, business-wide via collectionGroup (falls back to per-job if index/companyId isn't ready)
+  conDb.collectionGroup('messages').where('companyId','==',currentCompanyId)
+    .orderBy('createdMs','desc').limit(40).get()
+    .then(snap => {
+      snap.forEach(doc => {
+        const m = doc.data();
+        const jobId = doc.ref.parent.parent.id;
+        const job = conJobs.find(j => j.id === jobId);
+        items.push({ icon:'💬', text: (m.authorName||'Someone') + ': ' + (m.text||''), sub: job ? job.name : '', jobId, ms: m.createdMs||0 });
+      });
+      finish();
+    })
+    .catch(() => {
+      if (!conJobs.length) { finish(); return; }
+      let jp = conJobs.length;
+      conJobs.forEach(job => {
+        coll('jobs').doc(job.id).collection('messages').orderBy('createdMs','desc').limit(10).get()
+          .then(snap => snap.forEach(doc => {
+            const m = doc.data();
+            items.push({ icon:'💬', text: (m.authorName||'Someone') + ': ' + (m.text||''), sub: job.name, jobId: job.id, ms: m.createdMs||0 });
+          }))
+          .catch(() => {})
+          .finally(() => { jp--; if (jp === 0) finish(); });
+      });
+    });
+
+  // Documents uploaded, business-wide
+  conDb.collectionGroup('documents').where('companyId','==',currentCompanyId)
+    .orderBy('uploadedAt','desc').limit(40).get()
+    .then(snap => {
+      snap.forEach(doc => {
+        const d = doc.data();
+        const jobId = doc.ref.parent.parent.id;
+        const job = conJobs.find(j => j.id === jobId);
+        const ms = d.uploadedAt?.toDate ? d.uploadedAt.toDate().getTime() : 0;
+        items.push({ icon:'📎', text: d.name||'Document uploaded', sub: job ? job.name : '', jobId, ms });
+      });
+      finish();
+    })
+    .catch(() => {
+      if (!conJobs.length) { finish(); return; }
+      let jp = conJobs.length;
+      conJobs.forEach(job => {
+        coll('jobs').doc(job.id).collection('documents').orderBy('uploadedAt','desc').limit(10).get()
+          .then(snap => snap.forEach(doc => {
+            const d = doc.data();
+            const ms = d.uploadedAt?.toDate ? d.uploadedAt.toDate().getTime() : 0;
+            items.push({ icon:'📎', text: d.name||'Document uploaded', sub: job.name, jobId: job.id, ms });
+          }))
+          .catch(() => {})
+          .finally(() => { jp--; if (jp === 0) finish(); });
+      });
+    });
+
+  // Daily logs + status changes, business-wide (share the same 'logs' subcollection)
+  conDb.collectionGroup('logs').where('companyId','==',currentCompanyId)
+    .orderBy('createdAt','desc').limit(40).get()
+    .then(snap => {
+      snap.forEach(doc => {
+        const l = doc.data();
+        const jobId = doc.ref.parent.parent.id;
+        const job = conJobs.find(j => j.id === jobId);
+        const ms = l.createdAt?.toDate ? l.createdAt.toDate().getTime() : 0;
+        if (l.type === 'status_change') {
+          items.push({ icon: l.toStatus === 'Closed Lost' ? '🔴' : '🔄', text: l.notes || 'Status changed', sub: job ? job.name : '', jobId, ms });
+        } else {
+          items.push({ icon:'📋', text: l.notes ? (l.notes.length > 60 ? l.notes.slice(0,60)+'…' : l.notes) : 'Daily log added', sub: job ? job.name : '', jobId, ms });
+        }
+      });
+      finish();
+    })
+    .catch(() => {
+      if (!conJobs.length) { finish(); return; }
+      let jp = conJobs.length;
+      conJobs.forEach(job => {
+        coll('jobs').doc(job.id).collection('logs').orderBy('createdAt','desc').limit(10).get()
+          .then(snap => snap.forEach(doc => {
+            const l = doc.data();
+            const ms = l.createdAt?.toDate ? l.createdAt.toDate().getTime() : 0;
+            if (l.type === 'status_change') {
+              items.push({ icon: l.toStatus === 'Closed Lost' ? '🔴' : '🔄', text: l.notes || 'Status changed', sub: job.name, jobId: job.id, ms });
+            } else {
+              items.push({ icon:'📋', text: l.notes ? (l.notes.length > 60 ? l.notes.slice(0,60)+'…' : l.notes) : 'Daily log added', sub: job.name, jobId: job.id, ms });
+            }
+          }))
+          .catch(() => {})
+          .finally(() => { jp--; if (jp === 0) finish(); });
+      });
+    });
+}
+window.renderActivityFeed = renderActivityFeed;
+// Keep the old name working too, in case anything else on the page still calls it
+window.renderWhatsChanged = renderActivityFeed;
+
+function renderWhatsChanged_OLD_UNUSED() {
   const el = document.getElementById('homeWhatsChanged');
   if (!el || !conDb) return;
   const todayStr = new Date().toISOString().split('T')[0];
