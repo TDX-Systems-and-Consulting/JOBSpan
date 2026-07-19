@@ -637,6 +637,7 @@
       #ktPageDashboard > div[style*="grid-template-columns:1fr 280px"] { grid-template-columns: 1fr !important; }
       #ktPageDashboard > div[style*="grid-template-columns:1fr 1fr 1fr"] { grid-template-columns: 1fr !important; }
       [style*="grid-template-columns:1fr 340px"] { grid-template-columns: 1fr !important; }
+      .kt-dashboard-2col { grid-template-columns: 1fr !important; }
     }
     @media (max-width: 500px) {
       .kt-topbar { padding: 0 14px; }
@@ -1025,7 +1026,7 @@
     <div class="kt-logo">
       <div class="kt-logo-mark">JOBSpan</div>
       <div class="kt-logo-tag" id="ktCompanyTag">7 Pillars Contracting</div>
-      <div class="kt-logo-version" id="ktVersionTag">Version 2.62.0 · 19/Jul/2026</div>
+      <div class="kt-logo-version" id="ktVersionTag">Version 2.63.0 · 19/Jul/2026</div>
       <div id="themeToggle" style="display:flex;gap:4px;margin-top:8px">
         <button onclick="setTheme('blue')" title="Blue (default)" style="flex:1;padding:4px 0;border-radius:6px;border:1px solid var(--line);background:linear-gradient(135deg,#0a162d,#1a2c52);cursor:pointer"></button>
         <button onclick="setTheme('black')" title="Black" style="flex:1;padding:4px 0;border-radius:6px;border:1px solid var(--line);background:#000;cursor:pointer"></button>
@@ -1170,9 +1171,7 @@
       </div>
 
       <!-- Today's Activity -->
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
-
-        <!-- Jobs Needing Attention -->
+      <div class="kt-dashboard-2col" style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
         <div class="kt-card">
           <div class="kt-card-head" style="padding:14px 16px 10px">
             <h3 style="font-size:.9rem">🚨 Needs Attention</h3>
@@ -1375,7 +1374,7 @@
 
     <!-- ── PAGE: TIME TRACKING ── -->
     <div class="kt-page" id="ktPageTime">
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px">
+      <div class="kt-dashboard-2col" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px">
 
         <!-- Clock In/Out Panel -->
         <div class="kt-card">
@@ -3983,6 +3982,6 @@
   </div>
 </div>
 
-<script src="kytrac-app.js?v=202607193100"></script>
+<script src="kytrac-app.js?v=202607193200"></script>
 </body>
 </html>
