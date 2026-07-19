@@ -12940,6 +12940,13 @@ const TIERED_BUNDLES = {
     // relative to the per-sqft costs that it's left as a separate manual
     // add for large jobs rather than baked into a rushed, untested
     // calculator here.
+    // NOTE: materials package (brush/tape/paper/roller covers) below uses
+    // real catalog costs from the invoice-history audit (same SKUs as the
+    // JobTread reference template). Rates are qty-per-sqft so they scale
+    // automatically with whatever square footage gets entered - tape and
+    // roller covers wear faster (~1 per 800-1000 sqft), paper and brushes
+    // last longer (~1 per 1500-2000 sqft). Adjust the /800, /1000 etc.
+    // divisors if real usage on a job runs noticeably different.
     {
       name: 'Wall/Ceiling Paint (per sqft)',
       icon: '🎨',
@@ -12948,10 +12955,18 @@ const TIERED_BUNDLES = {
         low: { label: 'Standard Grade', priceRange: '$0.75/sqft + $3.45 labor/sqft', lines: [
           { desc: 'Paint (1 coat, standard grade)', qty: 1, unitCost: 0.60, unitPrice: 0.75, unit: 'sqft', type: 'material' },
           { desc: 'Paint Labor (1 coat, standard grade)', qty: 1, unitCost: 3.00, unitPrice: 3.45, unit: 'sqft', type: 'labor' },
+          { desc: "3M ScotchBlue 1.88 in. x 60 yds. Original Multi-Surface Painter's Tape (6-Pack)", qty: 1/1000, unitCost: 39.48, unitPrice: 49.35, unit: 'sqft', type: 'material' },
+          { desc: '35 in. x 200 ft. Builders Paper', qty: 1/1500, unitCost: 18.98, unitPrice: 23.725, unit: 'sqft', type: 'material' },
+          { desc: '9 in. x 3/8 in. High-Density Polyester Knit Paint Roller Cover (3-Pack)', qty: 1/800, unitCost: 8.48, unitPrice: 10.6, unit: 'sqft', type: 'material' },
+          { desc: 'Premium 2 in. Polyester Trylon Thin Angled Sash Paint Brush', qty: 1/2000, unitCost: 9.33, unitPrice: 11.663, unit: 'sqft', type: 'material' },
         ]},
         high: { label: 'High Grade', priceRange: '$2.25/sqft + $5.18 labor/sqft', lines: [
           { desc: 'Paint (1 coat, high grade)', qty: 1, unitCost: 1.80, unitPrice: 2.25, unit: 'sqft', type: 'material' },
           { desc: 'Paint Labor (1 coat, high grade)', qty: 1, unitCost: 4.50, unitPrice: 5.18, unit: 'sqft', type: 'labor' },
+          { desc: "3M ScotchBlue 1.88 in. x 60 yds. Original Multi-Surface Painter's Tape (6-Pack)", qty: 1/1000, unitCost: 39.48, unitPrice: 49.35, unit: 'sqft', type: 'material' },
+          { desc: '35 in. x 200 ft. Builders Paper', qty: 1/1500, unitCost: 18.98, unitPrice: 23.725, unit: 'sqft', type: 'material' },
+          { desc: '9 in. x 3/8 in. High-Density Polyester Knit Paint Roller Cover (3-Pack)', qty: 1/800, unitCost: 8.48, unitPrice: 10.6, unit: 'sqft', type: 'material' },
+          { desc: 'Premium 2 in. Polyester Trylon Thin Angled Sash Paint Brush', qty: 1/2000, unitCost: 9.33, unitPrice: 11.663, unit: 'sqft', type: 'material' },
         ]},
       }
     },
