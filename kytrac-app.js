@@ -1,4 +1,4 @@
-// JOBSpan Application JavaScript v2.59.0 · 19/Jul/2026
+// JOBSpan Application JavaScript v2.60.0 · 19/Jul/2026
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -14346,21 +14346,34 @@ function wizardRenderTierSelect() {
   const tierColors = { low: '#34d399', med: '#f59e0b', high: '#ef4444' };
   const tierEmoji = { low: '🟢', med: '🟡', high: '🔴' };
 
+  // If every tier costs the same, this isn't a real low/medium/high price
+  // ladder - it's just a style/color choice at one price point (e.g. LVP
+  // Tile-Look: Marble/Slate/Stone all cost the same). Showing green/yellow/
+  // red dots in that case falsely implies a price hierarchy that doesn't
+  // exist. Detect it and render neutrally instead.
+  const tierTotals = Object.entries(tiers).map(([key, tier]) =>
+    tier.lines.reduce((s, l) => s + (l.qty * l.unitPrice), 0)
+  );
+  const allSamePrice = tierTotals.length > 1 && tierTotals.every(t => Math.abs(t - tierTotals[0]) < 0.01);
+  const neutralColor = '#94a3b8';
+
   itemListEl.innerHTML =
     '<div style="text-align:center;margin-bottom:16px">' +
     '<div style="font-size:1.8rem">' + _wizardBundle.icon + '</div>' +
     '<div style="font-weight:800;font-size:1rem;color:#eaf0fb;margin-top:6px">' + esc(_wizardBundle.name) + '</div>' +
     '<div style="font-size:.78rem;color:var(--muted);margin-top:2px">' + esc(_wizardBundle.desc) + '</div></div>' +
-    '<div style="font-size:.75rem;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:10px">Select grade / tier:</div>' +
+    '<div style="font-size:.75rem;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:10px">' +
+    (allSamePrice ? 'Select option:' : 'Select grade / tier:') + '</div>' +
     Object.entries(tiers).map(([key, tier]) => {
       const total = tier.lines.reduce((s, l) => s + (l.qty * l.unitPrice), 0);
-      const color = tierColors[key];
+      const color = allSamePrice ? neutralColor : tierColors[key];
+      const emoji = allSamePrice ? '' : (tierEmoji[key] + ' ');
       return '<div onclick="wizardSelectTier(\'' + key + '\')" ' +
         'style="border:2px solid ' + color + '22;border-radius:14px;padding:14px 16px;margin-bottom:10px;cursor:pointer;background:' + color + '08" ' +
         'onmouseover="this.style.borderColor=\'' + color + '\'" ' +
         'onmouseout="this.style.borderColor=\'' + color + '22\'">' +
         '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">' +
-        '<div style="font-weight:800;font-size:.95rem;color:#eaf0fb">' + tierEmoji[key] + ' ' + tier.label + '</div>' +
+        '<div style="font-weight:800;font-size:.95rem;color:#eaf0fb">' + emoji + tier.label + '</div>' +
         '<div style="font-weight:900;color:' + color + ';font-size:1rem">$' + total.toFixed(0) + '</div></div>' +
         '<div style="font-size:.76rem;color:var(--muted);margin-bottom:8px">' + esc(tier.priceRange) + '</div>' +
         '<div style="display:flex;flex-wrap:wrap;gap:6px">' +
@@ -14403,7 +14416,10 @@ function wizardRenderQtySelect() {
   const tier = _wizardBundle.tiers[_wizardTier];
   const tierColors = { low: '#34d399', med: '#f59e0b', high: '#ef4444' };
   const tierEmoji = { low: '🟢', med: '🟡', high: '🔴' };
-  const color = tierColors[_wizardTier];
+  const allTierTotals = Object.values(_wizardBundle.tiers).map(t => t.lines.reduce((s, l) => s + (l.qty * l.unitPrice), 0));
+  const allSamePriceQty = allTierTotals.length > 1 && allTierTotals.every(t => Math.abs(t - allTierTotals[0]) < 0.01);
+  const color = allSamePriceQty ? '#94a3b8' : tierColors[_wizardTier];
+  const emojiPrefix = allSamePriceQty ? '' : (tierEmoji[_wizardTier] + ' ');
   const baseTotal = tier.lines.reduce((s, l) => s + (l.qty * l.unitPrice), 0);
   const areaInfo = bundleTierAreaInfo(tier);
 
@@ -14427,7 +14443,7 @@ function wizardRenderQtySelect() {
     '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">' +
     '<div style="font-size:1.5rem">' + _wizardBundle.icon + '</div>' +
     '<div><div style="font-weight:800;color:#eaf0fb">' + esc(_wizardBundle.name) + '</div>' +
-    '<div style="font-size:.8rem;color:' + color + ';font-weight:700">' + tierEmoji[_wizardTier] + ' ' + tier.label + ' · ' + esc(tier.priceRange) + '</div></div></div>' +
+    '<div style="font-size:.8rem;color:' + color + ';font-weight:700">' + emojiPrefix + tier.label + ' · ' + esc(tier.priceRange) + '</div></div></div>' +
     tier.lines.map(l =>
       '<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid rgba(255,255,255,.06);font-size:.8rem">' +
       '<span style="color:#cbd5e1" id="qtyLine_' + l.desc.replace(/\s/g,'_').replace(/[^a-zA-Z0-9_]/g,'') + '">' + esc(l.desc) + ' ×' + l.qty + '</span>' +
