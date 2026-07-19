@@ -2005,6 +2005,29 @@
         </div>
       </div>
 
+      <div class="settings-section">
+        <div class="settings-head">
+          <h3>📈 Supplier Cost Adjustment</h3>
+          <p>Company-wide default markup %, auto-applied whenever a catalog item is added to an estimate or job. Override any single item's markup on the catalog item itself, or right on the line item when adding it — this only sets the fallback.</p>
+        </div>
+        <div class="settings-body">
+          <div class="settings-grid">
+            <div class="settings-field">
+              <label>Default Materials Markup (%)</label>
+              <input id="settMaterialsMarkup" type="number" step="0.1" placeholder="25" value="25" />
+            </div>
+            <div class="settings-field">
+              <label>Default Labor Markup (%)</label>
+              <input id="settLaborMarkup" type="number" step="0.1" placeholder="15" value="15" />
+            </div>
+          </div>
+        </div>
+        <div class="settings-save-bar">
+          <span></span>
+          <button class="btn-amber" onclick="saveCompanyProfile()">Save Defaults</button>
+        </div>
+      </div>
+
       <!-- Team Members Section - Owner only -->
       <div class="settings-section" id="teamSection">
         <div class="settings-head">
@@ -2091,7 +2114,7 @@
         <div class="full"><label class="small muted" style="display:block;margin-bottom:5px">Description *</label>
           <input id="catItemDesc" placeholder="e.g. Framing labor — per sq ft" /></div>
         <div><label class="small muted" style="display:block;margin-bottom:5px">Category</label>
-          <select id="catItemCategory">
+          <select id="catItemCategory" onchange="onCatItemCategoryChange()">
             <option>Labor</option><option>Materials</option><option>Subcontractor</option>
             <option>Equipment</option><option>Permits & Fees</option><option>Overhead</option>
           </select>

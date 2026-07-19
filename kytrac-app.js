@@ -4778,13 +4778,27 @@ function openCatalogItemModal(id) {
   document.getElementById('catItemCategory').value = item ? (item.category||'Labor') : 'Labor';
   document.getElementById('catItemUnit').value = item ? (item.unit||'ea') : 'ea';
   document.getElementById('catItemCost').value = item ? (item.unitCost||'') : '';
-  document.getElementById('catItemMarkup').value = item ? (item.markup||0) : 0;
+  document.getElementById('catItemMarkup').value = item ? (item.markup||0) : getDefaultMarkupForCostType('Labor');
   document.getElementById('catItemNotes').value = item ? (item.notes||'') : '';
   document.getElementById('catItemSupplier').value = item ? (item.supplier||'') : '';
   document.getElementById('deleteCatItemBtn').style.display = item ? 'inline-flex' : 'none';
   calcCatPreview();
   kOpen('catalogItemModal');
 }
+
+// Only auto-updates markup for a brand-new item (no catItemId yet) — once
+// an item has been saved, its markup is a deliberate per-item override and
+// shouldn't get silently overwritten by switching the category dropdown.
+function onCatItemCategoryChange() {
+  const isNew = !document.getElementById('catItemId')?.value;
+  if (isNew) {
+    const category = document.getElementById('catItemCategory')?.value;
+    const markupEl = document.getElementById('catItemMarkup');
+    if (markupEl) markupEl.value = getDefaultMarkupForCostType(category);
+  }
+  calcCatPreview();
+}
+window.onCatItemCategoryChange = onCatItemCategoryChange;
 
 function calcCatPreview() {
   const cost = parseFloat(document.getElementById('catItemCost')?.value) || 0;
@@ -5842,7 +5856,9 @@ const DEFAULT_COMPANY_PROFILE = {
   logo: '',
   payTerms: 30,
   taxRate: 0,
-  invNotes: 'Payment due within 30 days. Thank you for your business!'
+  invNotes: 'Payment due within 30 days. Thank you for your business!',
+  defaultMaterialsMarkup: 25,
+  defaultLaborMarkup: 15
 };
 
 function loadCompanyProfile() {
@@ -5913,6 +5929,8 @@ function populateSettingsForm() {
   setVal('settPayTerms', p.payTerms || 30);
   setVal('settTaxRate', p.taxRate || 0);
   setVal('settInvNotes', p.invNotes);
+  setVal('settMaterialsMarkup', p.defaultMaterialsMarkup !== undefined ? p.defaultMaterialsMarkup : 25);
+  setVal('settLaborMarkup', p.defaultLaborMarkup !== undefined ? p.defaultLaborMarkup : 15);
 
   // Logo
   const img = document.getElementById('logoPreviewImg');
@@ -5955,8 +5973,12 @@ function saveCompanyProfile() {
     payTerms: parseInt(document.getElementById('settPayTerms')?.value) || 30,
     taxRate: parseFloat(document.getElementById('settTaxRate')?.value) || 0,
     invNotes: document.getElementById('settInvNotes')?.value.trim() || '',
+    defaultMaterialsMarkup: parseFloat(document.getElementById('settMaterialsMarkup')?.value),
+    defaultLaborMarkup: parseFloat(document.getElementById('settLaborMarkup')?.value),
     updatedAt: firebase.firestore.FieldValue.serverTimestamp()
   };
+  if (isNaN(profile.defaultMaterialsMarkup)) profile.defaultMaterialsMarkup = 25;
+  if (isNaN(profile.defaultLaborMarkup)) profile.defaultLaborMarkup = 15;
 
   coll('settings').doc('company').set(profile)
     .then(() => {
@@ -11485,7 +11507,7 @@ function openAddEstItemModal(itemId, groupId, subgroupId) {
   setVal('estItemUnit', item?.unit || 'ea');
   document.getElementById('estItemCostType').value = item?.costType || 'Labor';
   setVal('estItemUnitCost', item?.unitCost || '');
-  setVal('estItemMarkup', item?.markup !== undefined ? item.markup : 15);
+  setVal('estItemMarkup', item?.markup !== undefined ? item.markup : getDefaultMarkupForCostType(item?.costType || 'Labor'));
   setVal('estItemUnitPrice', item?.unitPrice || '');
   setVal('estItemNotes', item?.notes || '');
   setVal('estItemPhase', item?.phase || '');
@@ -11524,20 +11546,26 @@ function onEstSubgroupChange() {
   _editingSubgroupId = document.getElementById('estItemSubgroupSel')?.value || null;
 }
 
-// Real markup percentages per cost type, from Jason's actual QuickBooks/
-// JobTread cost-types export (margins converted to markup: markup =
-// margin/(1-margin)). Labor 15%, Materials & Subcontractor both 25%,
-// Other & Permit 15%. Equipment/Overhead aren't real cost types in that
-// export — no confirmed real rate for those, left at a generic default.
-const REAL_MARKUP_BY_COST_TYPE = {
-  'Labor': 15, 'Materials': 25, 'Subcontractor': 25,
-  'Other': 15, 'Permits & Fees': 15
-};
+// Configurable Supplier Cost Adjustment: company-wide default markup %,
+// set in Settings > Supplier Cost Adjustment (defaultMaterialsMarkup /
+// defaultLaborMarkup on companyProfile). Originally hardcoded per Jason's
+// QuickBooks/JobTread cost-types export (Labor 15%, Materials &
+// Subcontractor 25%, Other & Permit 15%) — now those numbers are just the
+// fallback defaults if no company setting has been saved yet.
+// Cost-type bucketing: Materials & Subcontractor use the materials rate;
+// Labor, Permits & Fees, Equipment, Overhead, and Other all use the labor
+// rate (no separately-confirmed real rate exists for Equipment/Overhead).
+const MATERIALS_RATE_COST_TYPES = new Set(['Materials', 'Subcontractor']);
+function getDefaultMarkupForCostType(costType) {
+  const materialsRate = companyProfile.defaultMaterialsMarkup !== undefined ? companyProfile.defaultMaterialsMarkup : 25;
+  const laborRate = companyProfile.defaultLaborMarkup !== undefined ? companyProfile.defaultLaborMarkup : 15;
+  return MATERIALS_RATE_COST_TYPES.has(costType) ? materialsRate : laborRate;
+}
 function onEstItemCostTypeChange() {
   const costType = document.getElementById('estItemCostType')?.value;
   const markupEl = document.getElementById('estItemMarkup');
-  if (markupEl && costType in REAL_MARKUP_BY_COST_TYPE) {
-    markupEl.value = REAL_MARKUP_BY_COST_TYPE[costType];
+  if (markupEl) {
+    markupEl.value = getDefaultMarkupForCostType(costType);
   }
   calcEstItemPreview();
 }
@@ -11661,14 +11689,19 @@ function showCatalogPicker(groupId) {
   const catItems = items.filter(i => (i.category||'Other') === cat);
   catItems.forEach((item, i) => {
     const jobRef = coll('jobs').doc(conCurrentJobId);
+    const costType = item.category || 'Materials';
+    const markup = item.markup !== undefined && item.markup !== null && item.markup !== ''
+      ? item.markup
+      : getDefaultMarkupForCostType(costType);
+    const unitCost = item.cost || 0;
     jobRef.collection('estimateGroups').doc(groupId).collection('items').add({
       desc: item.description || item.name || '',
       qty: 1,
       unit: item.unit || 'ea',
-      costType: item.category || 'Materials',
-      unitCost: item.cost || 0,
-      markup: item.markup || 15,
-      unitPrice: item.sellPrice || (item.cost||0) * 1.15,
+      costType,
+      unitCost,
+      markup,
+      unitPrice: item.sellPrice || unitCost * (1 + markup / 100),
       order: i,
       notes: '',
       createdAt: firebase.firestore.FieldValue.serverTimestamp()
@@ -15208,14 +15241,18 @@ async function wizardAddToEstimate() {
   for (const item of itemsToAdd) {
     // Add materials item
     if (item.materials) {
+      const matUnitCost = item.materials.unitCost || 0;
+      const matUnitPrice = item.materials.unitPrice || 0;
       const matData = {
         desc: item.name,
         qty: item.materials.qty || 1,
         unit: item.materials.unit || 'ea',
         costType: 'Materials',
-        unitCost: item.materials.unitCost || 0,
-        markup: 15,
-        unitPrice: item.materials.unitPrice || 0,
+        unitCost: matUnitCost,
+        markup: (matUnitCost > 0 && matUnitPrice > 0)
+          ? Math.round((matUnitPrice / matUnitCost - 1) * 100)
+          : getDefaultMarkupForCostType('Materials'),
+        unitPrice: matUnitPrice,
         notes: '',
         order: order++,
         createdAt: firebase.firestore.FieldValue.serverTimestamp()
@@ -15229,14 +15266,16 @@ async function wizardAddToEstimate() {
     }
     // Always add a labor line — $100/hr per man, qty = number of men
     {
+      const laborMarkup = getDefaultMarkupForCostType('Labor');
+      const laborUnitCost = 100;
       const labData = {
         desc: 'Labor - ' + item.name,
         qty: 1,
         unit: 'men',
         costType: 'Labor',
-        unitCost: 100,
-        markup: 15,
-        unitPrice: 115,
+        unitCost: laborUnitCost,
+        markup: laborMarkup,
+        unitPrice: laborUnitCost * (1 + laborMarkup / 100),
         notes: 'Change qty to number of men on this task',
         order: order++,
         createdAt: firebase.firestore.FieldValue.serverTimestamp()
