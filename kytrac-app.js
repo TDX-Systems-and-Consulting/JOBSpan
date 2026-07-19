@@ -1,4 +1,4 @@
-// JOBSpan Application JavaScript v2.61.0 · 19/Jul/2026
+// JOBSpan Application JavaScript v2.62.0 · 19/Jul/2026
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -4420,8 +4420,10 @@ async function renderCompanyLaborEfficiency() {
 // documents above. Unlike the old "What's Changed Today" panel, this is
 // NOT limited to today - it's a genuine scrollable history, grouped by
 // date, matching what JobTread's Activity tab already does.
-function renderActivityFeed() {
-  const el = document.getElementById('homeWhatsChanged');
+function renderActivityFeed(targetElId, itemCap) {
+  targetElId = targetElId || 'homeWhatsChanged';
+  itemCap = itemCap || 60;
+  const el = document.getElementById(targetElId);
   if (!el || !conDb) return;
 
   const items = [];
@@ -4431,7 +4433,7 @@ function renderActivityFeed() {
     if (pending > 0) return;
     if (!items.length) { el.innerHTML = '<div class="small muted" style="font-style:italic;padding:10px 0;text-align:center">No activity yet</div>'; return; }
     items.sort((a,b) => (b.ms||0) - (a.ms||0));
-    const top = items.slice(0, 60);
+    const top = items.slice(0, itemCap);
 
     // Group by date for JobTread-style date headers
     const groups = [];
@@ -4462,7 +4464,7 @@ function renderActivityFeed() {
 
   // Messages, business-wide via collectionGroup (falls back to per-job if index/companyId isn't ready)
   conDb.collectionGroup('messages').where('companyId','==',currentCompanyId)
-    .orderBy('createdMs','desc').limit(40).get()
+    .orderBy('createdMs','desc').limit(itemCap).get()
     .then(snap => {
       snap.forEach(doc => {
         const m = doc.data();
@@ -4488,7 +4490,7 @@ function renderActivityFeed() {
 
   // Documents uploaded, business-wide
   conDb.collectionGroup('documents').where('companyId','==',currentCompanyId)
-    .orderBy('uploadedAt','desc').limit(40).get()
+    .orderBy('uploadedAt','desc').limit(itemCap).get()
     .then(snap => {
       snap.forEach(doc => {
         const d = doc.data();
@@ -4516,7 +4518,7 @@ function renderActivityFeed() {
 
   // Daily logs + status changes, business-wide (share the same 'logs' subcollection)
   conDb.collectionGroup('logs').where('companyId','==',currentCompanyId)
-    .orderBy('createdAt','desc').limit(40).get()
+    .orderBy('createdAt','desc').limit(itemCap).get()
     .then(snap => {
       snap.forEach(doc => {
         const l = doc.data();
@@ -4553,6 +4555,12 @@ function renderActivityFeed() {
 window.renderActivityFeed = renderActivityFeed;
 // Keep the old name working too, in case anything else on the page still calls it
 window.renderWhatsChanged = renderActivityFeed;
+
+function openActivityFeedModal() {
+  kOpen('activityFeedModal');
+  renderActivityFeed('fullActivityFeedList', 300);
+}
+window.openActivityFeedModal = openActivityFeedModal;
 
 function renderWhatsChanged_OLD_UNUSED() {
   const el = document.getElementById('homeWhatsChanged');

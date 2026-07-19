@@ -1025,7 +1025,7 @@
     <div class="kt-logo">
       <div class="kt-logo-mark">JOBSpan</div>
       <div class="kt-logo-tag" id="ktCompanyTag">7 Pillars Contracting</div>
-      <div class="kt-logo-version" id="ktVersionTag">Version 2.61.0 · 19/Jul/2026</div>
+      <div class="kt-logo-version" id="ktVersionTag">Version 2.62.0 · 19/Jul/2026</div>
       <div id="themeToggle" style="display:flex;gap:4px;margin-top:8px">
         <button onclick="setTheme('blue')" title="Blue (default)" style="flex:1;padding:4px 0;border-radius:6px;border:1px solid var(--line);background:linear-gradient(135deg,#0a162d,#1a2c52);cursor:pointer"></button>
         <button onclick="setTheme('black')" title="Black" style="flex:1;padding:4px 0;border-radius:6px;border:1px solid var(--line);background:#000;cursor:pointer"></button>
@@ -1189,6 +1189,9 @@
           </div>
           <div style="padding:10px 14px;max-height:420px;overflow-y:auto" id="homeWhatsChanged">
             <div class="small muted" style="font-style:italic;padding:10px 0">Loading...</div>
+          </div>
+          <div style="padding:10px 14px;border-top:1px solid rgba(110,145,210,.08)">
+            <button onclick="openActivityFeedModal()" style="width:100%;background:none;border:1px solid var(--amber-border);color:var(--amber);border-radius:10px;padding:9px;font-size:.82rem;font-weight:700;cursor:pointer">View Full Activity Feed →</button>
           </div>
         </div>
 
@@ -2894,6 +2897,18 @@
 </div>
 
 <!-- ══ TEMPLATE PICKER MODAL (Room-by-Room Rehab) ══ -->
+<div id="activityFeedModal" class="modal-overlay">
+  <div class="modal-box" style="max-width:640px;width:94%;max-height:88vh;display:flex;flex-direction:column">
+    <div class="modal-head">
+      <div><h3 style="margin:0">📢 Activity Feed</h3><div class="small muted">Every message, log, status change, and upload across all jobs</div></div>
+      <button class="btn" onclick="kClose('activityFeedModal')">Close</button>
+    </div>
+    <div style="padding:16px 22px;overflow-y:auto;flex:1" id="fullActivityFeedList">
+      <div class="small muted" style="font-style:italic;padding:10px 0;text-align:center">Loading...</div>
+    </div>
+  </div>
+</div>
+
 <div id="templatePickerModal" class="modal-overlay">
   <div class="modal-box" style="max-width:680px;max-height:92vh;display:flex;flex-direction:column">
     <div class="modal-head" style="flex-shrink:0">
@@ -3968,6 +3983,6 @@
   </div>
 </div>
 
-<script src="kytrac-app.js?v=202607193000"></script>
+<script src="kytrac-app.js?v=202607193100"></script>
 </body>
 </html>
