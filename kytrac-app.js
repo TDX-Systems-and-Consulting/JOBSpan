@@ -5858,7 +5858,8 @@ const DEFAULT_COMPANY_PROFILE = {
   taxRate: 0,
   invNotes: 'Payment due within 30 days. Thank you for your business!',
   defaultMaterialsMarkup: 25,
-  defaultLaborMarkup: 15
+  defaultLaborMarkup: 15,
+  burdenRatePerManHour: 60
 };
 
 function loadCompanyProfile() {
@@ -5931,6 +5932,7 @@ function populateSettingsForm() {
   setVal('settInvNotes', p.invNotes);
   setVal('settMaterialsMarkup', p.defaultMaterialsMarkup !== undefined ? p.defaultMaterialsMarkup : 25);
   setVal('settLaborMarkup', p.defaultLaborMarkup !== undefined ? p.defaultLaborMarkup : 15);
+  setVal('settBurdenRate', p.burdenRatePerManHour !== undefined ? p.burdenRatePerManHour : 60);
 
   // Logo
   const img = document.getElementById('logoPreviewImg');
@@ -5975,10 +5977,12 @@ function saveCompanyProfile() {
     invNotes: document.getElementById('settInvNotes')?.value.trim() || '',
     defaultMaterialsMarkup: parseFloat(document.getElementById('settMaterialsMarkup')?.value),
     defaultLaborMarkup: parseFloat(document.getElementById('settLaborMarkup')?.value),
+    burdenRatePerManHour: parseFloat(document.getElementById('settBurdenRate')?.value),
     updatedAt: firebase.firestore.FieldValue.serverTimestamp()
   };
   if (isNaN(profile.defaultMaterialsMarkup)) profile.defaultMaterialsMarkup = 25;
   if (isNaN(profile.defaultLaborMarkup)) profile.defaultLaborMarkup = 15;
+  if (isNaN(profile.burdenRatePerManHour)) profile.burdenRatePerManHour = 60;
 
   coll('settings').doc('company').set(profile)
     .then(() => {
@@ -10977,6 +10981,105 @@ let _editingEstItemId = null;
 const COST_TYPES = ['Labor','Materials','Subcontractor','Equipment','Permits & Fees','Overhead','Other'];
 
 // ── Load estimate from Firestore ──
+// ── Labor Burden (true crew cost) ─────────────────────────────────────
+// Jason's core critique of JobTread-derived numbers: labor "cost" per
+// sqft was reverse-engineered from billing rates, so displayed profit
+// only ever showed the markup spread — never real profit vs. what the
+// crew actually costs. True labor cost = crew size × days × 8 hrs ×
+// burden rate ($/man-hour, Settings > Supplier Cost Adjustment).
+// Applying rewrites ONLY the unitCost of Labor line items (allocated
+// proportionally to each line's share of labor price), leaving every
+// unitPrice untouched — customer-facing numbers don't move, but cost/
+// profit/margin become real everywhere without touching any calc code.
+function getBurdenRate() {
+  return (companyProfile && companyProfile.burdenRatePerManHour > 0) ? companyProfile.burdenRatePerManHour : 60;
+}
+
+function forEachLaborItem(cb) {
+  estGroups.forEach(g => {
+    (g.directItems || []).forEach(it => { if (it.costType === 'Labor') cb(it, g.id, null); });
+    (g.subgroups || []).forEach(s => {
+      (s.items || []).forEach(it => { if (it.costType === 'Labor') cb(it, g.id, s.id); });
+    });
+  });
+}
+
+function updateBurdenPreview() {
+  const rate = getBurdenRate();
+  const rateLabel = document.getElementById('laborBurdenRateLabel');
+  if (rateLabel) rateLabel.textContent = '$' + rate + '/man-hour · $' + (rate * 8) + '/man-day (Settings)';
+  const crew = parseFloat(document.getElementById('burdenCrewSize')?.value) || 0;
+  const days = parseFloat(document.getElementById('burdenDays')?.value) || 0;
+  const total = crew * days * 8 * rate;
+  const el = document.getElementById('burdenTotalPreview');
+  if (el) el.textContent = total > 0 ? ('$' + total.toLocaleString(undefined, {maximumFractionDigits: 0})) : '—';
+}
+window.updateBurdenPreview = updateBurdenPreview;
+
+function loadLaborBurdenBasis(job) {
+  const basis = job && job.laborBasis;
+  const setV = (id, v) => { const el = document.getElementById(id); if (el) el.value = (v !== undefined && v !== null) ? v : ''; };
+  setV('burdenCrewSize', basis ? basis.crewSize : '');
+  setV('burdenDays', basis ? basis.days : '');
+  const status = document.getElementById('burdenStatus');
+  if (status) status.textContent = basis
+    ? ('Applied ' + (basis.appliedAt || '') + ' — labor costs reflect ' + basis.crewSize + ' crew × ' + basis.days + ' day(s) at $' + basis.burdenRate + '/man-hr = $' + (basis.totalCost || 0).toLocaleString())
+    : 'Not applied yet — labor line costs still use billing-derived rates.';
+  updateBurdenPreview();
+}
+
+async function applyLaborBurden() {
+  if (!conCurrentJobId) { alert('Open a job first.'); return; }
+  const crew = parseFloat(document.getElementById('burdenCrewSize')?.value);
+  const days = parseFloat(document.getElementById('burdenDays')?.value);
+  if (!(crew > 0) || !(days > 0)) { alert('Enter crew size and days first.'); return; }
+  const rate = getBurdenRate();
+  const totalBurden = crew * days * 8 * rate;
+
+  // Collect labor lines and their price weight
+  const laborLines = [];
+  let totalLaborPrice = 0;
+  forEachLaborItem((it, gId, sId) => {
+    const extPrice = (it.qty || 0) * (it.unitPrice || 0);
+    laborLines.push({ it, gId, sId, extPrice });
+    totalLaborPrice += extPrice;
+  });
+  if (!laborLines.length) { alert('No Labor line items found on this estimate.'); return; }
+
+  if (!confirm('Rewrite the COST of ' + laborLines.length + ' labor line(s) so total labor cost = $' + totalBurden.toLocaleString() + ' (' + crew + ' crew × ' + days + ' day(s) × 8 hrs × $' + rate + ')?\n\nPrices are NOT changed — only costs, so profit/margin become real.')) return;
+
+  try {
+    for (const L of laborLines) {
+      // Allocate burden proportionally to this line's share of labor price
+      // (equal split if all prices are zero), then back into a unitCost.
+      const share = totalLaborPrice > 0 ? (L.extPrice / totalLaborPrice) : (1 / laborLines.length);
+      const lineCost = totalBurden * share;
+      const qty = L.it.qty || 1;
+      const newUnitCost = parseFloat((lineCost / qty).toFixed(4));
+      const newMarkup = newUnitCost > 0 ? Math.round(((L.it.unitPrice || 0) / newUnitCost - 1) * 100) : 0;
+      const ref = L.sId
+        ? coll('jobs').doc(conCurrentJobId).collection('estimateGroups').doc(L.gId).collection('subgroups').doc(L.sId).collection('items').doc(L.it.id)
+        : coll('jobs').doc(conCurrentJobId).collection('estimateGroups').doc(L.gId).collection('items').doc(L.it.id);
+      await ref.update({ unitCost: newUnitCost, markup: newMarkup, costBasis: 'burden' });
+      L.it.unitCost = newUnitCost; L.it.markup = newMarkup;
+    }
+    const basis = {
+      crewSize: crew, days, burdenRate: rate, totalCost: totalBurden,
+      appliedAt: new Date().toISOString().split('T')[0]
+    };
+    await coll('jobs').doc(conCurrentJobId).update({ laborBasis: basis });
+    const jobObj = (typeof conJobs !== 'undefined') ? conJobs.find(j => j.id === conCurrentJobId) : null;
+    if (jobObj) jobObj.laborBasis = basis;
+    loadLaborBurdenBasis(jobObj || { laborBasis: basis });
+    if (typeof loadEstimate === 'function') loadEstimate(conCurrentJobId);
+    alert('Done — labor cost is now $' + totalBurden.toLocaleString() + '. Profit and margin now reflect true crew cost.');
+  } catch (e) {
+    console.error('applyLaborBurden error:', e);
+    alert('Error applying burden: ' + e.message);
+  }
+}
+window.applyLaborBurden = applyLaborBurden;
+
 function loadEstimate(jobId) {
   if (!conDb || !jobId) return;
   coll('jobs').doc(jobId).collection('estimateGroups')
@@ -11029,6 +11132,7 @@ function loadEstimate(jobId) {
       estGroups.sort((a,b) => (a.order ?? 0) - (b.order ?? 0));
       renderEstimateTree();
       updateEstimateSummary();
+      loadLaborBurdenBasis(conJobs.find(j => j.id === jobId));
       renderPaymentScheduleControls(jobId);
       loadProposals(jobId);
     })
