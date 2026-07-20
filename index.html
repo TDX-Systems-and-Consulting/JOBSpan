@@ -779,6 +779,14 @@
 
     /* ══ HIERARCHICAL ESTIMATE ══ */
     .est-group { background:linear-gradient(180deg,rgba(var(--card-tint-rgb),.9),rgba(var(--surface-subtle-rgb),.9)); border:1px solid var(--amber-border); border-radius:10px; margin-bottom:8px; overflow:hidden; }
+    /* On narrow screens the 10-column estimate grid can't fit; give the
+       header+tree their own horizontal swipe area instead of clipping the
+       edit/delete buttons off the right edge (regression from the global
+       overflow-x:hidden mobile fix). Desktop: wrapper is inert. */
+    .est-scroll-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    @media (max-width: 900px) {
+      .est-scroll-inner { min-width: 760px; }
+    }
     .est-group-head { display:grid; grid-template-columns:32px 1fr auto auto auto auto; gap:8px; align-items:center; padding:10px 12px; cursor:pointer; user-select:none; background:rgba(217,119,6,.06); }
     .est-group-head:hover { background:rgba(217,119,6,.1); }
     .est-group-toggle { font-size:.8rem; color:var(--amber); transition:transform .2s; }
@@ -3729,7 +3737,11 @@
             </button>
             <div id="proposalHistoryList" style="display:none"></div>
           </div>
-          <!-- Column headers -->
+          <!-- Column headers + tree share one horizontal scroll area so the
+               full 10-column row grid (incl. edit/delete buttons at far
+               right) stays reachable on narrow screens -->
+          <div class="est-scroll-wrap">
+          <div class="est-scroll-inner">
           <div class="est-col-header">
             <div></div><div>Description</div><div>Qty</div><div>Type</div>
             <div style="text-align:right">Unit Cost</div><div style="text-align:right">Ext. Cost</div>
@@ -3738,6 +3750,8 @@
           </div>
           <!-- Estimate tree -->
           <div id="estimateTree"></div>
+          </div>
+          </div>
           <div id="estEmptyState" style="display:none;text-align:center;padding:40px;color:var(--muted)">
             <div style="font-size:2rem;margin-bottom:12px">📋</div>
             <div style="font-weight:700;margin-bottom:6px">No estimate yet</div>
