@@ -1593,6 +1593,7 @@ function renderJobMessages(msgs) {
       <div style="max-width:78%;background:${mine?'rgba(217,119,6,.14)':'rgba(110,145,210,.09)'};border:1px solid ${mine?'rgba(217,119,6,.28)':'rgba(110,145,210,.16)'};border-radius:${mine?'14px 14px 4px 14px':'14px 14px 14px 4px'};padding:9px 13px">
         <div style="font-size:.7rem;color:var(--amber);font-weight:700;margin-bottom:3px">${esc(m.authorName||m.authorEmail||'Unknown')}</div>
         <div style="font-size:.88rem;color:#eaf0fb;white-space:pre-wrap;word-break:break-word">${esc(m.text||'')}</div>
+        ${m.visibleToCustomer ? `<div style="font-size:.66rem;color:#34d399;margin-top:4px">📤 Visible to customer</div>` : ''}
         ${(m.notifyTargets && m.notifyTargets.length) ? `<div style="font-size:.68rem;color:#60a5fa;margin-top:5px">📲 ${m.notifyStatus==='sent'?'Texted':'Texting'} ${m.notifyTargets.map(t=>esc(t.name)).join(', ')}</div>` : ''}
       </div>
       <div style="font-size:.66rem;color:var(--muted);margin-top:3px;padding:0 4px">${when}</div>
@@ -1606,10 +1607,21 @@ function sendJobMessage() {
   const input = document.getElementById('messageInput');
   const text = (input?.value || '').trim();
   if (!text || !conDb || !conCurrentJobId) return;
+  const replyToCustomer = document.getElementById('msgReplyToCustomer')?.checked || false;
   if (input) input.value = '';
+  const replyCheckbox = document.getElementById('msgReplyToCustomer');
+  if (replyCheckbox) replyCheckbox.checked = false;
+
+  const job = conJobs.find(j => j.id === conCurrentJobId);
 
   fetchTeamMembersFlat(conDb, currentCompanyId).then(teamMembers => {
-    const notifyTargets = computeNotifyTargets(text, teamMembers, { fromCustomer: false });
+    let notifyTargets = computeNotifyTargets(text, teamMembers, { fromCustomer: false });
+    // If this is a reply to the customer, also notify (text) the customer
+    // directly at the phone number on file for this job - separate from
+    // the @mention team-routing logic above, both can fire together.
+    if (replyToCustomer && job?.phone) {
+      notifyTargets = [...notifyTargets, { name: job.client || 'Customer', email: '', phone: job.phone }];
+    }
     const data = {
       text,
       authorEmail: conCurrentUser?.email || '',
@@ -1618,6 +1630,7 @@ function sendJobMessage() {
       createdMs: Date.now(),
       companyId: currentCompanyId,
       fromCustomer: false,
+      visibleToCustomer: replyToCustomer,
       notifyTargets,
       notifyStatus: notifyTargets.length ? 'pending' : 'none'
     };
@@ -9178,7 +9191,7 @@ let _portalMsgUnsub = null;
 function loadPortalMessages(portalColl, jobId) {
   if (_portalMsgUnsub) { try { _portalMsgUnsub(); } catch(e){} _portalMsgUnsub = null; }
   _portalMsgUnsub = portalColl('jobs').doc(jobId).collection('messages')
-    .where('fromCustomer','==',true)
+    .where('visibleToCustomer','==',true)
     .onSnapshot(snap => {
       const msgs = [];
       snap.forEach(d => msgs.push({ id: d.id, ...d.data() }));
@@ -9194,11 +9207,17 @@ function renderPortalMessages(msgs) {
     el.innerHTML = '<div class="small muted" style="font-style:italic;padding:8px 0">No messages yet — send one below.</div>';
     return;
   }
-  el.innerHTML = msgs.map(m => `
-    <div style="background:rgba(110,145,210,.09);border:1px solid rgba(110,145,210,.16);border-radius:12px;padding:9px 13px">
-      <div style="font-size:.68rem;color:var(--muted);margin-bottom:3px">${m.createdMs ? new Date(m.createdMs).toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}) : ''}</div>
-      <div style="font-size:.88rem;white-space:pre-wrap;word-break:break-word">${esc(m.text||'')}</div>
-    </div>`).join('');
+  el.innerHTML = msgs.map(m => {
+    const mine = m.fromCustomer;
+    const when = m.createdMs ? new Date(m.createdMs).toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}) : '';
+    return `<div style="display:flex;flex-direction:column;align-items:${mine?'flex-end':'flex-start'}">
+      <div style="max-width:82%;background:${mine?'rgba(217,119,6,.14)':'rgba(110,145,210,.09)'};border:1px solid ${mine?'rgba(217,119,6,.28)':'rgba(110,145,210,.16)'};border-radius:${mine?'14px 14px 4px 14px':'14px 14px 14px 4px'};padding:9px 13px">
+        ${!mine ? `<div style="font-size:.68rem;color:var(--amber);font-weight:700;margin-bottom:3px">${esc(m.authorName||'Team')}</div>` : ''}
+        <div style="font-size:.88rem;white-space:pre-wrap;word-break:break-word">${esc(m.text||'')}</div>
+      </div>
+      <div style="font-size:.66rem;color:var(--muted);margin-top:3px;padding:0 4px">${when}</div>
+    </div>`;
+  }).join('');
   el.scrollTop = el.scrollHeight;
 }
 
@@ -9215,6 +9234,7 @@ function sendPortalMessage() {
       authorEmail: '',
       authorName: 'Customer',
       fromCustomer: true,
+      visibleToCustomer: true,
       createdAt: firebase.firestore.FieldValue.serverTimestamp(),
       createdMs: Date.now(),
       companyId: _portalCompanyId,
