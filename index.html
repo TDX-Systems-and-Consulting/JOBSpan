@@ -1489,6 +1489,12 @@
         </div>
       </div>
 
+      <!-- Weekly Overtime Summary -->
+      <div class="kt-card" style="margin-bottom:16px">
+        <div class="kt-card-head"><h3>⏰ Weekly Overtime</h3></div>
+        <div class="kt-card-body" style="padding:16px;overflow:auto;max-height:280px" id="weeklyOtSummary"></div>
+      </div>
+
       <!-- Time log table -->
       <div class="kt-card">
         <div class="kt-card-head">
@@ -2039,6 +2045,36 @@
             <div class="settings-field">
               <label>Labor Burden Rate ($/man-hour)</label>
               <input id="settBurdenRate" type="number" step="0.5" placeholder="60" value="60" />
+            </div>
+          </div>
+        </div>
+        <div class="settings-save-bar">
+          <span></span>
+          <button class="btn-amber" onclick="saveCompanyProfile()">Save Defaults</button>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <div class="settings-head">
+          <h3>⏰ Overtime Rules</h3>
+          <p>Weekly hours threshold and premium multiplier used to calculate true labor cost from actual logged time. Ties into Labor Burden — overtime hours cost more than the flat burden rate.</p>
+        </div>
+        <div class="settings-body">
+          <div class="settings-grid">
+            <div class="settings-field">
+              <label>Weekly OT Threshold (hrs)</label>
+              <input id="settOtThreshold" type="number" step="1" placeholder="40" value="40" />
+            </div>
+            <div class="settings-field">
+              <label>OT Multiplier (×)</label>
+              <input id="settOtMultiplier" type="number" step="0.05" placeholder="1.5" value="1.5" />
+            </div>
+            <div class="settings-field">
+              <label>Work Week Starts On</label>
+              <select id="settWeekStart">
+                <option value="mon">Monday</option>
+                <option value="sun">Sunday</option>
+              </select>
             </div>
           </div>
         </div>

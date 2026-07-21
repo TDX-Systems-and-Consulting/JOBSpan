@@ -5859,7 +5859,10 @@ const DEFAULT_COMPANY_PROFILE = {
   invNotes: 'Payment due within 30 days. Thank you for your business!',
   defaultMaterialsMarkup: 25,
   defaultLaborMarkup: 15,
-  burdenRatePerManHour: 60
+  burdenRatePerManHour: 60,
+  otWeeklyThreshold: 40,
+  otMultiplier: 1.5,
+  weekStartDay: 'mon'
 };
 
 function loadCompanyProfile() {
@@ -5933,6 +5936,9 @@ function populateSettingsForm() {
   setVal('settMaterialsMarkup', p.defaultMaterialsMarkup !== undefined ? p.defaultMaterialsMarkup : 25);
   setVal('settLaborMarkup', p.defaultLaborMarkup !== undefined ? p.defaultLaborMarkup : 15);
   setVal('settBurdenRate', p.burdenRatePerManHour !== undefined ? p.burdenRatePerManHour : 60);
+  setVal('settOtThreshold', p.otWeeklyThreshold !== undefined ? p.otWeeklyThreshold : 40);
+  setVal('settOtMultiplier', p.otMultiplier !== undefined ? p.otMultiplier : 1.5);
+  setVal('settWeekStart', p.weekStartDay || 'mon');
 
   // Logo
   const img = document.getElementById('logoPreviewImg');
@@ -5978,11 +5984,16 @@ function saveCompanyProfile() {
     defaultMaterialsMarkup: parseFloat(document.getElementById('settMaterialsMarkup')?.value),
     defaultLaborMarkup: parseFloat(document.getElementById('settLaborMarkup')?.value),
     burdenRatePerManHour: parseFloat(document.getElementById('settBurdenRate')?.value),
+    otWeeklyThreshold: parseFloat(document.getElementById('settOtThreshold')?.value),
+    otMultiplier: parseFloat(document.getElementById('settOtMultiplier')?.value),
+    weekStartDay: document.getElementById('settWeekStart')?.value || 'mon',
     updatedAt: firebase.firestore.FieldValue.serverTimestamp()
   };
   if (isNaN(profile.defaultMaterialsMarkup)) profile.defaultMaterialsMarkup = 25;
   if (isNaN(profile.defaultLaborMarkup)) profile.defaultLaborMarkup = 15;
   if (isNaN(profile.burdenRatePerManHour)) profile.burdenRatePerManHour = 60;
+  if (isNaN(profile.otWeeklyThreshold)) profile.otWeeklyThreshold = 40;
+  if (isNaN(profile.otMultiplier)) profile.otMultiplier = 1.5;
 
   coll('settings').doc('company').set(profile)
     .then(() => {
@@ -7241,6 +7252,91 @@ function populateTimeFilters() {
   }
 }
 
+// ── Overtime Rules ──────────────────────────────────────────────────
+// Splits logged hours into regular vs. overtime per employee per work
+// week (Settings > Overtime Rules: threshold, multiplier, week-start day).
+// True labor cost = regular hrs × burden rate + OT hrs × burden rate ×
+// OT multiplier. This is the actuals-side complement to Labor Burden
+// (which sets the *estimated* cost) — together they set up the
+// Estimate vs. Actual comparison that's next on the backlog.
+function getOtSettings() {
+  const p = companyProfile || {};
+  return {
+    threshold: p.otWeeklyThreshold > 0 ? p.otWeeklyThreshold : 40,
+    multiplier: p.otMultiplier > 0 ? p.otMultiplier : 1.5,
+    weekStart: p.weekStartDay === 'sun' ? 0 : 1 // 0=Sunday, 1=Monday
+  };
+}
+
+// Returns the ISO date (YYYY-MM-DD) of the start of the work week
+// containing the given date string, per the configured week-start day.
+function weekStartOf(dateStr, weekStartDow) {
+  const d = new Date(dateStr + 'T00:00:00');
+  const day = d.getDay(); // 0=Sun..6=Sat
+  const diff = (day - weekStartDow + 7) % 7;
+  d.setDate(d.getDate() - diff);
+  return d.toISOString().split('T')[0];
+}
+
+function computeWeeklyOvertime(entries) {
+  const { threshold, multiplier, weekStart } = getOtSettings();
+  const burdenRate = getBurdenRate();
+  const buckets = {}; // key: userKey|weekStartDate
+
+  entries.forEach(e => {
+    if (!e.hours || !e.date) return;
+    const userKey = e.userId || e.userEmail || e.userName || 'unknown';
+    const wkStart = weekStartOf(e.date, weekStart);
+    const key = userKey + '|' + wkStart;
+    if (!buckets[key]) {
+      buckets[key] = { userName: e.userName || e.userEmail || 'Unknown', weekStart: wkStart, hours: 0 };
+    }
+    buckets[key].hours += e.hours;
+  });
+
+  return Object.values(buckets).map(b => {
+    const regHours = Math.min(b.hours, threshold);
+    const otHours = Math.max(0, b.hours - threshold);
+    const cost = regHours * burdenRate + otHours * burdenRate * multiplier;
+    return { ...b, regHours, otHours, cost, isOt: otHours > 0 };
+  }).sort((a,b) => b.weekStart.localeCompare(a.weekStart) || b.hours - a.hours);
+}
+
+function renderWeeklyOvertime() {
+  const el = document.getElementById('weeklyOtSummary');
+  if (!el) return;
+
+  const jobFilter = document.getElementById('timeFilterJob')?.value || '';
+  const userFilter = document.getElementById('timeFilterUser')?.value || '';
+  let entries = (typeof allTimeEntries !== 'undefined') ? allTimeEntries : [];
+  if (jobFilter) entries = entries.filter(e => e.jobId === jobFilter);
+  if (userFilter) entries = entries.filter(e => e.userId === userFilter || e.userEmail === userFilter);
+
+  const weeks = computeWeeklyOvertime(entries).slice(0, 12); // most recent 12 person-weeks
+  const { threshold, multiplier } = getOtSettings();
+
+  if (!weeks.length) {
+    el.innerHTML = '<span class="small muted" style="font-style:italic">No hours logged yet.</span>';
+    return;
+  }
+
+  el.innerHTML = `
+    <div class="small muted" style="margin-bottom:8px">${threshold}h/week threshold · ${multiplier}× OT rate · $${getBurdenRate()}/man-hr burden</div>
+    <table class="kt-table" style="font-size:.8rem">
+      <thead><tr><th>Employee</th><th>Week Of</th><th style="text-align:right">Reg</th><th style="text-align:right">OT</th><th style="text-align:right">True Cost</th></tr></thead>
+      <tbody>
+        ${weeks.map(w => `<tr${w.isOt ? ' style="background:rgba(217,119,6,.08)"' : ''}>
+          <td>${esc(w.userName)}</td>
+          <td>${w.weekStart}</td>
+          <td style="text-align:right">${w.regHours.toFixed(1)}h</td>
+          <td style="text-align:right;${w.isOt ? 'color:var(--amber);font-weight:700' : 'color:var(--muted)'}">${w.otHours > 0 ? w.otHours.toFixed(1)+'h' : '—'}</td>
+          <td style="text-align:right;font-weight:700;color:#a3f2d2">$${w.cost.toFixed(0)}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>`;
+}
+window.renderWeeklyOvertime = renderWeeklyOvertime;
+
 function renderTimeLog() {
   const tbody = document.getElementById('timeLogBody');
   const tfoot = document.getElementById('timeLogFoot');
@@ -7260,6 +7356,7 @@ function renderTimeLog() {
   if (!entries.length) {
     tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:24px;font-style:italic">No time entries yet.</td></tr>';
     if (tfoot) tfoot.innerHTML = '';
+    renderWeeklyOvertime();
     return;
   }
 
@@ -7290,6 +7387,7 @@ function renderTimeLog() {
     <td style="text-align:right;color:#a3f2d2">${totalHours.toFixed(2)}h</td>
     <td colspan="2"></td>
   </tr>`;
+  renderWeeklyOvertime();
 }
 
 function forceClockOut(entryId) {
