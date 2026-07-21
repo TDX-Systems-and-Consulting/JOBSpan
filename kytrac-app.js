@@ -6941,8 +6941,12 @@ let _clockStart = null;
 function loadTimeEntries() {
   if (!conDb) return;
   const today = new Date().toISOString().split('T')[0];
+  // NOTE: order by 'date', not 'clockIn' - manual entries have no clockIn
+  // field at all, and Firestore orderBy silently excludes documents
+  // missing the ordered field, which was making manual entries invisible
+  // everywhere on this page (Time Log, Weekly Overtime, totals).
   coll('timeentries')
-    .orderBy('clockIn', 'desc')
+    .orderBy('date', 'desc')
     .limit(200)
     .onSnapshot(snap => {
       allTimeEntries = [];
@@ -15956,6 +15960,83 @@ window.openJobPhotos = openJobPhotos;
 
 let _burndownChartInstance = null;
 
+// ── Estimate vs. Actual Labor ──────────────────────────────────────
+// Estimated side: the Labor Burden basis applied on the Estimate tab
+// (crew x days x burden rate), falling back to the sum of Labor line
+// item costs if burden was never applied. Actual side: real logged
+// hours on this job, split into regular/OT per employee per week using
+// the same Overtime Rules (threshold/multiplier/burden rate) as the
+// Weekly Overtime card - reused directly via computeWeeklyOvertime().
+//
+// CAVEAT (shown in the UI): OT here is computed from hours on THIS JOB
+// only. If a crew member splits a week across multiple jobs, this can
+// under- or over-count their true OT share for this job specifically -
+// the Weekly Overtime card on the Time page is the accurate company-wide
+// view. This job-scoped version is a reasonable approximation for crews
+// that work one job at a time, which is the common case.
+function computeEstimateVsActualLabor(job, timeEntries) {
+  let estimatedCost = null;
+  let estimatedBasis = null;
+  if (job && job.laborBasis && job.laborBasis.totalCost > 0) {
+    estimatedCost = job.laborBasis.totalCost;
+    estimatedBasis = job.laborBasis;
+  } else {
+    let laborLineSum = 0;
+    (estGroups || []).forEach(g => {
+      (g.directItems || []).forEach(it => { if (it.costType === 'Labor') laborLineSum += (it.qty||0) * (it.unitCost||0); });
+      (g.subgroups || []).forEach(s => (s.items||[]).forEach(it => { if (it.costType === 'Labor') laborLineSum += (it.qty||0) * (it.unitCost||0); }));
+    });
+    estimatedCost = laborLineSum > 0 ? laborLineSum : null;
+  }
+
+  const weeks = computeWeeklyOvertime((timeEntries||[]).filter(e => e.hours && e.date));
+  const actualHours = weeks.reduce((s,w) => s + w.hours, 0);
+  const actualRegHours = weeks.reduce((s,w) => s + w.regHours, 0);
+  const actualOtHours = weeks.reduce((s,w) => s + w.otHours, 0);
+  const actualCost = weeks.reduce((s,w) => s + w.cost, 0);
+
+  return { estimatedCost, estimatedBasis, actualCost, actualHours, actualRegHours, actualOtHours, weeks };
+}
+
+function renderEstimateVsActualLabor(job, timeEntries) {
+  const el = document.getElementById('retroLaborCompare');
+  if (!el) return;
+  const r = computeEstimateVsActualLabor(job, timeEntries);
+
+  if (r.estimatedCost === null && r.actualHours === 0) {
+    el.innerHTML = '<span class="small muted" style="font-style:italic">Apply Labor Burden on the Estimate tab and log time to this job to see Estimate vs. Actual.</span>';
+    return;
+  }
+
+  const hasEst = r.estimatedCost !== null;
+  const variance = hasEst ? (r.actualCost - r.estimatedCost) : null;
+  const variancePct = (hasEst && r.estimatedCost > 0) ? (variance / r.estimatedCost * 100) : null;
+  const overBudget = variance !== null && variance > 0;
+  const basisNote = r.estimatedBasis
+    ? `${r.estimatedBasis.crewSize} crew × ${r.estimatedBasis.days} day(s) @ $${r.estimatedBasis.burdenRate}/man-hr (applied ${r.estimatedBasis.appliedAt})`
+    : 'from Labor line item costs (burden not yet applied on Estimate tab)';
+
+  el.innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:14px">
+      <div style="text-align:center;background:rgba(var(--surface-subtle-rgb),.6);border-radius:12px;padding:14px">
+        <div style="font-size:1.3rem;font-weight:900">${hasEst ? '$'+r.estimatedCost.toLocaleString(undefined,{maximumFractionDigits:0}) : '—'}</div>
+        <div style="font-size:.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-top:3px">Estimated Cost</div>
+      </div>
+      <div style="text-align:center;background:rgba(var(--surface-subtle-rgb),.6);border-radius:12px;padding:14px">
+        <div style="font-size:1.3rem;font-weight:900;color:#a3f2d2">$${r.actualCost.toLocaleString(undefined,{maximumFractionDigits:0})}</div>
+        <div style="font-size:.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-top:3px">Actual Cost (logged)</div>
+      </div>
+      <div style="text-align:center;background:rgba(var(--surface-subtle-rgb),.6);border-radius:12px;padding:14px">
+        <div style="font-size:1.3rem;font-weight:900;color:${!hasEst ? 'var(--muted)' : overBudget ? '#f87171' : '#34d399'}">${!hasEst ? '—' : (overBudget?'+':'') + '$'+Math.abs(variance).toLocaleString(undefined,{maximumFractionDigits:0}) + (variancePct!==null ? ' ('+(overBudget?'+':'')+variancePct.toFixed(0)+'%)' : '')}</div>
+        <div style="font-size:.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-top:3px">Variance</div>
+      </div>
+    </div>
+    <div class="small muted" style="margin-bottom:6px">Estimate basis: ${basisNote}</div>
+    <div class="small muted">Logged: ${r.actualHours.toFixed(1)}h total (${r.actualRegHours.toFixed(1)}h regular${r.actualOtHours>0 ? ', <span style="color:var(--amber);font-weight:700">'+r.actualOtHours.toFixed(1)+'h overtime</span>' : ''})</div>
+    <div class="small muted" style="margin-top:8px;font-style:italic">Note: OT here is scoped to hours logged on this job only. See Weekly Overtime on the Time page for the accurate company-wide view if crew split time across jobs.</div>
+  `;
+}
+
 async function loadRetrospective(jobId) {
   if (!jobId || !conDb) return;
 
@@ -15973,6 +16054,8 @@ async function loadRetrospective(jobId) {
   renderRetroPhaseTable(timeEntries);
   renderRetroInsights(timeEntries);
   renderTradeAccuracy();
+  const job = (typeof conJobs !== 'undefined') ? conJobs.find(j => j.id === jobId) : null;
+  renderEstimateVsActualLabor(job, timeEntries);
 }
 
 function renderBurndownChart(jobId, timeEntries) {
