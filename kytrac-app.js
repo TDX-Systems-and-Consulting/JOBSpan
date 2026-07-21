@@ -1502,6 +1502,59 @@ async function handlePlanUpload(fileList) {
 let _msgUnsub = null;
 let _msgJobId = null;
 
+// ── Message Routing (@mentions + customer-message default routing) ────
+// Rule (per Travis): customer-facing messages (from the Customer Portal)
+// always route to the Owner by default, UNLESS a specific team member is
+// @mentioned in the message text - in which case that person gets it
+// instead. Internal team messages only trigger a notification when
+// someone is explicitly @mentioned (no default routing - avoids SMS'ing
+// Travis on every internal chat message).
+//
+// Mention matching is intentionally simple for v1: "@FirstName" matched
+// case-insensitively against the first word of each team member's name.
+// Real autocomplete UI can be layered on later; this is enough to make
+// the actual routing work correctly today.
+//
+// NOTE: this only determines WHO should be notified and writes that onto
+// the message doc (notifyTargets, notifyStatus:'pending'). The actual SMS
+// send happens server-side via the Cloud Function in /functions - it
+// can't run client-side since the Twilio auth token must never be
+// shipped to the browser.
+function parseMentions(text, teamMembers) {
+  if (!text) return [];
+  const mentionTokens = (text.match(/@([A-Za-z][\w'-]*)/g) || []).map(t => t.slice(1).toLowerCase());
+  if (!mentionTokens.length) return [];
+  return teamMembers.filter(m => {
+    const firstName = (m.name || '').trim().split(/\s+/)[0]?.toLowerCase();
+    return firstName && mentionTokens.includes(firstName);
+  });
+}
+
+function computeNotifyTargets(text, teamMembers, opts) {
+  opts = opts || {};
+  const mentioned = parseMentions(text, teamMembers);
+  if (mentioned.length) {
+    return mentioned.map(m => ({ name: m.name, email: m.email, phone: m.phone || '' }));
+  }
+  if (opts.fromCustomer) {
+    const owner = teamMembers.find(m => m.role === 'Owner');
+    return owner ? [{ name: owner.name, email: owner.email, phone: owner.phone || '' }] : [];
+  }
+  return [];
+}
+
+// Fetches the current team roster as a flat array (helper for message
+// sends, which need it fresh rather than relying on whatever's cached).
+function fetchTeamMembersFlat(dbRef, companyId) {
+  const ref = companyId
+    ? dbRef.collection('companies').doc(companyId).collection('settings').doc('team')
+    : dbRef.collection('settings').doc('team');
+  return ref.get().then(doc => {
+    const members = doc.exists ? extractTeamMembers(doc.data()) : {};
+    return Object.values(members);
+  }).catch(() => []);
+}
+
 function loadJobMessages(jobId) {
   _msgJobId = jobId;
   const listEl = document.getElementById('messagesList');
@@ -1540,6 +1593,7 @@ function renderJobMessages(msgs) {
       <div style="max-width:78%;background:${mine?'rgba(217,119,6,.14)':'rgba(110,145,210,.09)'};border:1px solid ${mine?'rgba(217,119,6,.28)':'rgba(110,145,210,.16)'};border-radius:${mine?'14px 14px 4px 14px':'14px 14px 14px 4px'};padding:9px 13px">
         <div style="font-size:.7rem;color:var(--amber);font-weight:700;margin-bottom:3px">${esc(m.authorName||m.authorEmail||'Unknown')}</div>
         <div style="font-size:.88rem;color:#eaf0fb;white-space:pre-wrap;word-break:break-word">${esc(m.text||'')}</div>
+        ${(m.notifyTargets && m.notifyTargets.length) ? `<div style="font-size:.68rem;color:#60a5fa;margin-top:5px">📲 ${m.notifyStatus==='sent'?'Texted':'Texting'} ${m.notifyTargets.map(t=>esc(t.name)).join(', ')}</div>` : ''}
       </div>
       <div style="font-size:.66rem;color:var(--muted);margin-top:3px;padding:0 4px">${when}</div>
     </div>`;
@@ -1552,17 +1606,24 @@ function sendJobMessage() {
   const input = document.getElementById('messageInput');
   const text = (input?.value || '').trim();
   if (!text || !conDb || !conCurrentJobId) return;
-  const data = {
-    text,
-    authorEmail: conCurrentUser?.email || '',
-    authorName: conCurrentUser?.displayName || conCurrentUser?.email || 'Unknown',
-    createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-    createdMs: Date.now(),
-    companyId: currentCompanyId
-  };
   if (input) input.value = '';
-  coll('jobs').doc(conCurrentJobId).collection('messages').add(data)
-    .catch(e => { alert('Error sending: ' + e.message); if (input) input.value = text; });
+
+  fetchTeamMembersFlat(conDb, currentCompanyId).then(teamMembers => {
+    const notifyTargets = computeNotifyTargets(text, teamMembers, { fromCustomer: false });
+    const data = {
+      text,
+      authorEmail: conCurrentUser?.email || '',
+      authorName: conCurrentUser?.displayName || conCurrentUser?.email || 'Unknown',
+      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      createdMs: Date.now(),
+      companyId: currentCompanyId,
+      fromCustomer: false,
+      notifyTargets,
+      notifyStatus: notifyTargets.length ? 'pending' : 'none'
+    };
+    coll('jobs').doc(conCurrentJobId).collection('messages').add(data)
+      .catch(e => { alert('Error sending: ' + e.message); if (input) input.value = text; });
+  });
 }
 
 // ════════════════════════════════════════════════════
@@ -6428,6 +6489,11 @@ function loadTeamMembers() {
                 style="font-size:.72rem;padding:3px 8px;width:220px;background:rgba(8,19,37,.6);border:1px solid var(--line);border-radius:6px;color:var(--muted)" />
               <button class="btn" style="padding:2px 8px;font-size:.7rem" onclick="saveTeamMemberQBId('${(m.email||'').replace(/\./g,'_')}')">Save</button>
             </div>
+            <div style="display:flex;align-items:center;gap:6px;margin-top:5px">
+              <input id="phone_${(m.email||'').replace(/\./g,'_')}" value="${esc(m.phone||'')}" placeholder="Cell phone (for @mention SMS alerts)" type="tel"
+                style="font-size:.72rem;padding:3px 8px;width:220px;background:rgba(8,19,37,.6);border:1px solid var(--line);border-radius:6px;color:var(--muted)" />
+              <button class="btn" style="padding:2px 8px;font-size:.7rem" onclick="saveTeamMemberPhone('${(m.email||'').replace(/\./g,'_')}')">Save</button>
+            </div>
             <label style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:.72rem;color:var(--muted);cursor:pointer">
               <input type="checkbox" ${m.fullAccessOverride ? 'checked' : ''} onchange="setTeamMemberFullAccessOverride('${(m.email||'').replace(/\./g,'_')}',this.checked)" />
               Full Access Override <span style="color:#9ca3af">(keeps their role label, but grants Owner-level permissions everywhere except adding/removing/promoting other team members — that stays Owner-only)</span>
@@ -6487,6 +6553,23 @@ function saveTeamMemberQBId(key) {
    .catch(e => alert('Error saving QuickBooks Employee ID: ' + e.message));
 }
 window.saveTeamMemberQBId = saveTeamMemberQBId;
+
+// Cell phone for @mention SMS alerts (customer-message routing). Owner-only
+// to edit, same boundary as everything else in Team Management. Actual SMS
+// sending happens server-side (Cloud Function + Twilio) - this just stores
+// the number the function will send to.
+function saveTeamMemberPhone(key) {
+  if (currentUserRole !== 'Owner') return;
+  const input = document.getElementById('phone_' + key);
+  if (!input) return;
+  const phone = input.value.trim();
+  coll('settings').doc('team').set(
+    { members: { [key]: { phone, updatedAt: new Date().toISOString() } } },
+    { merge: true }
+  ).then(() => { input.style.borderColor = '#1dbb87'; setTimeout(() => { input.style.borderColor = ''; }, 1200); })
+   .catch(e => alert('Error saving phone number: ' + e.message));
+}
+window.saveTeamMemberPhone = saveTeamMemberPhone;
 
 // Sets/clears the full-access override for a team member - Owner-only,
 // same security boundary as other team management actions (this is what
@@ -8787,6 +8870,8 @@ function initPortalFirebase(jobId, token) {
 // credential for an unauthenticated portal visitor.
 let _portalDb = null;
 let _portalCompanyId = null;
+let _portalJobId = null;
+let _portalColl = null;
 let _portalLatestProposal = null;
 let _portalToken = null;
 
@@ -8795,12 +8880,14 @@ function loadPortalJob(db, jobId, tokenData, token) {
   const companyId = tokenData.companyId || null;
   _portalDb = db;
   _portalCompanyId = companyId;
+  _portalJobId = jobId;
 
   // Helper to get company-scoped collection
   function portalColl(name) {
     if (companyId) return db.collection('companies').doc(companyId).collection(name);
     return db.collection(name); // fallback for old tokens
   }
+  _portalColl = portalColl;
 
   // Load company profile for branding
   portalColl('settings').doc('company').get()
@@ -8853,6 +8940,11 @@ function loadPortalJob(db, jobId, tokenData, token) {
           snap.forEach(d => cos.push({ id: d.id, ...d.data() }));
           renderPortalCOs(cos);
         }).catch(() => {});
+
+      // Load customer's own message thread (portal only ever shows
+      // customer-originated messages, never internal team chatter -
+      // internal replies aren't customer-visible yet, a known v1 gap)
+      loadPortalMessages(portalColl, jobId);
 
       // Load the latest Proposal version (Draft versions are never shown
       // to the customer — only Pending/Approved/Declined are customer-facing)
@@ -9073,6 +9165,68 @@ function renderPortalCOs(cos) {
       </div>
     </div>`).join('');
 }
+
+// ── Portal Messages: customer-facing "Message Us" box ──
+// Writes into the SAME jobs/{jobId}/messages collection the internal team
+// thread uses (fromCustomer:true flag distinguishes them), so team members
+// see customer messages inline in their existing Job > Messages tab with
+// no extra plumbing. The portal itself only ever displays messages this
+// specific customer sent (fromCustomer:true) - internal team replies
+// aren't customer-visible yet, a known v1 limitation worth revisiting.
+let _portalMsgUnsub = null;
+
+function loadPortalMessages(portalColl, jobId) {
+  if (_portalMsgUnsub) { try { _portalMsgUnsub(); } catch(e){} _portalMsgUnsub = null; }
+  _portalMsgUnsub = portalColl('jobs').doc(jobId).collection('messages')
+    .where('fromCustomer','==',true)
+    .onSnapshot(snap => {
+      const msgs = [];
+      snap.forEach(d => msgs.push({ id: d.id, ...d.data() }));
+      msgs.sort((a,b) => (a.createdMs||0) - (b.createdMs||0));
+      renderPortalMessages(msgs);
+    }, () => renderPortalMessages([]));
+}
+
+function renderPortalMessages(msgs) {
+  const el = document.getElementById('portalMessagesList');
+  if (!el) return;
+  if (!msgs.length) {
+    el.innerHTML = '<div class="small muted" style="font-style:italic;padding:8px 0">No messages yet — send one below.</div>';
+    return;
+  }
+  el.innerHTML = msgs.map(m => `
+    <div style="background:rgba(110,145,210,.09);border:1px solid rgba(110,145,210,.16);border-radius:12px;padding:9px 13px">
+      <div style="font-size:.68rem;color:var(--muted);margin-bottom:3px">${m.createdMs ? new Date(m.createdMs).toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}) : ''}</div>
+      <div style="font-size:.88rem;white-space:pre-wrap;word-break:break-word">${esc(m.text||'')}</div>
+    </div>`).join('');
+  el.scrollTop = el.scrollHeight;
+}
+
+function sendPortalMessage() {
+  const input = document.getElementById('portalMessageInput');
+  const text = (input?.value || '').trim();
+  if (!text || !_portalDb || !_portalJobId || !_portalColl) return;
+  input.value = '';
+
+  fetchTeamMembersFlat(_portalDb, _portalCompanyId).then(teamMembers => {
+    const notifyTargets = computeNotifyTargets(text, teamMembers, { fromCustomer: true });
+    const data = {
+      text,
+      authorEmail: '',
+      authorName: 'Customer',
+      fromCustomer: true,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      createdMs: Date.now(),
+      companyId: _portalCompanyId,
+      lastPortalToken: _portalToken || '',
+      notifyTargets,
+      notifyStatus: notifyTargets.length ? 'pending' : 'none'
+    };
+    _portalColl('jobs').doc(_portalJobId).collection('messages').add(data)
+      .catch(e => { alert('Error sending message: ' + e.message); if (input) input.value = text; });
+  });
+}
+window.sendPortalMessage = sendPortalMessage;
 
 function showPortalNotFound() {
   document.getElementById('portalLoading').style.display = 'none';

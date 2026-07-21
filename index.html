@@ -2644,6 +2644,22 @@
         <div class="portal-section-body" id="portalCOList"></div>
       </div>
 
+      <!-- Message Us -->
+      <div class="portal-section" id="portalMessagesSection">
+        <div class="portal-section-head"><h3>💬 Message Us</h3></div>
+        <div class="portal-section-body">
+          <div style="font-size:.8rem;color:var(--muted);margin-bottom:12px">
+            Questions about your project? Send a message and we'll get right back to you.
+            Need someone specific? Just @mention them by first name (e.g. "@Shane can you check...").
+          </div>
+          <div id="portalMessagesList" style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px;max-height:40vh;overflow:auto"></div>
+          <div style="display:flex;gap:8px;align-items:flex-end">
+            <textarea id="portalMessageInput" placeholder="Write a message..." rows="2" style="flex:1;resize:none;min-height:44px"></textarea>
+            <button class="btn-amber" onclick="sendPortalMessage()" style="padding:10px 18px;font-weight:700;white-space:nowrap">Send</button>
+          </div>
+        </div>
+      </div>
+
       <!-- Footer -->
       <div style="text-align:center;padding:32px 0 16px;color:rgba(110,145,210,.3);font-size:.74rem">
         <div id="portalFooterCompany"></div>
