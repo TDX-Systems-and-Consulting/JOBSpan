@@ -4084,13 +4084,33 @@ function conInitFirebase() {
     conAuth.onAuthStateChanged(user => {
       if (user) {
         conCurrentUser = user;
-        resolveCompany(user, () => {
-          loadUserRole(user, () => {
-            conShowMain(user);
-            conLoadJobs();
-            setTimeout(() => loadCompanyProfile(), 800);
+        // Sync Custom Claims (companyId/role/fullAccessOverride) before
+        // anything else - Firestore Security Rules trust the token
+        // claims, not client-side state, so this has to land (and the
+        // token has to refresh) before other reads/writes rely on rules
+        // passing. Falls through to the old client-only flow if the
+        // function isn't deployed yet (e.g. mid-rollout) rather than
+        // blocking login entirely.
+        const proceedWithLogin = () => {
+          resolveCompany(user, () => {
+            loadUserRole(user, () => {
+              conShowMain(user);
+              conLoadJobs();
+              setTimeout(() => loadCompanyProfile(), 800);
+            });
           });
-        });
+        };
+        if (conFunctions) {
+          conFunctions.httpsCallable('syncMyClaims')()
+            .then(() => user.getIdToken(true))
+            .then(proceedWithLogin)
+            .catch(e => {
+              console.warn('syncMyClaims not available yet (functions not deployed?):', e.message);
+              proceedWithLogin();
+            });
+        } else {
+          proceedWithLogin();
+        }
       } else {
         conCurrentUser = null;
         conShowAuthWall();
@@ -6540,10 +6560,19 @@ function addTeamMember() {
   const key = email.replace(/\./g,'_');
   const memberData = { email, name, role, addedAt: new Date().toISOString(), addedBy: conCurrentUser?.email || '' };
 
-  coll('settings').doc('team').set(
-    { members: { [key]: memberData } },
-    { merge: true }
-  ).then(() => {
+  Promise.all([
+    coll('settings').doc('team').set(
+      { members: { [key]: memberData } },
+      { merge: true }
+    ),
+    // CRITICAL: without this, resolveCompany() can never find this
+    // company for the invited member - they'd get bounced into creating
+    // a brand new separate company on their first login instead of
+    // joining this one. This was a latent bug until now.
+    conDb.collection('companies').doc(currentCompanyId).update({
+      memberEmails: firebase.firestore.FieldValue.arrayUnion(email)
+    })
+  ]).then(() => {
     document.getElementById('newMemberEmail').value = '';
     document.getElementById('newMemberName').value = '';
     loadTeamMembers();
@@ -6615,6 +6644,7 @@ function removeMember(key) {
       if (!doc.exists) return;
       const data = doc.data();
       const members = { ...extractTeamMembers(data) };
+      const removedEmail = members[key]?.email;
       delete members[key];
       // Write canonical nested shape.
       const payload = { members };
@@ -6628,7 +6658,16 @@ function removeMember(key) {
           }
         });
       }
-      return coll('settings').doc('team').update(payload);
+      const writes = [coll('settings').doc('team').update(payload)];
+      // Also strip them from memberEmails - otherwise a removed member
+      // could still resolve into this company on their next login even
+      // though their team entry (and custom claims role) is gone.
+      if (removedEmail) {
+        writes.push(conDb.collection('companies').doc(currentCompanyId).update({
+          memberEmails: firebase.firestore.FieldValue.arrayRemove(removedEmail)
+        }));
+      }
+      return Promise.all(writes);
     })
     .then(() => loadTeamMembers())
     .catch(e => alert('Error: ' + e.message));

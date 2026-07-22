@@ -1,0 +1,172 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Helpers ──────────────────────────────────────────────────────
+    // Everything here trusts request.auth.token.* (Custom Claims set by
+    // the syncMyClaims Cloud Function), NOT any data read from Firestore
+    // itself at rule-evaluation time - that's what makes this the real
+    // security boundary instead of another copy of the client-side check.
+    function signedIn() { return request.auth != null; }
+    function myEmail() { return request.auth.token.email; }
+    function myCompanyId() { return request.auth.token.companyId; }
+    function myRole() { return request.auth.token.role; }
+    function hasFullAccess() {
+      return signedIn() && (
+        myRole() in ['Owner', 'Project Manager', 'Accounting'] ||
+        request.auth.token.fullAccessOverride == true
+      );
+    }
+    function inCompany(companyId) {
+      return signedIn() && myCompanyId() == companyId;
+    }
+
+    // ── Top-level companies collection ──────────────────────────────
+    // Needed for company resolution (resolveCompany() / syncMyClaims)
+    // before a user necessarily has companyId claims yet on first login,
+    // so this checks email match directly against the doc as a fallback
+    // in addition to the claim check.
+    match /companies/{companyId} {
+      allow read: if signedIn() && (
+        resource.data.ownerEmail == myEmail() ||
+        (resource.data.memberEmails is list && myEmail() in resource.data.memberEmails) ||
+        inCompany(companyId)
+      );
+      // Onboarding: a signed-in user creating their own new company.
+      allow create: if signedIn() && request.resource.data.ownerEmail == myEmail();
+      // Updates (memberEmails arrayUnion/arrayRemove from Team Management,
+      // plan changes, etc.) restricted to that company's own full-access users.
+      allow update: if inCompany(companyId) && hasFullAccess();
+      allow delete: if false; // no client-side company deletion, ever
+
+      // ── Settings (team roster, company profile, markup/burden/OT config) ──
+      match /settings/team {
+        // Readable by any company member (needed for @mention roster,
+        // role display, etc.) - writable by Owner only, matching the
+        // client-side boundary that already existed for Team Management.
+        allow read: if inCompany(companyId);
+        allow write: if inCompany(companyId) && myRole() == 'Owner';
+      }
+      match /settings/company {
+        // Portal reads this anonymously for branding (logo, name, phone).
+        allow read: if inCompany(companyId) || request.auth == null;
+        allow write: if inCompany(companyId) && hasFullAccess();
+      }
+      match /settings/{doc} {
+        allow read: if inCompany(companyId);
+        allow write: if inCompany(companyId) && hasFullAccess();
+      }
+
+      // ── Catalog (pricing data) ──
+      match /catalog/{catId} {
+        allow read: if inCompany(companyId);
+        allow write: if inCompany(companyId) && hasFullAccess();
+      }
+
+      // ── Time entries (clock in/out, manual, overtime calc) ──
+      match /timeentries/{entryId} {
+        // Any team member can log their own time and read the shared log
+        // (Weekly Overtime already reads across everyone company-wide).
+        allow read, write: if inCompany(companyId);
+      }
+
+      // ── Jobs and everything under them ──
+      match /jobs/{jobId} {
+        // NOTE ON PORTAL ACCESS: the Customer Portal reads this same
+        // path anonymously (no request.auth at all - access is by
+        // knowing a random token in their link, not by signing in).
+        // Firestore rules have no way to verify "this anonymous reader
+        // already holds a valid token for this specific job" - there's
+        // no session state carried between the portalTokens read and
+        // this one, and the token string isn't part of this request's
+        // path/resource for a rule to check. Cryptographically closing
+        // this gap would mean moving portal reads behind a callable
+        // Cloud Function (token validated server-side via Admin SDK,
+        // which bypasses these rules) instead of direct client reads -
+        // a real refactor of loadPortalJob() in kytrac-app.js, flagged
+        // here as a good follow-up, not attempted in this pass since I
+        // can't test it against your live portal links from this
+        // session. For now this allows anonymous read so portal links
+        // keep working exactly as they do today - no more open than the
+        // current (rules-less) deployment, while the authenticated
+        // team-member side below is the part that's actually tightened.
+        allow read: if inCompany(companyId) || request.auth == null;
+        // Any authenticated team member can update job fields (status,
+        // notes - daily logs live under here too). Anonymous portal
+        // writes (signature capture, decline, message send) are scoped
+        // narrowly in the specific subcollections below, not here.
+        allow write: if inCompany(companyId);
+
+        // Money-sensitive subcollections: full-access roles only.
+        // NOTE (known limitation): this locks the whole collection, but
+        // Firestore rules can't hide individual FIELDS within a doc a
+        // role is otherwise allowed to read - e.g. estimate line items
+        // still carry unitCost/unitPrice on the same doc a Field Tech
+        // might need to read for qty/description. True field-level
+        // price-hiding would need those split into a separate
+        // sub-document with its own rules - a bigger schema change than
+        // this pass covers. Flagged, not silently ignored.
+        match /invoices/{invId} {
+          // Portal displays invoices when share is enabled - read open to
+          // anonymous for the same reason as the job doc above; writes
+          // (marking paid, etc.) stay team-only.
+          allow read: if inCompany(companyId) && hasFullAccess() || request.auth == null;
+          allow write: if inCompany(companyId) && hasFullAccess();
+        }
+        match /changeorders/{coId} {
+          allow read: if inCompany(companyId) && hasFullAccess() || request.auth == null;
+          allow write: if inCompany(companyId) && hasFullAccess();
+        }
+        match /proposals/{propId} {
+          // Portal both reads (view proposal) AND writes (e-signature
+          // capture, decline) here anonymously - same bearer-token
+          // caveat as the job doc above applies to both directions.
+          allow read: if inCompany(companyId) && hasFullAccess() || request.auth == null;
+          allow write: if (inCompany(companyId) && hasFullAccess()) || request.auth == null;
+        }
+        match /estimateGroups/{groupId} {
+          allow read: if inCompany(companyId);
+          allow write: if inCompany(companyId) && hasFullAccess();
+          match /items/{itemId} {
+            allow read: if inCompany(companyId);
+            allow write: if inCompany(companyId) && hasFullAccess();
+          }
+          match /subgroups/{subId} {
+            allow read: if inCompany(companyId);
+            allow write: if inCompany(companyId) && hasFullAccess();
+            match /items/{itemId} {
+              allow read: if inCompany(companyId);
+              allow write: if inCompany(companyId) && hasFullAccess();
+            }
+          }
+        }
+
+        // Everything else under a job - phases, logs, messages, photos,
+        // to-dos, etc. Open to any company member; portal also reads
+        // (phases, logs) and writes (messages) here anonymously, same
+        // bearer-token caveat as above.
+        match /{subcollection}/{docId} {
+          allow read, write: if inCompany(companyId) || request.auth == null;
+        }
+      }
+    }
+
+    // ── Customer Portal (anonymous, bearer-token model) ─────────────
+    // Portal visitors are NOT signed in - access is by knowing the
+    // random token in their link, not by auth. This is inherently a
+    // different security model than the rest of the app.
+    //
+    // IMPORTANT CAVEAT: I could not test these portal rules against the
+    // live app in this session (no deploy access from this environment).
+    // The paths below mirror exactly what loadPortalJob()/sendPortalMessage()
+    // in kytrac-app.js already read/write. Please click through an actual
+    // portal link right after deploying to confirm it still loads, signs,
+    // and sends messages correctly - if anything breaks, the likely fix is
+    // loosening one of these specific matches, not the authenticated rules
+    // above.
+    match /portalTokens/{token} {
+      allow read: if true;
+      allow write: if false; // tokens are created server-side/by the app owner flow only
+    }
+  }
+}

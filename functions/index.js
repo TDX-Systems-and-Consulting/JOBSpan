@@ -48,6 +48,68 @@ function getTwilioClient() {
   return { client: twilio(cfg.sid, cfg.token), from: cfg.from };
 }
 
+// syncMyClaims
+// ────────────
+// Sets Firebase Auth Custom Claims (companyId, role, fullAccessOverride)
+// on the calling user, which is the ONLY thing Firestore Security Rules
+// can trust for role checks - the client-side role display in the app
+// is a UX convenience, this is the actual security boundary. Mirrors the
+// same company-resolution logic as resolveCompany()/loadUserRole() in
+// kytrac-app.js (owner match, then memberEmails match, then team doc
+// lookup by email), but running server-side where it can't be spoofed.
+//
+// Called by the client right after login, followed by a forced ID token
+// refresh (getIdToken(true)) so the new claims take effect immediately
+// without requiring a full sign-out/sign-in.
+exports.syncMyClaims = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'Must be signed in.');
+  }
+  const email = (context.auth.token.email || '').toLowerCase();
+  const uid = context.auth.uid;
+  const db = admin.firestore();
+
+  let companyId = null;
+  let isOwner = false;
+
+  const ownerSnap = await db.collection('companies').where('ownerEmail', '==', email).limit(1).get();
+  if (!ownerSnap.empty) {
+    companyId = ownerSnap.docs[0].id;
+    isOwner = true;
+  } else {
+    const memberSnap = await db.collection('companies').where('memberEmails', 'array-contains', email).limit(1).get();
+    if (!memberSnap.empty) companyId = memberSnap.docs[0].id;
+  }
+
+  if (!companyId) {
+    // No company yet (brand new user) - clear any stale claims from a
+    // previous company; client shows the onboarding flow in this case.
+    await admin.auth().setCustomUserClaims(uid, null);
+    return { companyId: null, role: null };
+  }
+
+  let role = 'Owner';
+  let fullAccessOverride = false;
+
+  if (!isOwner) {
+    const teamDoc = await db.collection('companies').doc(companyId).collection('settings').doc('team').get();
+    const key = email.replace(/\./g, '_');
+    const member = teamDoc.exists ? (teamDoc.data().members || {})[key] : null;
+    if (!member) {
+      // memberEmails said they belong here, but there's no active team
+      // entry (removed, or a stale/bad invite) - deny rather than
+      // silently granting some default role.
+      await admin.auth().setCustomUserClaims(uid, null);
+      throw new functions.https.HttpsError('permission-denied', 'You are not an active member of this company. Contact your Owner.');
+    }
+    role = member.role || 'Field Technician';
+    fullAccessOverride = !!member.fullAccessOverride;
+  }
+
+  await admin.auth().setCustomUserClaims(uid, { companyId, role, fullAccessOverride });
+  return { companyId, role, fullAccessOverride };
+});
+
 exports.sendMessageNotificationSms = functions.firestore
   .document('companies/{companyId}/jobs/{jobId}/messages/{messageId}')
   .onCreate(async (snap, context) => {
