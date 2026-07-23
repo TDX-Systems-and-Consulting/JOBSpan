@@ -4206,15 +4206,58 @@ window.deleteCurrentJob = deleteCurrentJob;
 
 window.ktNav = ktNav;
 
+// Returns the set of job IDs assigned to the current user - via crew
+// membership (email match, reliable) or superintendent/pm field (name
+// match, best-effort since those are free-text fields, not linked to
+// the team roster). Used to scope the dashboard for restricted roles.
+function getMyJobIds() {
+  const myEmail = (conCurrentUser?.email || '').toLowerCase();
+  const myName = (currentUserTeamData?.name || '').toLowerCase();
+  const ids = new Set();
+  conJobs.forEach(j => {
+    const crewMatch = (j.crew || []).some(c => (c.email || '').toLowerCase() === myEmail);
+    const nameMatch = myName && ((j.superintendent || '').toLowerCase() === myName || (j.pm || '').toLowerCase() === myName);
+    if (crewMatch || nameMatch) ids.add(j.id);
+  });
+  return ids;
+}
+window.getMyJobIds = getMyJobIds;
+
 function renderHomeDashboard() {
-  // Active jobs table — all non-closed jobs
+  // Role-scoping: Owner/Project Manager/fullAccessOverride see the full
+  // company dashboard unchanged. Every other role sees only their
+  // assigned jobs, with no company financials, pipeline, or labor cost
+  // data - this was a real gap (everyone saw the same Owner-level
+  // dashboard regardless of role) found during the Custom Claims
+  // security review.
+  const fullAccess = isOwnerOrAdmin();
+  const canCreateJobs = hasPermission('jobs') || hasPermission('jobs_sales') || fullAccess;
+  const canSeeCosting = hasPermission('costing') || hasPermission('invoicing') || fullAccess;
+  const canSeeCatalog = hasPermission('catalog') || hasPermission('catalog_read') || fullAccess;
+
+  const toggle = (id, show) => { const el = document.getElementById(id); if (el) el.style.display = show ? '' : 'none'; };
+  toggle('homeRestrictedNotice', !fullAccess);
+  toggle('statContractWrap', fullAccess);
+  toggle('statMarginWrap', fullAccess);
+  toggle('homePipelineCard', fullAccess);
+  toggle('homeInfoGrid', fullAccess);
+  toggle('homeLaborEfficiencyCard', fullAccess);
+  toggle('homeQaNewJob', canCreateJobs);
+  toggle('homeQaCosting', canSeeCosting);
+  toggle('homeQaCatalog', canSeeCatalog);
+
+  const myJobIds = fullAccess ? null : getMyJobIds();
+
+  // Active jobs table — all non-closed jobs (scoped to assigned jobs,
+  // with contract $ hidden, for restricted roles)
   const tbody = document.getElementById('homeActiveJobsBody');
   if (tbody) {
     const closedStatuses = ['Closed Won','Closed Lost','Closed Hipshot Sent'];
-    const active = conJobs.filter(j => !closedStatuses.includes(j.status))
-      .sort((a,b) => (a.statusDate||'').localeCompare(b.statusDate||''));
+    let active = conJobs.filter(j => !closedStatuses.includes(j.status));
+    if (!fullAccess) active = active.filter(j => myJobIds.has(j.id));
+    active = active.sort((a,b) => (a.statusDate||'').localeCompare(b.statusDate||''));
     if (!active.length) {
-      tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:20px;font-style:italic">No active jobs yet</td></tr>';
+      tbody.innerHTML = `<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:20px;font-style:italic">${fullAccess ? 'No active jobs yet' : 'No jobs assigned to you yet'}</td></tr>`;
     } else {
       tbody.innerHTML = active.map(job => {
         const s = KYTRAC_STATUSES.find(x => x.name === job.status) || {color:'var(--amber)'};
@@ -4222,11 +4265,13 @@ function renderHomeDashboard() {
           <td><div style="font-weight:700;font-size:.86rem">${esc(job.name)}</div><div style="font-size:.72rem;color:var(--amber)">${job.jobNumber||''}</div></td>
           <td style="font-size:.84rem">${esc(job.client||'—')}</td>
           <td><span style="background:${s.color}22;color:${s.color};padding:2px 8px;border-radius:999px;font-size:.72rem;font-weight:700;white-space:nowrap">${job.status}</span></td>
-          <td style="text-align:right;font-weight:700;color:#a3f2d2;font-size:.84rem">${getJobValue(job)?'$'+Math.round(getJobValue(job)).toLocaleString():'—'}</td>
+          <td style="text-align:right;font-weight:700;color:#a3f2d2;font-size:.84rem">${fullAccess ? (getJobValue(job)?'$'+Math.round(getJobValue(job)).toLocaleString():'—') : '—'}</td>
         </tr>`;
       }).join('');
     }
   }
+
+  if (!fullAccess) return; // restricted roles skip everything below - money/company-wide data only
 
   // Pipeline summary — group by stage group
   const pipeline = document.getElementById('homePipelineSummary');

@@ -1143,11 +1143,16 @@
     <div style="flex:1;overflow:hidden;display:flex;flex-direction:column;min-height:0">
     <div class="kt-page active" id="ktPageDashboard">
 
+      <!-- Restricted view notice - shown only to non-full-access roles -->
+      <div id="homeRestrictedNotice" style="display:none;background:rgba(96,165,250,.08);border:1px solid rgba(96,165,250,.25);border-radius:10px;padding:10px 14px;margin-bottom:16px;font-size:.8rem;color:#93c5fd">
+        Showing your assigned jobs only. Company-wide financials, pipeline, and labor cost data aren't shown for your role — open a job directly for its Daily Logs, Messages, and Schedule.
+      </div>
+
       <!-- KPI Stats -->
       <div class="kt-stats" id="conStats" style="margin-bottom:16px">
         <div class="kt-stat"><div class="kt-stat-val" id="statActiveJobs">0</div><div class="kt-stat-label">Active Jobs</div></div>
-        <div class="kt-stat"><div class="kt-stat-val" id="statContractTotal">$0</div><div class="kt-stat-label">Contract Value</div></div>
-        <div class="kt-stat"><div class="kt-stat-val" id="statAvgMargin">0%</div><div class="kt-stat-label">Avg Margin</div></div>
+        <div class="kt-stat" id="statContractWrap"><div class="kt-stat-val" id="statContractTotal">$0</div><div class="kt-stat-label">Contract Value</div></div>
+        <div class="kt-stat" id="statMarginWrap"><div class="kt-stat-val" id="statAvgMargin">0%</div><div class="kt-stat-label">Avg Margin</div></div>
         <div class="kt-stat"><div class="kt-stat-val" id="statLogsToday">—</div><div class="kt-stat-label">Logs Today</div></div>
       </div>
 
@@ -1172,14 +1177,14 @@
           <div class="kt-card">
             <div class="kt-card-head"><h3>⚡ Quick Actions</h3></div>
             <div class="kt-card-body" style="display:flex;flex-direction:column;gap:8px;padding:14px 16px">
-              <button class="btn-amber" onclick="openNewJobModal()" style="width:100%;justify-content:center">+ New Job</button>
+              <button id="homeQaNewJob" class="btn-amber" onclick="openNewJobModal()" style="width:100%;justify-content:center">+ New Job</button>
               <button class="btn" onclick="ktNav('jobs',null)" style="width:100%">📋 Job Board</button>
-              <button class="btn" onclick="ktNav('costing',null)" style="width:100%">💰 Job Costing</button>
-              <button class="btn" onclick="ktNav('catalog',null)" style="width:100%">📦 Cost Catalog</button>
+              <button id="homeQaCosting" class="btn" onclick="ktNav('costing',null)" style="width:100%">💰 Job Costing</button>
+              <button id="homeQaCatalog" class="btn" onclick="ktNav('catalog',null)" style="width:100%">📦 Cost Catalog</button>
             </div>
           </div>
           <!-- Pipeline Summary -->
-          <div class="kt-card">
+          <div class="kt-card" id="homePipelineCard">
             <div class="kt-card-head"><h3>📊 Pipeline</h3></div>
             <div class="kt-card-body" id="homePipelineSummary" style="display:flex;flex-direction:column;gap:4px;padding:12px 16px"></div>
           </div>
@@ -1187,7 +1192,7 @@
       </div>
 
       <!-- Today's Activity -->
-      <div class="kt-dashboard-2col" style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+      <div class="kt-dashboard-2col" id="homeInfoGrid" style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
         <div class="kt-card">
           <div class="kt-card-head" style="padding:14px 16px 10px">
             <h3 style="font-size:.9rem">🚨 Needs Attention</h3>
@@ -1233,7 +1238,7 @@
       </div>
 
       <!-- Company-wide Labor Efficiency — feeds the Weekly Scorecard (EOS/Traction) -->
-      <div class="kt-card" style="margin-top:16px">
+      <div class="kt-card" style="margin-top:16px" id="homeLaborEfficiencyCard">
         <div class="kt-card-head" style="padding:14px 16px 10px">
           <h3 style="font-size:.9rem">📊 Company Labor Efficiency</h3>
           <p class="small muted" style="margin:2px 0 0">Estimated vs. actual hours across all active jobs — the number for your Weekly Scorecard.</p>
