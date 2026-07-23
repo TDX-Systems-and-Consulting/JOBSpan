@@ -165,8 +165,16 @@ service cloud.firestore {
     // loosening one of these specific matches, not the authenticated rules
     // above.
     match /portalTokens/{token} {
+      // Anonymous portal visitors read by knowing the token (bearer-token
+      // model - see the caveat on the jobs match above).
       allow read: if true;
-      allow write: if false; // tokens are created server-side/by the app owner flow only
+      // shareCustomerPortal() in kytrac-app.js writes these directly from
+      // the browser when a team member generates a share link - NOT via
+      // a Cloud Function as originally assumed here, which is what broke
+      // link generation on first deploy. Any authenticated team member
+      // can create/update a token for their own company's job.
+      allow create, update: if signedIn() && request.resource.data.companyId == myCompanyId();
+      allow delete: if false;
     }
   }
 }
