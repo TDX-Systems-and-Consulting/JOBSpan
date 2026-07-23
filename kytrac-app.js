@@ -11260,9 +11260,35 @@ function openBidComparison(requestId) {
 // Bid loading handled in switchDetailTab directly
 
 // Update trade filter in bid modal
+// ── Auto-updating version tag ────────────────────────────────────────
+// Was previously a hardcoded "Version X.Y.Z · date" string in index.html
+// that nothing ever updated automatically - it went stale across 7+
+// releases in a single session because bumping it wasn't part of the
+// commit habit. Fetches the actual latest commit on main from GitHub
+// instead, so the date and build reference are always true by
+// construction - there's no string left to forget to update.
+function loadVersionTag() {
+  const el = document.getElementById('ktVersionTag');
+  if (!el) return;
+  fetch('https://api.github.com/repos/TDX-Systems-and-Consulting/JOBSpan/commits/main')
+    .then(r => { if (!r.ok) throw new Error('GitHub API error ' + r.status); return r.json(); })
+    .then(data => {
+      const sha = (data.sha || '').slice(0, 7);
+      const dateStr = data.commit?.committer?.date || data.commit?.author?.date;
+      const date = dateStr ? new Date(dateStr).toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' }) : '';
+      el.textContent = sha ? `Build ${sha} · ${date}` : el.textContent;
+    })
+    .catch(e => {
+      console.warn('loadVersionTag: could not fetch latest commit', e.message);
+      el.textContent = 'Version unavailable (offline?)';
+    });
+}
+window.loadVersionTag = loadVersionTag;
+
 document.addEventListener('DOMContentLoaded', () => {
   const tradeSel = document.getElementById('bidTrade');
   if (tradeSel) tradeSel.addEventListener('change', () => renderBidVendorList());
+  loadVersionTag();
 });
 
 // Expose
