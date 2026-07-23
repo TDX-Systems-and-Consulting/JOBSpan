@@ -1349,6 +1349,10 @@
 
     <!-- ── PAGE: CALENDAR ── -->
     <div class="kt-page" id="ktPageCalendar">
+      <div id="gcalConnectBanner" style="padding:10px 16px;background:rgba(66,133,244,.08);border-bottom:1px solid rgba(66,133,244,.2);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+        <span style="font-size:.82rem;color:var(--muted)" id="gcalStatusText">Loading Google Calendar status…</span>
+        <button class="btn" id="gcalConnectBtn" onclick="connectGoogleCalendar()" style="font-size:.78rem;padding:6px 14px">🔗 Connect Google Calendar</button>
+      </div>
       <div class="cal-header">
         <div style="display:flex;align-items:center;gap:12px">
           <button class="cal-nav-btn" onclick="calNav(-1)">‹</button>

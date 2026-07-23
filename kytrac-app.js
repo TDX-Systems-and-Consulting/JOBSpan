@@ -305,7 +305,7 @@ function ktNav(key, btn) {
   }
   if(key==='dashboard') { conRenderBoard(); conRenderStats(); renderHomeDashboard(); }
   if(key==='catalog') renderCatalog();
-  if(key==='calendar') { loadGlobalPhases(); loadCalendarEvents(); buildTeamColors(); renderCalendar(); }
+  if(key==='calendar') { loadGlobalPhases(); loadCalendarEvents(); buildTeamColors(); renderCalendar(); loadGCalStatus(); }
   if(key==='time') { loadTimeEntries(); renderTimeLog(); renderTodaySummary(); populateTimeFilters(); }
   if(key==='logs') { loadGlobalLogs(); renderGlobalLogs(); }
   if(key==='todos') { loadTodos(); populateTodoJobFilter(); populateTodoAssigneeFilter(); renderTodos(); }
@@ -9612,6 +9612,59 @@ function loadCalendarEvents() {
       if (calPage?.classList.contains('active')) renderCalendar();
     }, () => {});
 }
+
+// ── Google Calendar connect/disconnect (client side) ──────────────────
+// One-way sync: JOBSpan pushes personal events + job phases out to each
+// person's own connected Google Calendar. The actual push happens
+// server-side (Cloud Functions: pushPersonalEventToGCal, pushPhaseToGCal)
+// triggered automatically whenever those docs are written - nothing to
+// call from here for the sync itself, just connect/disconnect/status.
+const GCAL_FUNCTIONS_BASE = 'https://us-central1-kytrac-72d91.cloudfunctions.net';
+
+function loadGCalStatus() {
+  const textEl = document.getElementById('gcalStatusText');
+  const btnEl = document.getElementById('gcalConnectBtn');
+  if (!textEl || !btnEl || !conDb) return;
+  coll('settings').doc('team').get().then(doc => {
+    const email = (conCurrentUser?.email || '').toLowerCase();
+    const key = email.replace(/\./g, '_');
+    const members = doc.exists ? extractTeamMembers(doc.data()) : {};
+    const connected = !!members[key]?.googleCalendarConnected;
+    if (connected) {
+      textEl.textContent = '✅ Your Google Calendar is connected — job phases and your events sync automatically.';
+      btnEl.textContent = 'Disconnect';
+      btnEl.onclick = disconnectGoogleCalendar;
+    } else {
+      textEl.textContent = 'Connect your Google Calendar to automatically get job phases and your JOBSpan events on your calendar.';
+      btnEl.textContent = '🔗 Connect Google Calendar';
+      btnEl.onclick = connectGoogleCalendar;
+    }
+  }).catch(() => { textEl.textContent = 'Could not load Google Calendar status.'; });
+}
+window.loadGCalStatus = loadGCalStatus;
+
+function connectGoogleCalendar() {
+  if (!conCurrentUser) return;
+  conCurrentUser.getIdToken().then(idToken => {
+    const url = `${GCAL_FUNCTIONS_BASE}/gcalOAuthStart?token=${encodeURIComponent(idToken)}&companyId=${encodeURIComponent(currentCompanyId)}`;
+    const win = window.open(url, '_blank', 'width=520,height=680');
+    // Poll for the popup closing, then refresh status - simplest way to
+    // pick up the connection without needing a postMessage handshake.
+    const poll = setInterval(() => {
+      if (win && win.closed) { clearInterval(poll); setTimeout(loadGCalStatus, 800); }
+    }, 500);
+  }).catch(e => alert('Could not start Google Calendar connection: ' + e.message));
+}
+window.connectGoogleCalendar = connectGoogleCalendar;
+
+function disconnectGoogleCalendar() {
+  if (!confirm('Disconnect your Google Calendar? JOBSpan will stop syncing new events and phases to it.')) return;
+  if (!conFunctions) { alert('Not available yet.'); return; }
+  conFunctions.httpsCallable('gcalDisconnect')({ companyId: currentCompanyId })
+    .then(() => loadGCalStatus())
+    .catch(e => alert('Error disconnecting: ' + e.message));
+}
+window.disconnectGoogleCalendar = disconnectGoogleCalendar;
 
 function buildTeamColors() {
   if (!conDb) return;

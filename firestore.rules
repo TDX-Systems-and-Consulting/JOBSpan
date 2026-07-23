@@ -57,6 +57,17 @@ service cloud.firestore {
         allow write: if inCompany(companyId) && hasFullAccess();
       }
 
+      // ── Google Calendar OAuth tokens ──
+      // Refresh tokens are real credentials (equivalent to a password for
+      // that person's calendar) - NEVER client-readable, regardless of
+      // role or fullAccessOverride. Only Cloud Functions touch this
+      // (Admin SDK bypasses rules entirely). The client only ever sees a
+      // boolean 'googleCalendarConnected' flag on the team member record,
+      // which is a separate, non-sensitive field.
+      match /googleCalendarTokens/{uid} {
+        allow read, write: if false;
+      }
+
       // ── Catalog (pricing data) ──
       match /catalog/{catId} {
         allow read: if inCompany(companyId);
