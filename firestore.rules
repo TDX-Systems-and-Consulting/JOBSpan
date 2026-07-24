@@ -20,6 +20,16 @@ service cloud.firestore {
     function inCompany(companyId) {
       return signedIn() && myCompanyId() == companyId;
     }
+    // Only these domains may create a new company doc (onboarding).
+    // Keep in sync with SIGNUP_ALLOWED_DOMAINS in kytrac-app.js.
+    // matches() is a full-string match (RE2), so patterns cover the
+    // whole email; [.] avoids escape ambiguity.
+    function allowedSignupDomain() {
+      return signedIn() && (
+        myEmail().lower().matches('.*@7pillarsgroup[.]org') ||
+        myEmail().lower().matches('.*@jtxdgroup[.]com')
+      );
+    }
 
     // ── Top-level companies collection ──────────────────────────────
     // Needed for company resolution (resolveCompany() / syncMyClaims)
@@ -32,8 +42,11 @@ service cloud.firestore {
         (resource.data.memberEmails is list && myEmail() in resource.data.memberEmails) ||
         inCompany(companyId)
       );
-      // Onboarding: a signed-in user creating their own new company.
-      allow create: if signedIn() && request.resource.data.ownerEmail == myEmail();
+      // Onboarding: a signed-in user creating their own new company —
+      // restricted to approved business domains so stray Google accounts
+      // can't spin up companies (real enforcement; the client-side check
+      // in resolveCompany is just UX).
+      allow create: if allowedSignupDomain() && request.resource.data.ownerEmail == myEmail();
       // Updates (memberEmails arrayUnion/arrayRemove from Team Management,
       // plan changes, etc.) restricted to that company's own full-access users.
       allow update: if inCompany(companyId) && hasFullAccess();

@@ -6366,6 +6366,51 @@ window.clearLogo = clearLogo;
 // ── MULTI-TENANCY: Company Resolution ──
 // ════════════════════════════════════════════════════
 
+// ── Signup domain restriction ─────────────────────────────────────
+// Only these domains may create a NEW company via onboarding. Invited
+// members on ANY domain still get in through the memberEmails check in
+// resolveCompany — this only closes the "signed in, no company found →
+// create your own" path that let uninvited strangers spin up companies.
+// Enforced server-side too (firestore.rules, companies create rule), so
+// keep this list and the rules pattern in sync when adding domains.
+const SIGNUP_ALLOWED_DOMAINS = ['7pillarsgroup.org', 'jtxdgroup.com'];
+
+function canCreateCompany(email) {
+  const domain = (email || '').toLowerCase().split('@')[1] || '';
+  return SIGNUP_ALLOWED_DOMAINS.includes(domain);
+}
+
+function showAccessDenied(user) {
+  const wall = document.getElementById('ktAuthWall');
+  if (wall) wall.style.display = 'none';
+  const app = document.getElementById('ktApp');
+  if (app) app.style.display = 'none';
+
+  let denied = document.getElementById('ktAccessDenied');
+  if (!denied) {
+    denied = document.createElement('div');
+    denied.id = 'ktAccessDenied';
+    denied.style.cssText = 'position:fixed;inset:0;background:#060e1e;display:flex;align-items:center;justify-content:center;z-index:99999;padding:20px';
+    document.body.appendChild(denied);
+  }
+  const email = (user && user.email) || '';
+  denied.innerHTML = `
+    <div style="background:rgba(8,18,36,.95);border:1px solid rgba(239,83,80,.4);border-radius:20px;padding:36px;max-width:480px;width:100%;text-align:center">
+      <div style="font-size:2.2rem;margin-bottom:10px">🔒</div>
+      <div style="font-size:1.4rem;font-weight:900;color:#eaf0fb;margin-bottom:8px">Access Restricted</div>
+      <div style="color:#94a3b8;font-size:.9rem;line-height:1.55;margin-bottom:24px">
+        This JOBSpan workspace is invite-only.<br>
+        <span style="color:#eaf0fb;font-weight:600">${email.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</span> isn't on a team roster yet.<br>
+        Ask your administrator to add you, then sign in again.
+      </div>
+      <button onclick="conSignOut();document.getElementById('ktAccessDenied').style.display='none';document.getElementById('ktAuthWall').style.display='';" style="padding:12px 28px;background:rgba(217,119,6,.15);border:1px solid rgba(217,119,6,.5);border-radius:10px;color:#f59e0b;font-size:.95rem;font-weight:700;cursor:pointer">
+        Sign Out
+      </button>
+    </div>
+  `;
+  denied.style.display = 'flex';
+}
+
 function resolveCompany(user, callback) {
   const email = (user.email || '').toLowerCase();
 
@@ -6391,14 +6436,24 @@ function resolveCompany(user, callback) {
             return;
           }
 
-          // 3. No company found — show onboarding to create one
-          showCompanyOnboarding(user, callback);
+          // 3. No company found — allowlisted domains may create one;
+          // anyone else hits the access-denied wall instead of onboarding.
+          if (canCreateCompany(email)) {
+            showCompanyOnboarding(user, callback);
+          } else {
+            showAccessDenied(user);
+          }
         });
     })
     .catch(e => {
       console.error('resolveCompany error:', e);
       // Fallback for first-ever user — create company immediately
-      showCompanyOnboarding(user, callback);
+      // (still domain-gated so an error can't open a back door)
+      if (canCreateCompany(email)) {
+        showCompanyOnboarding(user, callback);
+      } else {
+        showAccessDenied(user);
+      }
     });
 }
 
