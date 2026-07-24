@@ -718,7 +718,10 @@ async function ensureQboAccessToken(companyId) {
   return { accessToken: tokens.access_token, realmId: data.realmId, environment: data.environment };
 }
 
-// Thin wrapper for calling Intuit's Accounting API v3.
+// Thin wrapper for calling Intuit's Accounting API v3. Captures the
+// intuit_tid response header on every call - Intuit's own support
+// recommends logging this, since it's the fastest way for their team
+// to look up exactly what happened on their end for a given request.
 async function qboFetch(companyId, method, path, body) {
   const { accessToken, realmId, environment } = await ensureQboAccessToken(companyId);
   const url = `${qboApiBase(environment)}/v3/company/${realmId}/${path}`;
@@ -731,10 +734,12 @@ async function qboFetch(companyId, method, path, body) {
     },
     body: body ? JSON.stringify(body) : undefined
   });
+  const intuitTid = resp.headers.get('intuit_tid');
   const json = await resp.json().catch(() => ({}));
   if (!resp.ok) {
     const msg = json?.Fault?.Error?.[0]?.Message || json?.Fault?.Error?.[0]?.Detail || resp.statusText;
-    throw new Error('QuickBooks API error: ' + msg);
+    console.error('QuickBooks API error', { companyId, path, status: resp.status, intuitTid, msg });
+    throw new Error(`QuickBooks API error: ${msg}${intuitTid ? ` (intuit_tid: ${intuitTid})` : ''}`);
   }
   return json;
 }
