@@ -4084,32 +4084,67 @@ function conInitFirebase() {
     conAuth.onAuthStateChanged(user => {
       if (user) {
         conCurrentUser = user;
-        // Sync Custom Claims (companyId/role/fullAccessOverride) before
-        // anything else - Firestore Security Rules trust the token
-        // claims, not client-side state, so this has to land (and the
-        // token has to refresh) before other reads/writes rely on rules
-        // passing. Falls through to the old client-only flow if the
-        // function isn't deployed yet (e.g. mid-rollout) rather than
-        // blocking login entirely.
-        const proceedWithLogin = () => {
-          resolveCompany(user, () => {
-            loadUserRole(user, () => {
-              conShowMain(user);
-              conLoadJobs();
-              setTimeout(() => loadCompanyProfile(), 800);
+
+        // ── Domain/member pre-check ──────────────────────────────────
+        // Block uninvited off-domain accounts HERE, before syncMyClaims
+        // or resolveCompany ever run. Approved domains proceed immediately.
+        // Off-domain accounts get a memberEmails check first so an
+        // explicitly invited subcontractor/bookkeeper can still log in;
+        // if that query returns empty (or is denied), hard-stop with the
+        // Access Restricted screen and sign them back out.
+        const email = (user.email || '').toLowerCase();
+
+        const continueLogin = () => {
+          // Sync Custom Claims (companyId/role/fullAccessOverride) before
+          // anything else - Firestore Security Rules trust the token
+          // claims, not client-side state, so this has to land (and the
+          // token has to refresh) before other reads/writes rely on rules
+          // passing. Falls through to the old client-only flow if the
+          // function isn't deployed yet (e.g. mid-rollout).
+          const proceedWithLogin = () => {
+            resolveCompany(user, () => {
+              loadUserRole(user, () => {
+                conShowMain(user);
+                conLoadJobs();
+                setTimeout(() => loadCompanyProfile(), 800);
+              });
             });
-          });
+          };
+          if (conFunctions) {
+            conFunctions.httpsCallable('syncMyClaims')()
+              .then(() => user.getIdToken(true))
+              .then(proceedWithLogin)
+              .catch(e => {
+                console.warn('syncMyClaims not available yet (functions not deployed?):', e.message);
+                proceedWithLogin();
+              });
+          } else {
+            proceedWithLogin();
+          }
         };
-        if (conFunctions) {
-          conFunctions.httpsCallable('syncMyClaims')()
-            .then(() => user.getIdToken(true))
-            .then(proceedWithLogin)
-            .catch(e => {
-              console.warn('syncMyClaims not available yet (functions not deployed?):', e.message);
-              proceedWithLogin();
-            });
+
+        if (canCreateCompany(email)) {
+          // Approved domain — no extra check needed
+          continueLogin();
         } else {
-          proceedWithLogin();
+          // Off-domain: check if explicitly invited as a member
+          conDb.collection('companies')
+            .where('memberEmails', 'array-contains', email)
+            .limit(1)
+            .get()
+            .then(snap => {
+              if (!snap.empty) {
+                continueLogin();
+              } else {
+                conAuth.signOut().catch(() => {});
+                showAccessDenied(user);
+              }
+            })
+            .catch(() => {
+              // Rules denied the query (no claims yet) — treat as not a member
+              conAuth.signOut().catch(() => {});
+              showAccessDenied(user);
+            });
         }
       } else {
         conCurrentUser = null;
