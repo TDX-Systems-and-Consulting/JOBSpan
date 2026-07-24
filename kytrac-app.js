@@ -3874,11 +3874,22 @@ let _logPhotoPending = []; // {dataUrl, name}[]
 function handleLogPhotoUpload(input) {
   const files = Array.from(input.files || []);
   if (!files.length) return;
+  // Compress each photo client-side before staging it — avoids the
+  // silent-skip that happened when real iPhone photos exceeded Firestore's
+  // limit mid-upload. Target 1200px wide at 75% quality (~100-200KB result).
   files.forEach(file => {
     const reader = new FileReader();
     reader.onload = e => {
-      _logPhotoPending.push({ dataUrl: e.target.result, name: file.name });
-      renderLogPhotoGrid();
+      compressImage(e.target.result, 1200, 0.75)
+        .then(compressed => {
+          _logPhotoPending.push({ dataUrl: compressed, name: file.name });
+          renderLogPhotoGrid();
+        })
+        .catch(() => {
+          // Compression failed — fall back to original (rare edge case)
+          _logPhotoPending.push({ dataUrl: e.target.result, name: file.name });
+          renderLogPhotoGrid();
+        });
     };
     reader.readAsDataURL(file);
   });
@@ -8509,9 +8520,21 @@ async function handleDocUpload(input, context) {
     try {
       let dataUrl = null;
       let size = file.size;
+      const isImage = file.type.startsWith('image/');
 
-      if (file.size > DOC_SIZE_LIMIT) {
-        // Too large for Firestore — store metadata only with a warning
+      if (isImage && file.size > DOC_SIZE_LIMIT) {
+        // Auto-compress oversized images (common with iPhone photos) rather
+        // than silently dropping them or storing metadata-only.
+        try {
+          const raw = await fileToBase64(file);
+          dataUrl = await compressImage(raw, 1600, 0.8);
+          // Approximate compressed size from base64 length
+          size = Math.round((dataUrl.length * 3) / 4);
+        } catch(compressErr) {
+          dataUrl = null; // fall through to metadata-only below
+        }
+      } else if (!isImage && file.size > DOC_SIZE_LIMIT) {
+        // Non-image (PDF, docx, etc.) too large — metadata only with prompt
         if (!confirm(`"${file.name}" is ${formatFileSize(file.size)}. Files over 500KB cannot be stored in JOBSpan yet. Store metadata only (no download)?`)) continue;
         dataUrl = null;
       } else {
