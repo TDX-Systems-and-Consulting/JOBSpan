@@ -456,6 +456,48 @@ const QBO_TOKEN_URL = 'https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer
 const QBO_REVOKE_URL = 'https://developer.api.intuit.com/v2/oauth2/tokens/revoke';
 const QBO_FULL_ACCESS_ROLES = ['Owner', 'Project Manager', 'Accounting'];
 
+// ── Refresh token encryption (AES-256-GCM) ──────────────────────────
+// The QBO refresh token is a standing credential to TDX Holdings' real
+// financial data - Firestore security rules already block ALL client
+// reads of it (see quickbooksTokens rule in firestore.rules), but
+// Intuit's own security requirements additionally call for encrypting
+// it at the application level with a symmetric key kept in a separate
+// config value (functions.config().qbo.token_encryption_key), not
+// alongside the data itself. Generate that key once with:
+//   openssl rand -hex 32
+// and set it via firebase functions:config:set (see DEPLOY_QBO.md) -
+// never hardcode it here.
+const crypto = require('crypto');
+
+function getQboEncryptionKey() {
+  const hex = (functions.config().qbo || {}).token_encryption_key;
+  if (!hex || hex.length !== 64) {
+    throw new Error('QuickBooks token encryption key is missing or invalid (functions.config().qbo.token_encryption_key must be a 32-byte hex string). See DEPLOY_QBO.md.');
+  }
+  return Buffer.from(hex, 'hex');
+}
+
+// Returns a single string "iv:authTag:ciphertext" (all hex) so it drops
+// into one Firestore field with no schema change elsewhere.
+function encryptQboToken(plaintext) {
+  const key = getQboEncryptionKey();
+  const iv = crypto.randomBytes(12); // 96-bit IV, standard for GCM
+  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+  const ciphertext = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
+  const authTag = cipher.getAuthTag();
+  return [iv.toString('hex'), authTag.toString('hex'), ciphertext.toString('hex')].join(':');
+}
+
+function decryptQboToken(encrypted) {
+  const key = getQboEncryptionKey();
+  const [ivHex, authTagHex, ciphertextHex] = String(encrypted).split(':');
+  if (!ivHex || !authTagHex || !ciphertextHex) throw new Error('Stored QuickBooks token is malformed or was saved before encryption was enabled - please reconnect QuickBooks in Settings.');
+  const decipher = crypto.createDecipheriv('aes-256-gcm', key, Buffer.from(ivHex, 'hex'));
+  decipher.setAuthTag(Buffer.from(authTagHex, 'hex'));
+  const plaintext = Buffer.concat([decipher.update(Buffer.from(ciphertextHex, 'hex')), decipher.final()]);
+  return plaintext.toString('utf8');
+}
+
 function isQboFullAccess(token) {
   return QBO_FULL_ACCESS_ROLES.includes(token.role) || token.fullAccessOverride === true;
 }
@@ -570,8 +612,8 @@ exports.qbOAuthCallback = functions.https.onRequest(async (req, res) => {
 
     const db = admin.firestore();
     await db.collection('companies').doc(companyId).collection('quickbooksTokens').doc('connection').set({
-      accessToken: tokens.access_token,
-      refreshToken: tokens.refresh_token,
+      accessToken: tokens.access_token, // short-lived (~1hr) - not encrypted, low value if leaked
+      refreshTokenEncrypted: encryptQboToken(tokens.refresh_token), // long-lived credential - AES-256-GCM encrypted at rest
       expiresAt: Date.now() + (tokens.expires_in * 1000),
       realmId: String(realmId),
       environment: cfg.environment,
@@ -614,12 +656,13 @@ exports.qbDisconnect = functions.https.onCall(async (data, context) => {
   const cfg = getQboOAuthConfig();
   const tokenRef = db.collection('companies').doc(companyId).collection('quickbooksTokens').doc('connection');
   const tokenDoc = await tokenRef.get();
-  if (cfg && tokenDoc.exists && tokenDoc.data().refreshToken) {
+  if (cfg && tokenDoc.exists && tokenDoc.data().refreshTokenEncrypted) {
     try {
+      const refreshToken = decryptQboToken(tokenDoc.data().refreshTokenEncrypted);
       await fetch(QBO_REVOKE_URL, {
         method: 'POST',
         headers: { 'Authorization': qboBasicAuthHeader(cfg), 'Content-Type': 'application/json', 'Accept': 'application/json' },
-        body: JSON.stringify({ token: tokenDoc.data().refreshToken })
+        body: JSON.stringify({ token: refreshToken })
       });
     } catch (e) {
       console.warn('QBO revoke call failed (continuing with local disconnect):', e.message);
@@ -658,7 +701,7 @@ async function ensureQboAccessToken(companyId) {
       'Content-Type': 'application/x-www-form-urlencoded',
       'Accept': 'application/json'
     },
-    body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: data.refreshToken }).toString()
+    body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: decryptQboToken(data.refreshTokenEncrypted) }).toString()
   });
   const tokens = await resp.json();
   if (!resp.ok || !tokens.access_token) {
@@ -667,7 +710,9 @@ async function ensureQboAccessToken(companyId) {
   }
   await ref.update({
     accessToken: tokens.access_token,
-    refreshToken: tokens.refresh_token || data.refreshToken,
+    // Intuit rotates the refresh token on every use - re-encrypt and
+    // save the new one, or the old one stops working next time.
+    refreshTokenEncrypted: tokens.refresh_token ? encryptQboToken(tokens.refresh_token) : data.refreshTokenEncrypted,
     expiresAt: Date.now() + (tokens.expires_in * 1000)
   });
   return { accessToken: tokens.access_token, realmId: data.realmId, environment: data.environment };

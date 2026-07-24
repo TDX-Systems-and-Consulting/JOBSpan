@@ -51,16 +51,32 @@ add that exact URL → Save. (Sandbox and Production keep separate redirect
 URI lists in Intuit's dashboard — make sure you add it under the one that
 matches the environment you picked in step 2.)
 
-### 5. Set the config and redeploy
+### 5. Generate an encryption key, set the config, and redeploy
+
+The QuickBooks refresh token is encrypted at rest (AES-256-GCM) before
+it's ever saved — this satisfies Intuit's own security requirement to
+encrypt the refresh token with a symmetric key kept separate from the
+data. Generate a random 32-byte key once:
 
 ```
-firebase functions:config:set qbo.client_id="your_client_id" qbo.client_secret="your_client_secret" qbo.redirect_uri="https://us-central1-kytrac-72d91.cloudfunctions.net/qbOAuthCallback" qbo.environment="sandbox"
+openssl rand -hex 32
 ```
-(Use `qbo.environment="production"` instead once you're past sandbox testing.)
+
+Copy the output (a 64-character hex string), then set everything at once:
+
+```
+firebase functions:config:set qbo.client_id="your_client_id" qbo.client_secret="your_client_secret" qbo.redirect_uri="https://us-central1-kytrac-72d91.cloudfunctions.net/qbOAuthCallback" qbo.environment="production" qbo.token_encryption_key="paste_the_64_char_hex_string_here"
+```
 
 ```
 firebase deploy --only functions
 ```
+
+**Keep that encryption key somewhere safe outside of Firestore/GitHub**
+(a password manager, not a text file in the repo) — if it's ever lost,
+every stored QuickBooks connection becomes unreadable and everyone has
+to reconnect. It never needs to change unless you suspect it's been
+exposed.
 
 ### 6. Connect
 
