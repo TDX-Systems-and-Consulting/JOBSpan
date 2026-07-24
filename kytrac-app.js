@@ -6527,6 +6527,17 @@ function loadUserRole(user, callback) {
         if (members[key]) {
           currentUserRole = members[key].role || 'Field Technician';
           currentUserTeamData = members[key];
+        } else if (isCompanyOwnerByEmail) {
+          // Being the company's ownerEmail is always sufficient for
+          // access on its own - it must never be gated behind also
+          // having a matching team-roster entry. This specifically
+          // matters whenever the Owner's login email changes (their
+          // ownerEmail gets updated, but the old roster entry is still
+          // keyed by their PREVIOUS email) - self-heal by creating the
+          // missing roster entry here instead of locking them out.
+          currentUserRole = 'Owner';
+          currentUserTeamData = { email, name: user.displayName || email, role: 'Owner', addedAt: new Date().toISOString() };
+          coll('settings').doc('team').set({ members: { [key]: currentUserTeamData } }, { merge: true }).catch(() => {});
         } else {
           // Email not in team — deny access
           conAuth.signOut();
