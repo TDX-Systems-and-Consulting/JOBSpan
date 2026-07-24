@@ -7716,7 +7716,7 @@ function renderMonthView() {
     const isToday = dateISO === today;
     const events = getCalEvents(dateISO);
     const evHtml = events.slice(0,3).map(ev =>
-      `<div class="cal-event" style="background:${ev.color}22;color:${ev.color};border-left:2px solid ${ev.color}">${esc(ev.label)}</div>`
+      `<div class="cal-event" style="background:${ev.color}22;color:${ev.color};border-left:2px solid ${ev.color}">${ev.label}</div>`
     ).join('') + (events.length > 3 ? `<div style="font-size:.6rem;color:var(--muted)">+${events.length-3} more</div>` : '');
     cells += `<div class="cal-day${isToday?' today':''}">
       <div class="cal-day-num">${d}</div>
@@ -9792,7 +9792,7 @@ window.renderMonthView = function() {
     const isToday = dateISO === today;
     const events = window.getCalEvents(dateISO);
     const evHtml = events.slice(0,4).map(ev =>
-      `<span class="cal-event-pill" style="background:${ev.color}20;color:${ev.color};border-left-color:${ev.color}" onclick="event.stopPropagation();${ev.type==='event'?`openCalEventModal('${ev.id}')`:''}" title="${esc(ev.label)}">${esc(ev.label)}${ev.ev?.meetLink?` <a href="${ev.ev.meetLink}" target="_blank" onclick="event.stopPropagation()" style="color:#fff;font-size:.6rem;background:#0d9488;border-radius:3px;padding:0 3px;text-decoration:none">Join</a>`:''}</span>`
+      `<span class="cal-event-pill" style="background:${ev.color}20;color:${ev.color};border-left-color:${ev.color}" onclick="event.stopPropagation();${ev.type==='event'?`openCalEventModal('${ev.id}')`:''}" title="${ev.label}">${ev.label}${ev.ev?.meetLink?` <a href="${ev.ev.meetLink}" target="_blank" onclick="event.stopPropagation()" style="color:#fff;font-size:.6rem;background:#0d9488;border-radius:3px;padding:0 3px;text-decoration:none">Join</a>`:''}</span>`
     ).join('') + (events.length > 4 ? `<span style="font-size:.6rem;color:var(--muted);padding:1px 4px">+${events.length-4} more</span>` : '');
     cells += `<div class="cal-day${isToday?' today':''}" onclick="openCalEventModal(null,'${dateISO}')">
       <div class="cal-day-num">${isToday?`<span class="cal-day-today-num">${d}</span>`:d}</div>
