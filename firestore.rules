@@ -92,6 +92,62 @@ service cloud.firestore {
         allow read, write: if inCompany(companyId);
       }
 
+      // ── Calendar events (personal, assignee-based) ──
+      // NOTE: same gap as customers above - this collection had no
+      // rule at all, so loadCalendarEvents()/saveCalendarEvent() in
+      // kytrac-app.js were silently permission-denied under Firestore's
+      // default-deny. This is also the collection pushPersonalEventToGCal
+      // (Cloud Function) triggers on, so it needed a real rule before
+      // the Google Calendar integration could ever be tested end to end.
+      // Any signed-in company member can read/write - scheduling a
+      // meeting and assigning it to a teammate is a normal team-wide
+      // action, same boundary as the jobs doc itself.
+      match /calendarEvents/{eventId} {
+        allow read, write: if inCompany(companyId);
+      }
+
+      // ── Todos, Vendors, Documents, Templates ──
+      // Same gap as customers/calendarEvents above - none of these had
+      // ANY rule, found by cross-checking every coll('X') call in
+      // kytrac-app.js against what firestore.rules actually covers.
+      // General team-collaboration data, same access level as jobs.
+      match /todos/{todoId} {
+        allow read, write: if inCompany(companyId);
+      }
+      match /vendors/{vendorId} {
+        allow read, write: if inCompany(companyId);
+      }
+      match /documents/{docId} {
+        allow read, write: if inCompany(companyId);
+      }
+      match /templates/{templateId} {
+        allow read, write: if inCompany(companyId);
+      }
+
+      // ── EOS (Entrepreneurial Operating System) tracking ──
+      // Same gap - Rocks, Issues, and Scorecard are leadership-team
+      // planning tools, but nothing in the app currently restricts
+      // them to a leadership role, so matching the same open-to-team
+      // boundary as everything else above rather than inventing a new
+      // restriction that isn't reflected in the UI.
+      match /eosRocks/{rockId} {
+        allow read, write: if inCompany(companyId);
+      }
+      match /eosIssues/{issueId} {
+        allow read, write: if inCompany(companyId);
+      }
+      match /eosScorecardMetrics/{metricId} {
+        allow read, write: if inCompany(companyId);
+      }
+
+      // ── Purchase Orders ──
+      // Same gap, but treated as money-sensitive like invoices/change
+      // orders elsewhere in this file (hasFullAccess-gated), since a PO
+      // is a financial commitment to a vendor, not general team data.
+      match /purchaseOrders/{poId} {
+        allow read, write: if inCompany(companyId) && hasFullAccess();
+      }
+
       // ── Catalog (pricing data) ──
       match /catalog/{catId} {
         allow read: if inCompany(companyId);
