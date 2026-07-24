@@ -9842,11 +9842,46 @@ function openCalEventModal(id, prefilledDate) {
   if (jobSel) {
     jobSel.innerHTML = '<option value="">No job linked</option>' +
       conJobs.map(j => `<option value="${j.id}" ${j.id===(ev?.jobId||'')?'selected':''}>${esc(j.name)}</option>`).join('');
+    // Selecting a job auto-fills the address, but ONLY if location is
+    // currently blank - never overwrites something typed on purpose.
+    // Re-attaching this fresh each time the modal opens (not addEventListener)
+    // avoids stacking duplicate handlers across repeated opens.
+    jobSel.onchange = () => {
+      const locEl = document.getElementById('calEventLocation');
+      if (!locEl || locEl.value.trim()) return;
+      const job = conJobs.find(j => j.id === jobSel.value);
+      if (job?.address) locEl.value = job.address;
+    };
   }
 
   document.getElementById('deleteCalEventBtn').style.display = id ? 'inline-flex' : 'none';
   kOpen('calEventModal');
 }
+
+// Fills the Location field from whichever job is currently linked -
+// always overwrites when clicked explicitly (unlike the auto-fill on
+// job selection, which only fills a blank field), since clicking this
+// button is an explicit "yes, use it" action.
+function useJobAddressForEvent() {
+  const jobSel = document.getElementById('calEventJob');
+  const locEl = document.getElementById('calEventLocation');
+  if (!jobSel || !locEl) return;
+  const job = conJobs.find(j => j.id === jobSel.value);
+  if (!job) { alert('Link a job first, then this button can pull its address.'); return; }
+  if (!job.address) { alert(`${job.name} doesn't have an address saved yet.`); return; }
+  locEl.value = job.address;
+}
+window.useJobAddressForEvent = useJobAddressForEvent;
+
+// Clears Location to signal "this meeting only happens over Google
+// Meet, no physical location" - pairs with the Meet Link field/Generate
+// button already in this modal.
+function markEventMeetOnly() {
+  const locEl = document.getElementById('calEventLocation');
+  if (locEl) locEl.value = '';
+  document.getElementById('calEventMeet')?.focus();
+}
+window.markEventMeetOnly = markEventMeetOnly;
 
 function saveCalEvent() {
   const title = document.getElementById('calEventTitle')?.value.trim();

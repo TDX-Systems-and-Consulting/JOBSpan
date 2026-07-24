@@ -2729,7 +2729,12 @@
           </select>
         </div>
         <div class="full"><label class="small muted" style="display:block;margin-bottom:5px">Location</label>
-          <input id="calEventLocation" placeholder="Address or location" /></div>
+          <input id="calEventLocation" placeholder="Address or location, or use a button below" />
+          <div style="display:flex;gap:8px;margin-top:6px">
+            <button type="button" class="btn" onclick="useJobAddressForEvent()" style="font-size:.72rem;padding:4px 10px">📍 Use linked job's address</button>
+            <button type="button" class="btn" onclick="markEventMeetOnly()" style="font-size:.72rem;padding:4px 10px">🎥 Meet only (no location)</button>
+          </div>
+        </div>
         <div class="full"><label class="small muted" style="display:block;margin-bottom:5px">Google Meet Link</label>
           <div style="display:flex;gap:8px">
             <input id="calEventMeet" placeholder="https://meet.google.com/..." style="flex:1" />
