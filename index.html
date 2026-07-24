@@ -2326,9 +2326,10 @@
         <textarea id="invNotes" rows="3" placeholder="Payment terms, notes, thank you message..."></textarea>
       </div>
       <div style="margin-top:14px">
-        <label class="small muted" style="display:block;margin-bottom:5px">💳 QuickBooks Payment Link</label>
-        <input id="invPaymentLink" placeholder="https://qbo.intuit.com/..." style="width:100%;font-size:.84rem" />
-        <div style="font-size:.72rem;color:var(--muted);margin-top:4px">Paste your QuickBooks Pay Now link — appears as a Pay Now button on the invoice and customer portal</div>
+        <label class="small muted" style="display:block;margin-bottom:5px">💳 Payment Link (optional override)</label>
+        <input id="invPaymentLink" placeholder="Leave blank to use QuickBooks' link automatically" style="width:100%;font-size:.84rem" />
+        <div style="font-size:.72rem;color:var(--muted);margin-top:4px">Appears as a Pay Now button on the invoice and customer portal. Once this invoice is pushed to QuickBooks, its real hosted payment link is used automatically if this field is left blank — only fill this in if you want to override it with a different link.</div>
+        <div id="invQbPaymentLinkHint" style="display:none;font-size:.72rem;color:#1dbb87;margin-top:4px">✓ QuickBooks already provided a payment link for this invoice — it's being used automatically.</div>
       </div>
     </div>
     <div class="modal-foot">

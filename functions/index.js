@@ -883,7 +883,7 @@ exports.qbCreateInvoice = functions.https.onCall(async (data, context) => {
       // without the exact token it last handed out (optimistic locking).
       const current = await qboFetch(companyId, 'GET', `invoice/${qbInvoiceId}`);
       const syncToken = current?.Invoice?.SyncToken;
-      await qboFetch(companyId, 'POST', 'invoice', {
+      const updated = await qboFetch(companyId, 'POST', 'invoice', {
         Id: qbInvoiceId,
         SyncToken: syncToken,
         sparse: true,
@@ -895,6 +895,10 @@ exports.qbCreateInvoice = functions.https.onCall(async (data, context) => {
           SalesItemLineDetail: { ItemRef: { value: itemId }, Qty: 1, UnitPrice: total }
         }]
       });
+      // Backfills qbPaymentLink for invoices pushed before this field
+      // existed, or if QuickBooks Payments was only just enabled.
+      const linkNow = updated?.Invoice?.InvoiceLink || current?.Invoice?.InvoiceLink;
+      if (linkNow) await invRef.update({ qbPaymentLink: linkNow });
     } else {
       const created = await qboFetch(companyId, 'POST', 'invoice', {
         CustomerRef: { value: qbCustomerId },
@@ -908,7 +912,14 @@ exports.qbCreateInvoice = functions.https.onCall(async (data, context) => {
       });
       qbInvoiceId = created?.Invoice?.Id;
       if (!qbInvoiceId) throw new Error('QuickBooks did not return an Invoice Id.');
-      await invRef.update({ qbInvoiceId });
+      // InvoiceLink is QuickBooks' own hosted, secure payment page for
+      // this invoice - only present when QuickBooks Payments is active
+      // on the connected company. Stored separately from the manual
+      // paymentLink field (never overwritten) - the client falls back
+      // to this automatically only when paymentLink is blank.
+      const update = { qbInvoiceId };
+      if (created?.Invoice?.InvoiceLink) update.qbPaymentLink = created.Invoice.InvoiceLink;
+      await invRef.update(update);
     }
 
     // 4. Payment - only the un-recorded delta, so re-pushing the same

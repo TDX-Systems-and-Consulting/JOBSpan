@@ -5268,6 +5268,10 @@ function openEditInvoice(jobId, invId) {
       document.getElementById('invPayMethod').value = inv.payMethod || '';
       document.getElementById('invNotes').value = inv.notes || '';
       document.getElementById('invPaymentLink').value = inv.paymentLink || '';
+      const qbLinkHint = document.getElementById('invQbPaymentLinkHint');
+      if (qbLinkHint) {
+        qbLinkHint.style.display = (!inv.paymentLink && inv.qbPaymentLink) ? 'block' : 'none';
+      }
       document.getElementById('deleteInvBtn').style.display = 'inline-flex';
       _invLineItems = inv.lineItems || [];
       renderInvLineItems();
@@ -6328,10 +6332,10 @@ function printInvoiceData(inv, job, otherInvoices) {
 
     (inv.notes ? '<div style="background:#f9fafb;border-radius:8px;padding:14px;font-size:.85rem;color:#4b5563;margin-bottom:20px"><strong>Notes & Terms:</strong><br><br>' + esc(inv.notes) + '</div>' : '') +
 
-    (inv.paymentLink ? 
+    ((inv.paymentLink || inv.qbPaymentLink) ? 
       '<div style="text-align:center;margin:24px 0">' +
-      '<a href="' + inv.paymentLink + '" style="display:inline-block;background:#d97706;color:#fff;font-size:1.1rem;font-weight:800;padding:16px 48px;border-radius:12px;text-decoration:none;letter-spacing:.02em">💳 Pay Now</a>' +
-      '<div style="font-size:.76rem;color:#9ca3af;margin-top:8px">Click to pay securely via QuickBooks</div>' +
+      '<a href="' + (inv.paymentLink || inv.qbPaymentLink) + '" style="display:inline-block;background:#d97706;color:#fff;font-size:1.1rem;font-weight:800;padding:16px 48px;border-radius:12px;text-decoration:none;letter-spacing:.02em">💳 Pay Now</a>' +
+      '<div style="font-size:.76rem;color:#9ca3af;margin-top:8px">Click to pay securely' + (!inv.paymentLink && inv.qbPaymentLink ? ' via QuickBooks' : '') + '</div>' +
       '</div>' : '') +
 
     '<div style="margin-top:32px;padding-top:16px;border-top:1px solid #e5e7eb;text-align:center;color:#9ca3af;font-size:.75rem">' +
@@ -9247,8 +9251,9 @@ function renderPortalInvoices(invs, jobId) {
   el.innerHTML = invs.map(inv => {
     const bal = (inv.total||0) - (inv.amtPaid||0);
     const sColor = statusColors[inv.status] || 'var(--muted)';
-    const payBtn = inv.paymentLink && bal > 0 && inv.status !== 'Paid'
-      ? `<a href="${inv.paymentLink}" target="_blank" style="display:inline-block;margin-top:8px;background:#d97706;color:#fff;font-size:.78rem;font-weight:800;padding:7px 18px;border-radius:8px;text-decoration:none">💳 Pay Now</a>`
+    const payLink = inv.paymentLink || inv.qbPaymentLink;
+    const payBtn = payLink && bal > 0 && inv.status !== 'Paid'
+      ? `<a href="${payLink}" target="_blank" style="display:inline-block;margin-top:8px;background:#d97706;color:#fff;font-size:.78rem;font-weight:800;padding:7px 18px;border-radius:8px;text-decoration:none">💳 Pay Now</a>`
       : '';
     const viewedBadge = inv.viewedAt?.toDate
       ? `<div style="font-size:.7rem;color:#1dbb87;margin-top:2px" title="Customer opened this invoice in the portal">👁 Viewed ${inv.viewedAt.toDate().toLocaleDateString()}</div>`
