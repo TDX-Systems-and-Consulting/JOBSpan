@@ -6034,25 +6034,59 @@ function loadCompanyProfile() {
 
 // Opens the QuickBooks OAuth flow for THIS company specifically — each
 // JOBSpan company connects its own QuickBooks account independently.
+// Passes a verified Firebase ID token (same security shape as
+// connectGoogleCalendar below) since this connects ONE shared,
+// company-wide financial account rather than an individual calendar —
+// it needs the stronger check, not a weaker one.
+const QBO_FUNCTIONS_BASE = 'https://us-central1-kytrac-72d91.cloudfunctions.net';
+
 function connectQuickBooks() {
-  if (!currentCompanyId) { alert('Company not loaded yet — try again in a moment.'); return; }
-  const url = 'https://us-central1-kytrac-72d91.cloudfunctions.net/qbOAuthStart?companyId=' + encodeURIComponent(currentCompanyId);
-  window.open(url, '_blank');
+  if (!currentCompanyId || !conCurrentUser) { alert('Not ready yet — try again in a moment.'); return; }
+  conCurrentUser.getIdToken().then(idToken => {
+    const url = `${QBO_FUNCTIONS_BASE}/qbOAuthStart?token=${encodeURIComponent(idToken)}&companyId=${encodeURIComponent(currentCompanyId)}`;
+    const win = window.open(url, '_blank', 'width=520,height=680');
+    // Poll for the popup closing, then refresh status — same pattern as
+    // connectGoogleCalendar below.
+    const poll = setInterval(() => {
+      if (win && win.closed) { clearInterval(poll); setTimeout(checkQBConnectionStatus, 800); }
+    }, 500);
+  }).catch(e => alert('Could not start QuickBooks connection: ' + e.message));
 }
 window.connectQuickBooks = connectQuickBooks;
 
-// Shows whether this company currently has a QuickBooks connection.
+function disconnectQuickBooks() {
+  if (!confirm('Disconnect QuickBooks? JOBSpan will stop being able to push invoices, estimates, and payments until you reconnect.')) return;
+  if (!conFunctions) { alert('Not available yet.'); return; }
+  conFunctions.httpsCallable('qbDisconnect')({ companyId: currentCompanyId })
+    .then(() => checkQBConnectionStatus())
+    .catch(e => alert('Error disconnecting: ' + e.message));
+}
+window.disconnectQuickBooks = disconnectQuickBooks;
+
+// Shows whether this company currently has a QuickBooks connection,
+// and toggles the Connect/Disconnect button accordingly.
 function checkQBConnectionStatus() {
   const el = document.getElementById('qbConnectionStatus');
+  const btnEl = document.getElementById('qbConnectBtn');
   if (!el || !conDb || !currentCompanyId) return;
   coll('settings').doc('quickbooks').get()
     .then(doc => {
-      if (doc.exists && doc.data().realmId) {
-        const data = doc.data();
+      const data = doc.exists ? doc.data() : {};
+      if (data.connected && data.realmId) {
         el.innerHTML = '<span style="color:#1dbb87;font-weight:700">✓ Connected</span> — Realm ID: ' + esc(data.realmId) +
           (data.environment === 'sandbox' ? ' <span style="color:#f59e0b">(Sandbox — test mode)</span>' : '');
+        if (btnEl) {
+          btnEl.textContent = 'Disconnect';
+          btnEl.className = 'btn';
+          btnEl.onclick = disconnectQuickBooks;
+        }
       } else {
         el.innerHTML = '<span style="color:#9ca3af">Not connected yet.</span>';
+        if (btnEl) {
+          btnEl.textContent = '📗 Connect QuickBooks';
+          btnEl.className = 'btn-amber';
+          btnEl.onclick = connectQuickBooks;
+        }
       }
     })
     .catch(() => { el.innerHTML = '<span style="color:#9ca3af">Not connected yet.</span>'; });

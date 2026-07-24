@@ -412,6 +412,480 @@ exports.pushPhaseToGCal = functions.firestore
     return null;
   });
 
+// ════════════════════════════════════════════════════════════════════
+// QuickBooks Online integration
+// ════════════════════════════════════════════════════════════════════
+// ONE company-wide QuickBooks connection per JOBSpan company (unlike
+// Google Calendar above, which is per-team-member) - whoever with full
+// access connects it, the whole company's invoices push through that
+// one QBO company file. Decided in chat 7/24/2026: v1 is a MANUAL,
+// cascading push triggered by clicking "Push to QuickBooks" on an
+// invoice - not an automatic sync on every write, so nothing pushes
+// until Travis (or another full-access user) chooses to send it.
+//
+// Clicking that button runs, in order, skipping any step already done:
+//   1. Customer - find-or-create a QBO Customer matching this job's
+//      linked customer record (companies/{cid}/customers/{custId}),
+//      store the returned Id back on that doc (qbCustomerId) so future
+//      jobs for the same customer reuse it instead of duplicating.
+//   2. Estimate - if the job has a latest proposal that hasn't been
+//      pushed yet, create a QBO Estimate for it (qbEstimateId). Not
+//      fatal if there's no proposal on file (e.g. a handshake job) -
+//      Invoice push still proceeds either way.
+//   3. Invoice - create (or update, if already pushed once) the QBO
+//      Invoice for this specific invoice doc (qbInvoiceId).
+//   4. Payment - if amtPaid has increased since the last push
+//      (qbLastSyncedAmtPaid), record a QBO Payment for just the
+//      difference, linked to the Invoice - so re-pushing the same
+//      invoice after a partial payment never double-counts.
+//
+// v1 SIMPLIFICATION (flagged, not silently skipped): QBO requires every
+// Estimate/Invoice line to reference an Item from their own
+// products/services catalog. JOBSpan doesn't maintain a matching
+// catalog inside QBO, so each push sends ONE lump-sum line against a
+// single catch-all Service item (auto-detected and cached on first
+// use - see getDefaultQboItemId). True line-by-line catalog mapping is
+// a real v2 upgrade.
+//
+// ── ONE-TIME SETUP REQUIRED (Intuit Developer + Firebase CLI, needs
+//    Travis - not doable from the JOBSpan chat sandbox): see
+//    functions/DEPLOY_QBO.md for the full walkthrough.
+
+const QBO_AUTH_URL = 'https://appcenter.intuit.com/connect/oauth2';
+const QBO_TOKEN_URL = 'https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer';
+const QBO_REVOKE_URL = 'https://developer.api.intuit.com/v2/oauth2/tokens/revoke';
+const QBO_FULL_ACCESS_ROLES = ['Owner', 'Project Manager', 'Accounting'];
+
+function isQboFullAccess(token) {
+  return QBO_FULL_ACCESS_ROLES.includes(token.role) || token.fullAccessOverride === true;
+}
+
+function getQboOAuthConfig() {
+  const cfg = functions.config().qbo || {};
+  if (!cfg.client_id || !cfg.client_secret || !cfg.redirect_uri) return null;
+  return {
+    clientId: cfg.client_id,
+    clientSecret: cfg.client_secret,
+    redirectUri: cfg.redirect_uri,
+    environment: cfg.environment === 'production' ? 'production' : 'sandbox'
+  };
+}
+
+function qboApiBase(environment) {
+  return environment === 'production'
+    ? 'https://quickbooks.api.intuit.com'
+    : 'https://sandbox-quickbooks.api.intuit.com';
+}
+
+function qboBasicAuthHeader(cfg) {
+  return 'Basic ' + Buffer.from(cfg.clientId + ':' + cfg.clientSecret).toString('base64');
+}
+
+// qbOAuthStart
+// ────────────
+// Requires a valid Firebase ID token (?token=...) AND a full-access
+// role, same protection shape as gcalOAuthStart above but with a
+// stricter role check - this connects ONE shared company-wide
+// financial account, so it needs to be locked down harder than an
+// individual's calendar.
+exports.qbOAuthStart = functions.https.onRequest(async (req, res) => {
+  const cfg = getQboOAuthConfig();
+  if (!cfg) {
+    res.status(500).send('QuickBooks OAuth is not configured yet (functions.config().qbo missing). See functions/DEPLOY_QBO.md.');
+    return;
+  }
+  const idToken = req.query.token;
+  const companyId = req.query.companyId;
+  if (!idToken) { res.status(400).send('Missing token'); return; }
+  if (!companyId) { res.status(400).send('Missing companyId'); return; }
+
+  let decoded;
+  try {
+    decoded = await admin.auth().verifyIdToken(idToken);
+  } catch (e) {
+    res.status(401).send('Invalid or expired session - please reload JOBSpan and try again.');
+    return;
+  }
+  if (decoded.companyId !== companyId) {
+    res.status(403).send('You are not a member of this company.');
+    return;
+  }
+  if (!isQboFullAccess(decoded)) {
+    res.status(403).send('Only Owner, Project Manager, or Accounting roles can connect QuickBooks.');
+    return;
+  }
+
+  const state = Buffer.from(JSON.stringify({ companyId, uid: decoded.uid })).toString('base64');
+  const authUrl = QBO_AUTH_URL + '?' + new URLSearchParams({
+    client_id: cfg.clientId,
+    redirect_uri: cfg.redirectUri,
+    response_type: 'code',
+    scope: 'com.intuit.quickbooks.accounting',
+    state
+  }).toString();
+  res.redirect(authUrl);
+});
+
+// qbOAuthCallback
+// ────────────────
+// Intuit redirects here after approval, WITH a realmId query param
+// identifying which QuickBooks company file was authorized (Intuit
+// shows a company picker on its consent screen if the person has
+// access to more than one - whichever they pick becomes this realmId).
+// Exchanges the code for tokens and stores the refresh token in the
+// locked-down quickbooksTokens collection (never client-readable),
+// mirroring the googleCalendarTokens pattern above.
+exports.qbOAuthCallback = functions.https.onRequest(async (req, res) => {
+  const cfg = getQboOAuthConfig();
+  if (!cfg) { res.status(500).send('QuickBooks OAuth is not configured yet.'); return; }
+  const { code, state, realmId, error } = req.query;
+  if (error) { res.status(400).send('Intuit denied access: ' + error + '. You can close this tab and try again.'); return; }
+  if (!code || !state || !realmId) { res.status(400).send('Missing code/state/realmId from Intuit.'); return; }
+
+  let parsed;
+  try { parsed = JSON.parse(Buffer.from(state, 'base64').toString('utf8')); }
+  catch (e) { res.status(400).send('Invalid state.'); return; }
+  const { companyId, uid } = parsed;
+
+  try {
+    const tokenResp = await fetch(QBO_TOKEN_URL, {
+      method: 'POST',
+      headers: {
+        'Authorization': qboBasicAuthHeader(cfg),
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Accept': 'application/json'
+      },
+      body: new URLSearchParams({
+        grant_type: 'authorization_code',
+        code: String(code),
+        redirect_uri: cfg.redirectUri
+      }).toString()
+    });
+    const tokens = await tokenResp.json();
+    if (!tokenResp.ok || !tokens.refresh_token) {
+      console.error('qbOAuthCallback token exchange failed:', tokens);
+      res.status(500).send('QuickBooks did not return valid tokens. Please close this tab and try connecting again.');
+      return;
+    }
+
+    const db = admin.firestore();
+    await db.collection('companies').doc(companyId).collection('quickbooksTokens').doc('connection').set({
+      accessToken: tokens.access_token,
+      refreshToken: tokens.refresh_token,
+      expiresAt: Date.now() + (tokens.expires_in * 1000),
+      realmId: String(realmId),
+      environment: cfg.environment,
+      connectedByUid: uid,
+      connectedAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+
+    // Non-sensitive status flag/fields the client reads directly to
+    // show connection state - no tokens ever live here.
+    await db.collection('companies').doc(companyId).collection('settings').doc('quickbooks').set({
+      connected: true,
+      realmId: String(realmId),
+      environment: cfg.environment,
+      connectedAt: admin.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+
+    res.send('<html><body style="font-family:sans-serif;text-align:center;padding:60px"><h2>✅ QuickBooks connected</h2><p>You can close this tab and go back to JOBSpan.</p></body></html>');
+  } catch (e) {
+    console.error('qbOAuthCallback error:', e.message);
+    res.status(500).send('Error connecting QuickBooks: ' + e.message);
+  }
+});
+
+// qbDisconnect (callable)
+// ────────────────────────
+// Best-effort revokes the token on Intuit's side too (so it also drops
+// out of "My Apps" in their account), then always clears the local
+// connection regardless of whether the revoke call succeeded.
+exports.qbDisconnect = functions.https.onCall(async (data, context) => {
+  if (!context.auth) throw new functions.https.HttpsError('unauthenticated', 'Must be signed in.');
+  const companyId = data.companyId;
+  if (!companyId || context.auth.token.companyId !== companyId) {
+    throw new functions.https.HttpsError('permission-denied', 'Not a member of this company.');
+  }
+  if (!isQboFullAccess(context.auth.token)) {
+    throw new functions.https.HttpsError('permission-denied', 'Only Owner, Project Manager, or Accounting can disconnect QuickBooks.');
+  }
+
+  const db = admin.firestore();
+  const cfg = getQboOAuthConfig();
+  const tokenRef = db.collection('companies').doc(companyId).collection('quickbooksTokens').doc('connection');
+  const tokenDoc = await tokenRef.get();
+  if (cfg && tokenDoc.exists && tokenDoc.data().refreshToken) {
+    try {
+      await fetch(QBO_REVOKE_URL, {
+        method: 'POST',
+        headers: { 'Authorization': qboBasicAuthHeader(cfg), 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: JSON.stringify({ token: tokenDoc.data().refreshToken })
+      });
+    } catch (e) {
+      console.warn('QBO revoke call failed (continuing with local disconnect):', e.message);
+    }
+  }
+
+  await tokenRef.delete();
+  await db.collection('companies').doc(companyId).collection('settings').doc('quickbooks').set({ connected: false }, { merge: true });
+  return { disconnected: true };
+});
+
+// ensureQboAccessToken
+// ─────────────────────
+// Returns a ready-to-use {accessToken, realmId, environment} for a
+// company, refreshing against Intuit first if the current access token
+// is expired or about to be (within 2 minutes). Intuit refresh tokens
+// ROTATE on every use - the new one returned here is always re-saved,
+// or the old one stops working on the next call.
+async function ensureQboAccessToken(companyId) {
+  const cfg = getQboOAuthConfig();
+  if (!cfg) throw new Error('QuickBooks is not configured (functions.config().qbo missing).');
+  const db = admin.firestore();
+  const ref = db.collection('companies').doc(companyId).collection('quickbooksTokens').doc('connection');
+  const doc = await ref.get();
+  if (!doc.exists) throw new Error('QuickBooks is not connected for this company yet - connect it in Settings first.');
+  const data = doc.data();
+
+  if (data.expiresAt && data.expiresAt - Date.now() > 2 * 60 * 1000) {
+    return { accessToken: data.accessToken, realmId: data.realmId, environment: data.environment };
+  }
+
+  const resp = await fetch(QBO_TOKEN_URL, {
+    method: 'POST',
+    headers: {
+      'Authorization': qboBasicAuthHeader(cfg),
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Accept': 'application/json'
+    },
+    body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: data.refreshToken }).toString()
+  });
+  const tokens = await resp.json();
+  if (!resp.ok || !tokens.access_token) {
+    console.error('QBO token refresh failed:', tokens);
+    throw new Error('The QuickBooks connection has expired or was revoked - please reconnect it in Settings.');
+  }
+  await ref.update({
+    accessToken: tokens.access_token,
+    refreshToken: tokens.refresh_token || data.refreshToken,
+    expiresAt: Date.now() + (tokens.expires_in * 1000)
+  });
+  return { accessToken: tokens.access_token, realmId: data.realmId, environment: data.environment };
+}
+
+// Thin wrapper for calling Intuit's Accounting API v3.
+async function qboFetch(companyId, method, path, body) {
+  const { accessToken, realmId, environment } = await ensureQboAccessToken(companyId);
+  const url = `${qboApiBase(environment)}/v3/company/${realmId}/${path}`;
+  const resp = await fetch(url, {
+    method,
+    headers: {
+      'Authorization': 'Bearer ' + accessToken,
+      'Content-Type': 'application/json',
+      'Accept': 'application/json'
+    },
+    body: body ? JSON.stringify(body) : undefined
+  });
+  const json = await resp.json().catch(() => ({}));
+  if (!resp.ok) {
+    const msg = json?.Fault?.Error?.[0]?.Message || json?.Fault?.Error?.[0]?.Detail || resp.statusText;
+    throw new Error('QuickBooks API error: ' + msg);
+  }
+  return json;
+}
+
+// Escapes single quotes for QBO's SQL-like query language (their docs
+// call it "Data Service query language" - backslash-escape, not '').
+function qboEsc(str) { return String(str || '').replace(/'/g, "\\'"); }
+
+// getDefaultQboItemId
+// ────────────────────
+// See the v1 simplification note at the top of this section - caches
+// the chosen Item's Id on settings/quickbooks after the first lookup
+// so every subsequent push skips the query.
+async function getDefaultQboItemId(companyId) {
+  const db = admin.firestore();
+  const cfgRef = db.collection('companies').doc(companyId).collection('settings').doc('quickbooks');
+  const cfgDoc = await cfgRef.get();
+  if (cfgDoc.exists && cfgDoc.data().defaultItemId) return cfgDoc.data().defaultItemId;
+
+  const result = await qboFetch(companyId, 'GET',
+    `query?query=${encodeURIComponent("SELECT * FROM Item WHERE Type IN ('Service','NonInventory') MAXRESULTS 1")}`);
+  const item = result?.QueryResponse?.Item?.[0];
+  if (!item) throw new Error('No usable Item found in QuickBooks to bill against - create at least one Service item in QuickBooks first, then try again.');
+  await cfgRef.set({ defaultItemId: item.Id, defaultItemName: item.Name }, { merge: true });
+  return item.Id;
+}
+
+// ensureQboCustomer
+// ──────────────────
+// Find-or-create the QBO Customer for a JOBSpan customer record.
+// Matches by DisplayName first (covers a customer already created
+// manually in QBO, or by an earlier push), otherwise creates a new
+// one. Stores the QBO Id back on the JOBSpan customer doc so every
+// future job for that same customer reuses it instead of duplicating.
+async function ensureQboCustomer(companyId, customerId) {
+  const db = admin.firestore();
+  const custRef = db.collection('companies').doc(companyId).collection('customers').doc(customerId);
+  const custDoc = await custRef.get();
+  if (!custDoc.exists) throw new Error('Customer record not found for this job - open the job and confirm it has a linked Customer.');
+  const cust = custDoc.data();
+  if (cust.qbCustomerId) return cust.qbCustomerId;
+
+  const name = cust.name || 'Unknown Customer';
+  const existing = await qboFetch(companyId, 'GET',
+    `query?query=${encodeURIComponent(`SELECT * FROM Customer WHERE DisplayName = '${qboEsc(name)}'`)}`);
+  const found = existing?.QueryResponse?.Customer?.[0];
+  if (found) {
+    await custRef.update({ qbCustomerId: found.Id });
+    return found.Id;
+  }
+
+  const payload = { DisplayName: name };
+  if (cust.email) payload.PrimaryEmailAddr = { Address: cust.email };
+  if (cust.phone) payload.PrimaryPhone = { FreeFormNumber: cust.phone };
+  if (cust.address) payload.BillAddr = { Line1: cust.address };
+  const created = await qboFetch(companyId, 'POST', 'customer', payload);
+  const qbId = created?.Customer?.Id;
+  if (!qbId) throw new Error('QuickBooks did not return a Customer Id.');
+  await custRef.update({ qbCustomerId: qbId });
+  return qbId;
+}
+
+// ensureQboEstimate
+// ──────────────────
+// Pushes the job's latest proposal (if any, and if not already pushed)
+// as a QBO Estimate. A missing proposal isn't fatal - Invoice push
+// still proceeds without one (e.g. a handshake deal with no formal
+// estimate on file).
+async function ensureQboEstimate(companyId, jobId, qbCustomerId) {
+  const db = admin.firestore();
+  const propSnap = await db.collection('companies').doc(companyId).collection('jobs').doc(jobId)
+    .collection('proposals').orderBy('version', 'desc').limit(1).get();
+  if (propSnap.empty) return null;
+  const propDoc = propSnap.docs[0];
+  const prop = propDoc.data();
+  if (prop.qbEstimateId) return prop.qbEstimateId;
+
+  const total = prop.snapshot?.grandTotal || 0;
+  const itemId = await getDefaultQboItemId(companyId);
+  const payload = {
+    CustomerRef: { value: qbCustomerId },
+    Line: [{
+      Amount: total,
+      DetailType: 'SalesItemLineDetail',
+      Description: 'JOBSpan Estimate',
+      SalesItemLineDetail: { ItemRef: { value: itemId }, Qty: 1, UnitPrice: total }
+    }]
+  };
+  const created = await qboFetch(companyId, 'POST', 'estimate', payload);
+  const qbId = created?.Estimate?.Id;
+  if (qbId) await propDoc.ref.update({ qbEstimateId: qbId });
+  return qbId;
+}
+
+// qbCreateInvoice (callable)
+// ───────────────────────────
+// The button Travis clicks: "Push to QuickBooks" on an invoice.
+// Cascades Customer -> Estimate -> Invoice -> Payment in order, each
+// step skipped if already done, and returns the QBO Invoice Id so the
+// button can confirm success.
+exports.qbCreateInvoice = functions.https.onCall(async (data, context) => {
+  if (!context.auth) throw new functions.https.HttpsError('unauthenticated', 'Must be signed in.');
+  const { companyId, jobId, invoiceId } = data;
+  if (!companyId || !jobId || !invoiceId) {
+    throw new functions.https.HttpsError('invalid-argument', 'Missing companyId/jobId/invoiceId.');
+  }
+  if (context.auth.token.companyId !== companyId) {
+    throw new functions.https.HttpsError('permission-denied', 'Not a member of this company.');
+  }
+  if (!isQboFullAccess(context.auth.token)) {
+    throw new functions.https.HttpsError('permission-denied', 'Only Owner, Project Manager, or Accounting can push to QuickBooks.');
+  }
+
+  const db = admin.firestore();
+  const jobRef = db.collection('companies').doc(companyId).collection('jobs').doc(jobId);
+  const invRef = jobRef.collection('invoices').doc(invoiceId);
+  const [jobDoc, invDoc] = await Promise.all([jobRef.get(), invRef.get()]);
+  if (!jobDoc.exists) throw new functions.https.HttpsError('not-found', 'Job not found.');
+  if (!invDoc.exists) throw new functions.https.HttpsError('not-found', 'Invoice not found.');
+  const job = jobDoc.data();
+  const inv = invDoc.data();
+
+  if (!job.customerId) {
+    throw new functions.https.HttpsError('failed-precondition', 'This job has no linked Customer record - open the job and set a Customer before pushing to QuickBooks.');
+  }
+
+  try {
+    // 1. Customer
+    const qbCustomerId = await ensureQboCustomer(companyId, job.customerId);
+
+    // 2. Estimate (best-effort - a missing proposal doesn't block the invoice)
+    try { await ensureQboEstimate(companyId, jobId, qbCustomerId); }
+    catch (e) { console.warn('QBO Estimate push skipped:', e.message); }
+
+    // 3. Invoice
+    const itemId = await getDefaultQboItemId(companyId);
+    const total = inv.total || 0;
+    let qbInvoiceId = inv.qbInvoiceId;
+    if (qbInvoiceId) {
+      // Updating requires the current SyncToken - QBO rejects updates
+      // without the exact token it last handed out (optimistic locking).
+      const current = await qboFetch(companyId, 'GET', `invoice/${qbInvoiceId}`);
+      const syncToken = current?.Invoice?.SyncToken;
+      await qboFetch(companyId, 'POST', 'invoice', {
+        Id: qbInvoiceId,
+        SyncToken: syncToken,
+        sparse: true,
+        CustomerRef: { value: qbCustomerId },
+        Line: [{
+          Amount: total,
+          DetailType: 'SalesItemLineDetail',
+          Description: job.name || 'JOBSpan Invoice',
+          SalesItemLineDetail: { ItemRef: { value: itemId }, Qty: 1, UnitPrice: total }
+        }]
+      });
+    } else {
+      const created = await qboFetch(companyId, 'POST', 'invoice', {
+        CustomerRef: { value: qbCustomerId },
+        DueDate: inv.dueDate || undefined,
+        Line: [{
+          Amount: total,
+          DetailType: 'SalesItemLineDetail',
+          Description: job.name || 'JOBSpan Invoice',
+          SalesItemLineDetail: { ItemRef: { value: itemId }, Qty: 1, UnitPrice: total }
+        }]
+      });
+      qbInvoiceId = created?.Invoice?.Id;
+      if (!qbInvoiceId) throw new Error('QuickBooks did not return an Invoice Id.');
+      await invRef.update({ qbInvoiceId });
+    }
+
+    // 4. Payment - only the un-recorded delta, so re-pushing the same
+    // invoice after a partial payment never double-counts.
+    const amtPaid = inv.amtPaid || 0;
+    const lastSynced = inv.qbLastSyncedAmtPaid || 0;
+    if (amtPaid > lastSynced) {
+      const deltaAmt = amtPaid - lastSynced;
+      const createdPayment = await qboFetch(companyId, 'POST', 'payment', {
+        CustomerRef: { value: qbCustomerId },
+        TotalAmt: deltaAmt,
+        Line: [{ Amount: deltaAmt, LinkedTxn: [{ TxnId: qbInvoiceId, TxnType: 'Invoice' }] }]
+      });
+      const qbPaymentId = createdPayment?.Payment?.Id;
+      await invRef.update({
+        qbLastSyncedAmtPaid: amtPaid,
+        qbPaymentIds: admin.firestore.FieldValue.arrayUnion(qbPaymentId)
+      });
+    }
+
+    return { success: true, qbInvoiceId };
+  } catch (e) {
+    console.error('qbCreateInvoice failed:', e.message);
+    throw new functions.https.HttpsError('internal', e.message);
+  }
+});
+
 exports.sendMessageNotificationSms = functions.firestore
   .document('companies/{companyId}/jobs/{jobId}/messages/{messageId}')
   .onCreate(async (snap, context) => {

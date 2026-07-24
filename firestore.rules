@@ -68,6 +68,30 @@ service cloud.firestore {
         allow read, write: if false;
       }
 
+      // ── QuickBooks OAuth tokens ──
+      // Same treatment as googleCalendarTokens above: this holds real
+      // access/refresh credentials for the WHOLE company's QuickBooks
+      // account (not one person's), so it's never client-readable
+      // regardless of role or fullAccessOverride. The client only ever
+      // sees the non-sensitive status doc at settings/quickbooks
+      // (realmId, environment, a plain 'connected' boolean).
+      match /quickbooksTokens/{docId} {
+        allow read, write: if false;
+      }
+
+      // ── Customers ──
+      // NOTE: this collection had no rule at all before this pass -
+      // loadCustomers()/renderCustomers() in kytrac-app.js read
+      // companies/{companyId}/customers directly, which would have
+      // been silently permission-denied under Firestore's default-deny
+      // (the Customers page likely hasn't been working). Same access
+      // level as the jobs doc itself: any signed-in company member can
+      // read/write, since assigning jobs to customers is a normal
+      // team-wide action, not a financial one.
+      match /customers/{customerId} {
+        allow read, write: if inCompany(companyId);
+      }
+
       // ── Catalog (pricing data) ──
       match /catalog/{catId} {
         allow read: if inCompany(companyId);
