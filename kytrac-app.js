@@ -6573,6 +6573,20 @@ function loadUserRole(user, callback) {
 }
 
 // ── Team management ──
+// Tracks which team members currently have their QuickBooks ID / phone
+// fields open for editing (by sanitized key). Members with saved values
+// render collapsed into a compact summary by default - only entries with
+// NOTHING saved yet, or that the Owner explicitly clicked Edit on, show
+// the open input fields. Purely a UI-state set, not persisted anywhere.
+let _teamEditOpen = {};
+let _lastTeamMemberList = [];
+
+function toggleTeamMemberEdit(key) {
+  _teamEditOpen[key] = !_teamEditOpen[key];
+  renderTeamMemberList();
+}
+window.toggleTeamMemberEdit = toggleTeamMemberEdit;
+
 function loadTeamMembers() {
   if (!conDb) return;
   const list = document.getElementById('teamMemberList');
@@ -6590,56 +6604,80 @@ function loadTeamMembers() {
   coll('settings').doc('team').get()
     .then(doc => {
       const members = doc.exists ? extractTeamMembers(doc.data()) : {};
-      const memberList = Object.values(members).sort((a,b) => {
+      _lastTeamMemberList = Object.values(members).sort((a,b) => {
         const la = KYTRAC_ROLES[a.role]?.level || 0;
         const lb = KYTRAC_ROLES[b.role]?.level || 0;
         return lb - la;
       });
-
-      if (!memberList.length) {
-        list.innerHTML = '<div class="small muted" style="font-style:italic">No team members yet.</div>';
-        return;
-      }
-
-      list.innerHTML = memberList.map(m => {
-        const roleData = KYTRAC_ROLES[m.role] || { color: 'var(--muted)' };
-        const isCurrentUser = (m.email || '').toLowerCase() === (conCurrentUser?.email || '').toLowerCase();
-        return `<div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid rgba(110,145,210,.07);flex-wrap:wrap">
-          <div style="width:36px;height:36px;border-radius:50%;background:${roleData.color}22;border:2px solid ${roleData.color};display:flex;align-items:center;justify-content:center;font-size:.9rem;font-weight:800;color:${roleData.color};flex-shrink:0">
-            ${(m.name||m.email||'?')[0].toUpperCase()}
-          </div>
-          <div style="flex:1;min-width:0">
-            <div style="font-weight:700;font-size:.9rem">${esc(m.name||m.email||'')}</div>
-            <div style="font-size:.78rem;color:var(--muted)">${esc(m.email||'')}</div>
-            <div style="display:flex;align-items:center;gap:6px;margin-top:5px">
-              <input id="qbEmpId_${(m.email||'').replace(/\./g,'_')}" value="${esc(m.qbEmployeeId||'')}" placeholder="QuickBooks Employee ID (for payroll sync)"
-                style="font-size:.72rem;padding:3px 8px;width:220px;background:rgba(8,19,37,.6);border:1px solid var(--line);border-radius:6px;color:var(--muted)" />
-              <button class="btn" style="padding:2px 8px;font-size:.7rem" onclick="saveTeamMemberQBId('${(m.email||'').replace(/\./g,'_')}')">Save</button>
-            </div>
-            <div style="display:flex;align-items:center;gap:6px;margin-top:5px">
-              <input id="phone_${(m.email||'').replace(/\./g,'_')}" value="${esc(m.phone||'')}" placeholder="Cell phone (for @mention SMS alerts)" type="tel"
-                style="font-size:.72rem;padding:3px 8px;width:220px;background:rgba(8,19,37,.6);border:1px solid var(--line);border-radius:6px;color:var(--muted)" />
-              <button class="btn" style="padding:2px 8px;font-size:.7rem" onclick="saveTeamMemberPhone('${(m.email||'').replace(/\./g,'_')}')">Save</button>
-            </div>
-            <label style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:.72rem;color:var(--muted);cursor:pointer">
-              <input type="checkbox" ${m.fullAccessOverride ? 'checked' : ''} onchange="setTeamMemberFullAccessOverride('${(m.email||'').replace(/\./g,'_')}',this.checked)" />
-              Full Access Override <span style="color:#9ca3af">(keeps their role label, but grants Owner-level permissions everywhere except adding/removing/promoting other team members — that stays Owner-only)</span>
-            </label>
-          </div>
-          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-            <select onchange="updateMemberRole('${(m.email||'').replace(/\./g,'_')}',this.value)"
-              style="font-size:.78rem;padding:4px 8px;background:var(--input-bg);border:1px solid ${roleData.color}44;color:${roleData.color};border-radius:7px;font-weight:700"
-              ${isCurrentUser && m.role==='Owner' ? 'title="You are the account Owner"' : ''}>
-              ${Object.keys(KYTRAC_ROLES).map(r => `<option value="${r}" ${r===m.role?'selected':''}>${r}</option>`).join('')}
-            </select>
-            ${!isCurrentUser ? `<button class="btn btn-danger" onclick="removeMember('${(m.email||'').replace(/\./g,'_')}')" style="padding:4px 8px;font-size:.75rem">Remove</button>` : '<span class="small muted">(you)</span>'}
-          </div>
-        </div>`;
-      }).join('');
+      renderTeamMemberList();
     })
     .catch(() => {
       list.innerHTML = '<div class="small muted">Could not load team members.</div>';
     });
+}
+
+function renderTeamMemberList() {
+  const list = document.getElementById('teamMemberList');
+  if (!list) return;
+  const memberList = _lastTeamMemberList;
+
+  if (!memberList.length) {
+    list.innerHTML = '<div class="small muted" style="font-style:italic">No team members yet.</div>';
+    return;
+  }
+
+  list.innerHTML = memberList.map(m => {
+    const roleData = KYTRAC_ROLES[m.role] || { color: 'var(--muted)' };
+    const isCurrentUser = (m.email || '').toLowerCase() === (conCurrentUser?.email || '').toLowerCase();
+    const key = (m.email || '').replace(/\./g,'_');
+    const hasSavedInfo = !!(m.qbEmployeeId || m.phone);
+    const isOpen = _teamEditOpen[key] || !hasSavedInfo; // empty state always shows open inputs
+
+    const editableFields = `
+      <div style="display:flex;align-items:center;gap:6px;margin-top:5px">
+        <input id="qbEmpId_${key}" value="${esc(m.qbEmployeeId||'')}" placeholder="QuickBooks Employee ID (for payroll sync)"
+          style="font-size:.72rem;padding:3px 8px;width:220px;background:rgba(8,19,37,.6);border:1px solid var(--line);border-radius:6px;color:var(--muted)" />
+        <button class="btn" style="padding:2px 8px;font-size:.7rem" onclick="saveTeamMemberQBId('${key}')">Save</button>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;margin-top:5px">
+        <input id="phone_${key}" value="${esc(m.phone||'')}" placeholder="Cell phone (for @mention SMS alerts)" type="tel"
+          style="font-size:.72rem;padding:3px 8px;width:220px;background:rgba(8,19,37,.6);border:1px solid var(--line);border-radius:6px;color:var(--muted)" />
+        <button class="btn" style="padding:2px 8px;font-size:.7rem" onclick="saveTeamMemberPhone('${key}')">Save</button>
+      </div>
+      ${hasSavedInfo ? `<button class="btn" style="padding:2px 8px;font-size:.7rem;margin-top:5px" onclick="toggleTeamMemberEdit('${key}')">✕ Close</button>` : ''}
+    `;
+
+    const collapsedSummary = `
+      <div style="display:flex;align-items:center;gap:10px;margin-top:5px;font-size:.76rem;color:var(--muted)">
+        ${m.qbEmployeeId ? `<span>🧾 QB ID: ${esc(m.qbEmployeeId)}</span>` : ''}
+        ${m.phone ? `<span>📱 ${esc(m.phone)}</span>` : ''}
+        <button class="btn" style="padding:2px 8px;font-size:.7rem" onclick="toggleTeamMemberEdit('${key}')">✏️ Edit</button>
+      </div>
+    `;
+
+    return `<div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid rgba(110,145,210,.07);flex-wrap:wrap">
+      <div style="width:36px;height:36px;border-radius:50%;background:${roleData.color}22;border:2px solid ${roleData.color};display:flex;align-items:center;justify-content:center;font-size:.9rem;font-weight:800;color:${roleData.color};flex-shrink:0">
+        ${(m.name||m.email||'?')[0].toUpperCase()}
+      </div>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:700;font-size:.9rem">${esc(m.name||m.email||'')}</div>
+        <div style="font-size:.78rem;color:var(--muted)">${esc(m.email||'')}</div>
+        ${isOpen ? editableFields : collapsedSummary}
+        <label style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:.72rem;color:var(--muted);cursor:pointer">
+          <input type="checkbox" ${m.fullAccessOverride ? 'checked' : ''} onchange="setTeamMemberFullAccessOverride('${key}',this.checked)" />
+          Full Access Override <span style="color:#9ca3af">(keeps their role label, but grants Owner-level permissions everywhere except adding/removing/promoting other team members — that stays Owner-only)</span>
+        </label>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <select onchange="updateMemberRole('${key}',this.value)"
+          style="font-size:.78rem;padding:4px 8px;background:var(--input-bg);border:1px solid ${roleData.color}44;color:${roleData.color};border-radius:7px;font-weight:700"
+          ${isCurrentUser && m.role==='Owner' ? 'title="You are the account Owner"' : ''}>
+          ${Object.keys(KYTRAC_ROLES).map(r => `<option value="${r}" ${r===m.role?'selected':''}>${r}</option>`).join('')}
+        </select>
+        ${!isCurrentUser ? `<button class="btn btn-danger" onclick="removeMember('${key}')" style="padding:4px 8px;font-size:.75rem">Remove</button>` : '<span class="small muted">(you)</span>'}
+      </div>
+    </div>`;
+  }).join('');
 }
 
 function addTeamMember() {
@@ -6685,8 +6723,10 @@ function saveTeamMemberQBId(key) {
   coll('settings').doc('team').set(
     { members: { [key]: { qbEmployeeId, updatedAt: new Date().toISOString() } } },
     { merge: true }
-  ).then(() => { input.style.borderColor = '#1dbb87'; setTimeout(() => { input.style.borderColor = ''; }, 1200); })
-   .catch(e => alert('Error saving QuickBooks Employee ID: ' + e.message));
+  ).then(() => {
+    input.style.borderColor = '#1dbb87';
+    setTimeout(() => { _teamEditOpen[key] = false; loadTeamMembers(); }, 700);
+  }).catch(e => alert('Error saving QuickBooks Employee ID: ' + e.message));
 }
 window.saveTeamMemberQBId = saveTeamMemberQBId;
 
@@ -6702,8 +6742,10 @@ function saveTeamMemberPhone(key) {
   coll('settings').doc('team').set(
     { members: { [key]: { phone, updatedAt: new Date().toISOString() } } },
     { merge: true }
-  ).then(() => { input.style.borderColor = '#1dbb87'; setTimeout(() => { input.style.borderColor = ''; }, 1200); })
-   .catch(e => alert('Error saving phone number: ' + e.message));
+  ).then(() => {
+    input.style.borderColor = '#1dbb87';
+    setTimeout(() => { _teamEditOpen[key] = false; loadTeamMembers(); }, 700);
+  }).catch(e => alert('Error saving phone number: ' + e.message));
 }
 window.saveTeamMemberPhone = saveTeamMemberPhone;
 
