@@ -8660,6 +8660,32 @@ function renderDocCard(d) {
 
 // ── Per-job document list ──
 function renderJobDocList(docs) {
+  // ── Job-detail Files tab (photo grid) ──
+  const filesEl = document.getElementById('detailFilesList');
+  if (filesEl) {
+    if (!docs || !docs.length) {
+      filesEl.innerHTML = '<div class="small muted" style="text-align:center;padding:20px;grid-column:1/-1">No files yet</div>';
+    } else {
+      filesEl.innerHTML = docs.map(d => {
+        const isImg = (d.type||'').startsWith('image/');
+        const src = d.dataUrl || d.data || '';
+        if (isImg && src) {
+          return `<div style="position:relative;border-radius:10px;overflow:hidden;aspect-ratio:1;background:#111">
+            <img src="${src}" style="width:100%;height:100%;object-fit:cover;cursor:pointer" onclick="openLightbox('${src.replace(/'/g,"\\'")}')">
+            <div style="position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent,rgba(0,0,0,.7));padding:6px 8px;font-size:.65rem;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(d.name||'')}</div>
+            <button onclick="deleteDoc('${d.id}')" style="position:absolute;top:4px;right:4px;background:rgba(0,0,0,.6);border:none;border-radius:50%;width:22px;height:22px;color:#fff;font-size:.7rem;cursor:pointer;display:flex;align-items:center;justify-content:center">✕</button>
+          </div>`;
+        }
+        return `<div style="border-radius:10px;background:rgba(110,145,210,.07);border:1px solid var(--line);padding:12px;display:flex;flex-direction:column;gap:6px;cursor:pointer" onclick="downloadDoc('${d.id}')">
+          <div style="font-size:1.5rem;text-align:center">${getDocIcon(d.name).icon}</div>
+          <div style="font-size:.7rem;color:#eaf0fb;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center">${esc(d.name||'')}</div>
+          <div style="font-size:.65rem;color:var(--muted);text-align:center">${formatFileSize(d.size)}</div>
+        </div>`;
+      }).join('');
+    }
+  }
+
+  // ── Documents subcollection list (used elsewhere) ──
   const el = document.getElementById('jobDocList');
   const countEl = document.getElementById('jobDocCount');
   if (!el) return;
