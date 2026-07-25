@@ -651,6 +651,7 @@
       .kt-topbar { padding: 0 14px; }
       .kt-page { padding: 14px; }
       .kt-search { display: none; }
+      .hide-mobile { display: none; }
     }
     /* ══ MISC ══ */
     .table-wrap { overflow: auto; }
@@ -1297,11 +1298,11 @@
               <thead><tr>
                 <th class="kt-sortable" data-sort="jobNumber" onclick="sortJobsList('jobNumber')" style="cursor:pointer;user-select:none">Job # <span class="kt-sort-arrow" id="sortArrow_jobNumber"></span></th>
                 <th class="kt-sortable" data-sort="name" onclick="sortJobsList('name')" style="cursor:pointer;user-select:none">Job Name <span class="kt-sort-arrow" id="sortArrow_name"></span></th>
-                <th class="kt-sortable" data-sort="client" onclick="sortJobsList('client')" style="cursor:pointer;user-select:none">Client <span class="kt-sort-arrow" id="sortArrow_client"></span></th>
+                <th class="kt-sortable hide-mobile" data-sort="client" onclick="sortJobsList('client')" style="cursor:pointer;user-select:none">Client <span class="kt-sort-arrow" id="sortArrow_client"></span></th>
                 <th class="kt-sortable" data-sort="status" onclick="sortJobsList('status')" style="cursor:pointer;user-select:none">Status <span class="kt-sort-arrow" id="sortArrow_status"></span></th>
-                <th class="kt-sortable" data-sort="contractValue" onclick="sortJobsList('contractValue')" style="text-align:right;cursor:pointer;user-select:none">Contract <span class="kt-sort-arrow" id="sortArrow_contractValue"></span></th>
-                <th class="kt-sortable" data-sort="statusDate" onclick="sortJobsList('statusDate')" style="cursor:pointer;user-select:none">Status Date <span class="kt-sort-arrow" id="sortArrow_statusDate"></span></th>
-                <th class="kt-sortable" data-sort="salesRep" onclick="sortJobsList('salesRep')" style="cursor:pointer;user-select:none">Sales Rep <span class="kt-sort-arrow" id="sortArrow_salesRep"></span></th>
+                <th class="kt-sortable hide-mobile" data-sort="contractValue" onclick="sortJobsList('contractValue')" style="text-align:right;cursor:pointer;user-select:none">Contract <span class="kt-sort-arrow" id="sortArrow_contractValue"></span></th>
+                <th class="kt-sortable hide-mobile" data-sort="statusDate" onclick="sortJobsList('statusDate')" style="cursor:pointer;user-select:none">Status Date <span class="kt-sort-arrow" id="sortArrow_statusDate"></span></th>
+                <th class="kt-sortable hide-mobile" data-sort="salesRep" onclick="sortJobsList('salesRep')" style="cursor:pointer;user-select:none">Sales Rep <span class="kt-sort-arrow" id="sortArrow_salesRep"></span></th>
                 <th></th>
               </tr></thead>
               <tbody id="conListBody"></tbody>

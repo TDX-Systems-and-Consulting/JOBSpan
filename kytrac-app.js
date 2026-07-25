@@ -828,16 +828,18 @@ function conRenderList() {
 
   jobsToRender.forEach(job => {
     const tr = document.createElement('tr');
+    tr.style.cssText = 'cursor:pointer';
+    tr.onclick = () => openJobDetail(job.id);
     const val = getJobValue(job) ? '$' + Math.round(getJobValue(job)).toLocaleString() : '—';
     tr.innerHTML = `
-      <td style="color:var(--amber);font-weight:700">${job.jobNumber || '—'}</td>
-      <td style="font-weight:600">${job.name}</td>
-      <td>${job.client}</td>
-      <td><span style="background:var(--amber-light);color:var(--amber);padding:3px 8px;border-radius:8px;font-size:.78rem">${job.status}</span></td>
-      <td style="color:#a3f2d2">${val}</td>
-      <td>${job.startDate || '—'}</td>
-      <td>${job.superintendent || job.pm || '—'}</td>
-      <td><button class="btn" style="padding:4px 10px;font-size:.78rem" onclick="openJobDetail('${job.id}')">Open</button></td>
+      <td style="color:var(--amber);font-weight:700;white-space:nowrap">${job.jobNumber || '—'}</td>
+      <td style="font-weight:600">${esc(job.name)}</td>
+      <td class="hide-mobile">${esc(job.client)}</td>
+      <td><span style="background:var(--amber-light);color:var(--amber);padding:3px 8px;border-radius:8px;font-size:.78rem;white-space:nowrap">${esc(job.status)}</span></td>
+      <td class="hide-mobile" style="color:#a3f2d2">${val}</td>
+      <td class="hide-mobile">${job.startDate || '—'}</td>
+      <td class="hide-mobile">${esc(job.superintendent || job.pm || '—')}</td>
+      <td>›</td>
     `;
     tbody.appendChild(tr);
   });
