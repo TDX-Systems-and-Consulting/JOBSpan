@@ -6172,8 +6172,8 @@ async function sendLienWaiver(jobId, invId, type) {
     const ref = await coll('jobs').doc(jobId).collection('lienWaivers').add(waiverData);
     const waiverId = ref.id;
 
-    // Ensure portal token exists (reuse shareCustomerPortal logic)
-    const tokenQuery = await coll('portalTokens')
+    // Ensure portal token exists — portalTokens lives at root, not under company
+    const tokenQuery = await conDb.collection('portalTokens')
       .where('jobId','==',jobId).limit(1).get();
 
     let token;
@@ -6181,7 +6181,7 @@ async function sendLienWaiver(jobId, invId, type) {
       token = tokenQuery.docs[0].id;
     } else {
       token = jobId + '-hash-' + Math.random().toString(36).slice(2,10);
-      await coll('portalTokens').doc(token).set({
+      await conDb.collection('portalTokens').doc(token).set({
         jobId, companyId: currentCompanyId || null,
         created: Date.now(), createdBy: conCurrentUser?.email || '',
         expires: null, shareInvoices: true
