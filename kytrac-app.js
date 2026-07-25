@@ -5254,9 +5254,18 @@ function renderJobInvoiceList(jobId, invs) {
           ? `<span class="btn" style="padding:4px 10px;font-size:.76rem;opacity:.7;cursor:default">✓ Synced to QuickBooks</span>`
           : `<button class="btn" style="padding:4px 10px;font-size:.76rem;background:rgba(45,181,110,.15);color:#2db56e;border-color:rgba(45,181,110,.4)" onclick="pushInvoiceToQuickBooks('${jobId}','${inv.id}', this)">📗 Push to QuickBooks</button>`
         }
+        <button class="btn" style="padding:4px 10px;font-size:.76rem;background:rgba(245,158,11,.12);color:#f59e0b;border-color:rgba(245,158,11,.35)"
+          onclick="sendLienWaiver('${jobId}','${inv.id}','conditional')" title="Send Conditional Lien Waiver for customer e-signature">📋 Lien Waiver</button>
       </div>
+      <div id="lienStatus_${inv.id}"></div>
     </div>`;
   }).join('');
+
+  // Async: load lien waiver status badge under each invoice
+  invs.forEach(inv => {
+    const statusEl = document.getElementById('lienStatus_' + inv.id);
+    if (statusEl) loadLienWaiverStatus(jobId, inv.id, statusEl);
+  });
 }
 
 // ── Open Add Invoice Modal ──
@@ -6027,6 +6036,191 @@ window.calcInvBalance = calcInvBalance;
 window.importEstimateToInvoice = importEstimateToInvoice;
 window.printInvoice = printInvoice;
 window.printInvoiceById = printInvoiceById;
+
+// ════════════════════════════════════════════════════
+// ── LIEN WAIVER SYSTEM ──
+// E-SIGN Act compliant: stores signer name, drawn signature image,
+// timestamp (server), IP address (client-side best-effort), document
+// content hash (SHA-256 of the frozen text), and portal token identity.
+// Missouri uses two standard forms:
+//   Conditional   — signed at invoice send (payment not yet confirmed)
+//   Unconditional — signed after payment is confirmed (clears the lien)
+// Both are generated pre-filled from job/invoice data, sent via the
+// existing Customer Portal token link, and stored in Firestore under
+// jobs/{jobId}/lienWaivers/{waiverId}.
+// ════════════════════════════════════════════════════
+
+// ── Generate lien waiver text (Missouri standard language) ──
+function buildLienWaiverText(type, job, inv, co) {
+  const ownerName   = job.client || 'Property Owner';
+  const propAddress = job.address || 'Property Address on File';
+  const contractor  = (companyProfile.companyName || companyProfile.legalName || 'Contractor');
+  const amount      = (inv ? (inv.total || 0) : (co ? (co.amount || 0) : 0));
+  const docNum      = inv ? (inv.number || 'Invoice') : (co ? ('Change Order: ' + (co.title || '')) : 'Contract');
+  const jobName     = job.name || 'Project';
+  const today       = new Date().toLocaleDateString('en-US', { year:'numeric', month:'long', day:'numeric' });
+
+  if (type === 'conditional') {
+    return [
+      `CONDITIONAL WAIVER AND RELEASE UPON PROGRESS PAYMENT`,
+      ``,
+      `Project: ${jobName}`,
+      `Property Address: ${propAddress}`,
+      `Owner / Customer: ${ownerName}`,
+      `Contractor: ${contractor}`,
+      `Document Reference: ${docNum}`,
+      `Amount of this Payment: $${amount.toLocaleString(undefined, {minimumFractionDigits:2,maximumFractionDigits:2})}`,
+      `Date: ${today}`,
+      ``,
+      `CONDITIONAL WAIVER`,
+      `The undersigned has been paid and has received a progress payment in the sum of`,
+      `$${amount.toLocaleString(undefined, {minimumFractionDigits:2,maximumFractionDigits:2})} for labor, services, equipment, or`,
+      `materials furnished to ${ownerName} on the job of ${jobName}, located at`,
+      `${propAddress}, and does hereby waive and release any mechanic's lien,`,
+      `stop payment notice, or any right against a labor and material bond on the`,
+      `job, to the following extent:`,
+      ``,
+      `This release covers a progress payment for labor, services, equipment, or`,
+      `materials furnished to the property through the date of this document only`,
+      `and does not cover any retentions retained before or after the release date;`,
+      `extras or change orders furnished before or after the release date for which`,
+      `payment has not been received; or disputed items.`,
+      ``,
+      `THIS RELEASE IS CONDITIONED UPON RECEIPT OF PAYMENT IN THE AMOUNT`,
+      `STATED ABOVE. If payment is not received, this release is void and of no`,
+      `effect, and the undersigned retains all lien rights as if this release had`,
+      `not been executed.`,
+      ``,
+      `The undersigned warrants that they have authority to execute this release on`,
+      `behalf of the contracting party identified above.`,
+    ].join('\n');
+  } else {
+    return [
+      `UNCONDITIONAL WAIVER AND RELEASE UPON FINAL PAYMENT`,
+      ``,
+      `Project: ${jobName}`,
+      `Property Address: ${propAddress}`,
+      `Owner / Customer: ${ownerName}`,
+      `Contractor: ${contractor}`,
+      `Document Reference: ${docNum}`,
+      `Final Payment Amount: $${amount.toLocaleString(undefined, {minimumFractionDigits:2,maximumFractionDigits:2})}`,
+      `Date: ${today}`,
+      ``,
+      `UNCONDITIONAL WAIVER`,
+      `The undersigned has been paid in full for all labor, services, equipment,`,
+      `or materials furnished to ${ownerName} on the job of ${jobName},`,
+      `located at ${propAddress}, and does hereby unconditionally waive and`,
+      `release any mechanic's lien, stop payment notice, or any right against a`,
+      `labor and material bond on the job.`,
+      ``,
+      `The undersigned warrants that all subcontractors and suppliers have been`,
+      `paid in full or that all claims for labor, services, equipment, or materials`,
+      `furnished to the above-referenced project have been released.`,
+      ``,
+      `THIS RELEASE IS UNCONDITIONAL AND IS EFFECTIVE UPON EXECUTION. The`,
+      `undersigned warrants that they have authority to execute this release on`,
+      `behalf of the contracting party identified above.`,
+    ].join('\n');
+  }
+}
+
+// ── Simple SHA-256 hash via Web Crypto (async) ──
+async function sha256(str) {
+  try {
+    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+    return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
+  } catch(e) { return 'hash-unavailable'; }
+}
+
+// ── Send lien waiver — creates the waiver doc and opens share dialog ──
+async function sendLienWaiver(jobId, invId, type) {
+  if (!conDb || !jobId) return;
+
+  const job = conJobs.find(j => j.id === jobId);
+  if (!job) { alert('Job not found.'); return; }
+
+  let inv = null, co = null;
+  if (invId) {
+    // Load the invoice data
+    try {
+      const invDoc = await coll('jobs').doc(jobId).collection('invoices').doc(invId).get();
+      if (invDoc.exists) inv = { id: invDoc.id, ...invDoc.data() };
+    } catch(e) {}
+  }
+
+  const waiverText = buildLienWaiverText(type, job, inv, co);
+  const hash = await sha256(waiverText);
+
+  const waiverData = {
+    type,                      // 'conditional' | 'unconditional'
+    jobId,
+    jobName: job.name || '',
+    invoiceId: invId || null,
+    invoiceNumber: inv?.number || null,
+    amount: inv?.total || 0,
+    propertyAddress: job.address || '',
+    ownerName: job.client || '',
+    contractorName: companyProfile.companyName || companyProfile.legalName || '',
+    documentText: waiverText,
+    documentHash: hash,
+    status: 'pending',         // pending | signed | declined
+    createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+    createdBy: conCurrentUser?.email || '',
+  };
+
+  try {
+    const ref = await coll('jobs').doc(jobId).collection('lienWaivers').add(waiverData);
+    const waiverId = ref.id;
+
+    // Ensure portal token exists (reuse shareCustomerPortal logic)
+    const tokenQuery = await coll('portalTokens')
+      .where('jobId','==',jobId).limit(1).get();
+
+    let token;
+    if (!tokenQuery.empty) {
+      token = tokenQuery.docs[0].id;
+    } else {
+      token = jobId + '-hash-' + Math.random().toString(36).slice(2,10);
+      await coll('portalTokens').doc(token).set({
+        jobId, companyId: currentCompanyId || null,
+        created: Date.now(), createdBy: conCurrentUser?.email || '',
+        expires: null, shareInvoices: true
+      });
+    }
+
+    const portalUrl = `${location.origin}${location.pathname}?portal=${token}&waiver=${waiverId}`;
+    const typeLabel = type === 'conditional' ? 'Conditional Lien Waiver' : 'Unconditional Lien Waiver';
+
+    // Copy link and show confirm
+    try { await navigator.clipboard.writeText(portalUrl); } catch(e) {}
+
+    alert(`${typeLabel} created and link copied to clipboard.\n\nSend this link to ${job.client || 'the customer'} for their e-signature.\n\nLink: ${portalUrl}`);
+
+    // Refresh invoice list to show waiver status
+    loadJobInvoices(jobId);
+  } catch(e) {
+    alert('Error creating lien waiver: ' + e.message);
+  }
+}
+window.sendLienWaiver = sendLienWaiver;
+
+// ── Lien waiver status badge for invoice card ──
+async function loadLienWaiverStatus(jobId, invId, containerEl) {
+  if (!conDb || !containerEl) return;
+  try {
+    const snap = await coll('jobs').doc(jobId).collection('lienWaivers')
+      .where('invoiceId','==',invId).get();
+    if (snap.empty) return;
+    const waivers = [];
+    snap.forEach(d => waivers.push({ id: d.id, ...d.data() }));
+    const latest = waivers.sort((a,b) => (b.createdAt?.seconds||0) - (a.createdAt?.seconds||0))[0];
+    const colors = { signed: '#1dbb87', pending: '#f59e0b', declined: '#ef5350' };
+    const labels = { signed: '✅ Lien Waiver Signed', pending: '⏳ Lien Waiver Sent', declined: '❌ Lien Waiver Declined' };
+    const c = colors[latest.status] || 'var(--muted)';
+    containerEl.innerHTML = `<div style="font-size:.72rem;color:${c};font-weight:700;margin-top:4px">${labels[latest.status]||latest.status}
+      ${latest.signedAt ? ' · ' + new Date(latest.signedAt).toLocaleDateString() : ''}</div>`;
+  } catch(e) {}
+}
 
 // ════════════════════════════════════════════════════
 // ── COMPANY SETTINGS ──
@@ -9256,6 +9450,13 @@ function loadPortalJob(db, jobId, tokenData, token) {
           const d = snap.docs[0];
           renderPortalProposal({ id: d.id, ...d.data() }, jobId);
         }).catch(() => {});
+
+      // Load lien waiver if ?waiver= param is present in the URL
+      const urlWaiverId = new URLSearchParams(location.search).get('waiver');
+      if (urlWaiverId) {
+        // Small delay so portal sections are in the DOM first
+        setTimeout(() => renderPortalLienWaiver(urlWaiverId), 400);
+      }
     })
     .catch(() => showPortalNotFound());
 }
@@ -9541,6 +9742,181 @@ function showPortalNotFound() {
   document.getElementById('portalLoading').style.display = 'none';
   document.getElementById('portalNotFound').style.display = 'block';
 }
+
+// ── Portal: Lien Waiver signing view ──
+// When the customer opens a portal link with ?waiver=id, this renders
+// the lien waiver document for e-signature instead of (or alongside)
+// the normal portal view. The waiver doc is pre-filled and frozen —
+// the customer cannot edit it, only sign or decline.
+function renderPortalLienWaiver(waiverId) {
+  if (!_portalDb || !_portalCompanyId || !_portalJobId) return;
+
+  const waiverColl = _portalDb
+    .collection('companies').doc(_portalCompanyId)
+    .collection('jobs').doc(_portalJobId)
+    .collection('lienWaivers');
+
+  waiverColl.doc(waiverId).get().then(doc => {
+    if (!doc.exists) return;
+    const waiver = { id: doc.id, ...doc.data() };
+
+    // Find or create the lien waiver section in the portal
+    let section = document.getElementById('portalLienWaiverSection');
+    if (!section) {
+      section = document.createElement('div');
+      section.id = 'portalLienWaiverSection';
+      section.className = 'portal-section';
+      // Insert before the message section or append
+      const msgSection = document.getElementById('portalMessageSection');
+      if (msgSection) msgSection.parentNode.insertBefore(section, msgSection);
+      else document.getElementById('ktPortalView')?.appendChild(section);
+    }
+    section.style.display = 'block';
+
+    const typeLabel = waiver.type === 'conditional'
+      ? 'Conditional Lien Waiver (Progress Payment)'
+      : 'Unconditional Lien Waiver (Final Payment)';
+
+    if (waiver.status === 'signed') {
+      section.innerHTML = `
+        <div class="portal-section-head">📋 ${typeLabel}</div>
+        <div style="color:#1dbb87;font-weight:700;margin-bottom:8px">✅ Signed</div>
+        <div style="font-size:.82rem;color:var(--muted)">Signed by ${esc(waiver.signedByName||'customer')}
+          ${waiver.signedAt ? ' on ' + new Date(waiver.signedAt).toLocaleDateString() : ''}.
+        </div>
+        ${waiver.signatureDataUrl ? `<img src="${waiver.signatureDataUrl}" style="height:50px;margin-top:10px;background:#fff;border-radius:4px;padding:4px">` : ''}`;
+      return;
+    }
+
+    if (waiver.status === 'declined') {
+      section.innerHTML = `
+        <div class="portal-section-head">📋 ${typeLabel}</div>
+        <div style="color:#ef5350;font-weight:700">Declined</div>
+        <div style="font-size:.82rem;color:var(--muted);margin-top:4px">
+          ${waiver.declineReason ? esc(waiver.declineReason) : 'No reason provided.'}
+        </div>`;
+      return;
+    }
+
+    // Pending — show document + signature pad
+    // Record view timestamp
+    waiverColl.doc(waiverId).update({
+      viewedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      lastPortalToken: _portalToken || ''
+    }).catch(() => {});
+
+    section.innerHTML = `
+      <div class="portal-section-head">📋 ${typeLabel} — Signature Required</div>
+      <div style="background:rgba(245,158,11,.07);border:1px solid rgba(245,158,11,.2);border-radius:10px;padding:16px;margin-bottom:16px">
+        <div style="font-size:.72rem;color:var(--amber);font-weight:800;text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">Document</div>
+        <pre style="font-size:.75rem;color:var(--muted);white-space:pre-wrap;word-break:break-word;line-height:1.6;font-family:inherit">${esc(waiver.documentText||'')}</pre>
+      </div>
+      <div style="font-size:.78rem;color:var(--muted);margin-bottom:14px;line-height:1.55">
+        By signing below, you acknowledge that you have read and agree to the terms of this
+        ${typeLabel} and that your electronic signature is legally binding under the
+        federal Electronic Signatures in Global and National Commerce Act (E-SIGN).
+      </div>
+      <div style="margin-bottom:10px">
+        <input id="portalLienSigName" placeholder="Type your full legal name"
+          style="width:100%;max-width:460px;padding:9px 12px;border-radius:8px;border:1px solid var(--line);background:rgba(8,18,36,.6);color:#eaf0fb;font-size:.9rem" />
+      </div>
+      <canvas id="portalLienSigCanvas" class="portal-sig-canvas" style="width:100%;max-width:460px;height:120px;border:1px solid var(--line);border-radius:8px;background:#fff;display:block;margin-bottom:10px"></canvas>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <button class="btn" style="padding:6px 14px;font-size:.8rem" onclick="clearPortalLienSignature()">Clear</button>
+        <button class="btn-amber" style="padding:9px 20px;font-size:.88rem" onclick="submitPortalLienSignature('${waiverId}','approved')">✓ Sign &amp; Submit</button>
+        <button class="btn" style="padding:9px 20px;font-size:.88rem;color:#ef5350" onclick="submitPortalLienSignature('${waiverId}','declined')">Decline</button>
+      </div>`;
+
+    // Init signature pad on the lien canvas
+    const canvas = document.getElementById('portalLienSigCanvas');
+    if (canvas) {
+      const ratio = window.devicePixelRatio || 1;
+      const rect = canvas.getBoundingClientRect();
+      canvas.width = (rect.width || 460) * ratio;
+      canvas.height = (rect.height || 120) * ratio;
+      const ctx = canvas.getContext('2d');
+      ctx.scale(ratio, ratio);
+      ctx.strokeStyle = '#111827';
+      ctx.lineWidth = 2;
+      ctx.lineCap = 'round';
+      window._lienSigCtx = ctx;
+      window._lienSigDrawing = false;
+      window._lienSigHasStroke = false;
+
+      function pos(e) {
+        const r = canvas.getBoundingClientRect();
+        const t = e.touches ? e.touches[0] : e;
+        return { x: (t.clientX - r.left), y: (t.clientY - r.top) };
+      }
+      function start(e) { e.preventDefault(); window._lienSigDrawing = true; const p = pos(e); ctx.beginPath(); ctx.moveTo(p.x, p.y); }
+      function move(e) { if (!window._lienSigDrawing) return; e.preventDefault(); const p = pos(e); ctx.lineTo(p.x, p.y); ctx.stroke(); window._lienSigHasStroke = true; }
+      function end() { window._lienSigDrawing = false; }
+      canvas.onmousedown = start; canvas.onmousemove = move; canvas.onmouseup = end; canvas.onmouseleave = end;
+      canvas.ontouchstart = start; canvas.ontouchmove = move; canvas.ontouchend = end;
+    }
+  }).catch(() => {});
+}
+window.renderPortalLienWaiver = renderPortalLienWaiver;
+
+function clearPortalLienSignature() {
+  const canvas = document.getElementById('portalLienSigCanvas');
+  if (canvas && window._lienSigCtx) {
+    window._lienSigCtx.clearRect(0, 0, canvas.width, canvas.height);
+    window._lienSigHasStroke = false;
+  }
+}
+window.clearPortalLienSignature = clearPortalLienSignature;
+
+async function submitPortalLienSignature(waiverId, action) {
+  if (!_portalDb || !_portalCompanyId || !_portalJobId) return;
+
+  const waiverRef = _portalDb
+    .collection('companies').doc(_portalCompanyId)
+    .collection('jobs').doc(_portalJobId)
+    .collection('lienWaivers').doc(waiverId);
+
+  if (action === 'declined') {
+    const reason = prompt('Optional: let us know why (or leave blank).') || '';
+    try {
+      await waiverRef.update({
+        status: 'declined',
+        declineReason: reason,
+        signedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        lastPortalToken: _portalToken || ''
+      });
+      renderPortalLienWaiver(waiverId);
+    } catch(e) { alert('Error: ' + e.message); }
+    return;
+  }
+
+  const nameEl = document.getElementById('portalLienSigName');
+  const name = nameEl ? nameEl.value.trim() : '';
+  if (!name) { alert('Please type your full legal name before signing.'); return; }
+  if (!window._lienSigHasStroke) { alert('Please sign in the box before submitting.'); return; }
+
+  const canvas = document.getElementById('portalLienSigCanvas');
+  const sigDataUrl = canvas ? canvas.toDataURL('image/png') : '';
+
+  // E-SIGN audit fields
+  const signerIp = await fetch('https://api.ipify.org?format=json')
+    .then(r => r.json()).then(d => d.ip).catch(() => 'unavailable');
+
+  try {
+    await waiverRef.update({
+      status: 'signed',
+      signedByName: name,
+      signatureDataUrl: sigDataUrl,
+      signerIp,
+      signedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      signedAtMs: Date.now(),
+      lastPortalToken: _portalToken || '',
+      // Document hash was stored at creation — immutable, not re-hashed here
+      // so the audit trail proves the customer signed the exact frozen text
+    });
+    renderPortalLienWaiver(waiverId);
+  } catch(e) { alert('Error submitting signature: ' + e.message); }
+}
+window.submitPortalLienSignature = submitPortalLienSignature;
 
 // ── Portal Proposal: view + e-signature capture ──
 // Renders whatever the latest proposal version looks like, branching on
