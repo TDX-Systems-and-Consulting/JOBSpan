@@ -8708,10 +8708,14 @@ function renderJobDocList(docs) {
 
 function loadJobDocs(jobId) {
   if (!jobId) return;
-  // First render from in-memory cache immediately
   const cached = allDocuments.filter(d => d.jobId === jobId);
-  renderJobDocList(cached);
-  // Then refresh from Firestore if available
+  if (cached.length) {
+    renderJobDocList(cached);
+  } else {
+    // No cache yet — show loading spinner instead of 'No files yet'
+    const filesEl = document.getElementById('detailFilesList');
+    if (filesEl) filesEl.innerHTML = '<div class="small muted" style="text-align:center;padding:20px;grid-column:1/-1">Loading files…</div>';
+  }
   if (!conDb) return;
   coll('documents')
     .where('jobId','==',jobId)
@@ -8723,7 +8727,6 @@ function loadJobDocs(jobId) {
       renderJobDocList(docs);
     })
     .catch(() => {
-      // orderBy may need index - fall back to unordered
       coll('documents').where('jobId','==',jobId).get()
         .then(snap => {
           const docs = [];
