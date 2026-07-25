@@ -4117,7 +4117,7 @@ function conInitFirebase() {
               loadUserRole(user, () => {
                 conShowMain(user);
                 conLoadJobs();
-                setTimeout(() => loadCompanyProfile(), 800);
+                loadCompanyProfile();
               });
             });
           };
@@ -8660,6 +8660,13 @@ function renderDocCard(d) {
 
 // ── Per-job document list ──
 function renderJobDocList(docs) {
+  // Merge into global cache so openDocument() / downloadDoc() can find them
+  if (docs && docs.length) {
+    docs.forEach(d => {
+      if (!allDocuments.find(x => x.id === d.id)) allDocuments.push(d);
+    });
+  }
+
   // ── Job-detail Files tab (photo grid) ──
   const filesEl = document.getElementById('detailFilesList');
   if (filesEl) {
