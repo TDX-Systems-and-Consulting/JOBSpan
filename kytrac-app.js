@@ -4100,18 +4100,11 @@ function conInitFirebase() {
     conFunctions = firebase.functions();
     conFirebaseReady = true;
 
-    // Don't reveal the sign-in wall immediately — wait briefly for
-    // onAuthStateChanged to fire first. If the user has an existing
-    // session, it resolves within ~300ms and we never show the wall.
-    // Only show it if no user arrives within that window.
-    let authResolved = false;
-    const authWallTimer = setTimeout(() => {
-      if (!authResolved && !window._signingIn) ktRevealSignIn();
-    }, 600);
-
+    // Never show the sign-in wall until Firebase explicitly fires
+    // onAuthStateChanged with null — meaning no active session.
+    // Firebase always fires once on init. Removing the timer means
+    // the loading spinner shows until the answer arrives, no flash.
     conAuth.onAuthStateChanged(user => {
-      authResolved = true;
-      clearTimeout(authWallTimer);
       if (user) {
         conCurrentUser = user;
 
