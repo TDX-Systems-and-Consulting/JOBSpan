@@ -16908,14 +16908,19 @@ function uploadJobFiles(input) {
           });
         }
 
-        await coll('jobs').doc(conCurrentJobId).collection('documents').add({
+        await coll('documents').add({
           name: file.name,
           type: file.type,
           size: file.size,
-          data: dataUrl,
+          dataUrl,
+          jobId: conCurrentJobId,
+          jobName: conJobs.find(j => j.id === conCurrentJobId)?.name || '',
+          category: file.type.startsWith('image/') ? 'Photo' : 'Other',
+          notes: '',
           uploadedAt: firebase.firestore.FieldValue.serverTimestamp(),
+          uploadedDate: new Date().toISOString().split('T')[0],
           uploadedBy: conCurrentUser?.email || '',
-          companyId: currentCompanyId,
+          uploadedByName: conCurrentUser?.displayName || conCurrentUser?.email || '',
         });
       } catch(e) {
         alert('Error uploading ' + file.name + ': ' + e.message);
