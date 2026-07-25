@@ -305,7 +305,7 @@ function ktNav(key, btn) {
   }
   if(key==='dashboard') { conRenderBoard(); conRenderStats(); renderHomeDashboard(); }
   if(key==='catalog') renderCatalog();
-  if(key==='calendar') { loadGlobalPhases(); loadCalendarEvents(); buildTeamColors(); renderCalendar(); loadGCalStatus(); }
+  if(key==='calendar') { loadGlobalPhases(); loadCalendarEvents(); buildTeamColors(); renderCalendar(); loadGCalStatus(); loadTimeOffRequests(); }
   if(key==='time') { loadTimeEntries(); renderTimeLog(); renderTodaySummary(); populateTimeFilters(); }
   if(key==='logs') { loadGlobalLogs(); renderGlobalLogs(); }
   if(key==='todos') { loadTodos(); populateTodoJobFilter(); populateTodoAssigneeFilter(); renderTodos(); }
@@ -10734,6 +10734,137 @@ window.openCalEventModal = openCalEventModal;
 window.saveCalEvent = saveCalEvent;
 window.deleteCalEvent = deleteCalEvent;
 window.loadCalendarEvents = loadCalendarEvents;
+
+// ════════════════════════════════════════════════════
+// ── TIME OFF REQUEST SYSTEM ──
+// Team members submit requests; Owners/Full Access approve or deny.
+// Approved requests show as blocked days on the calendar.
+// ════════════════════════════════════════════════════
+
+function openTimeOffModal() {
+  // Pre-fill dates to today
+  const today = new Date().toISOString().split('T')[0];
+  const startEl = document.getElementById('torStart');
+  const endEl = document.getElementById('torEnd');
+  if (startEl && !startEl.value) startEl.value = today;
+  if (endEl && !endEl.value) endEl.value = today;
+  kOpen('timeOffModal');
+}
+window.openTimeOffModal = openTimeOffModal;
+
+async function submitTimeOffRequest() {
+  const type = document.getElementById('torType')?.value;
+  const start = document.getElementById('torStart')?.value;
+  const end = document.getElementById('torEnd')?.value;
+  const note = document.getElementById('torNote')?.value.trim() || '';
+
+  if (!start || !end) { alert('Please select start and end dates.'); return; }
+  if (end < start) { alert('End date must be on or after start date.'); return; }
+  if (!conCurrentUser) { alert('You must be signed in.'); return; }
+
+  try {
+    await coll('timeOffRequests').add({
+      type,
+      startDate: start,
+      endDate: end,
+      note,
+      requestedBy: conCurrentUser.email,
+      requestedByName: conCurrentUser.displayName || conCurrentUser.email,
+      status: 'pending',  // pending | approved | denied
+      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      companyId: currentCompanyId,
+    });
+
+    kClose('timeOffModal');
+    // Reset form
+    document.getElementById('torNote').value = '';
+    document.getElementById('torStart').value = '';
+    document.getElementById('torEnd').value = '';
+
+    alert('✅ Time off request submitted. Your manager will review it.');
+    loadTimeOffRequests();
+  } catch(e) {
+    alert('Error submitting request: ' + e.message);
+  }
+}
+window.submitTimeOffRequest = submitTimeOffRequest;
+
+async function loadTimeOffRequests() {
+  if (!conDb || !currentCompanyId) return;
+
+  const panel = document.getElementById('timeOffRequestsPanel');
+  const list = document.getElementById('timeOffRequestsList');
+  if (!panel || !list) return;
+
+  // Only owners and full access users see the panel
+  const isAdmin = conUserRole === 'Owner' || conUserRole === 'Project Manager' || window._hasFullAccess;
+
+  try {
+    let query = coll('timeOffRequests').orderBy('createdAt', 'desc').limit(50);
+
+    // Non-admins only see their own requests
+    if (!isAdmin) {
+      query = coll('timeOffRequests')
+        .where('requestedBy', '==', conCurrentUser?.email || '')
+        .orderBy('createdAt', 'desc').limit(20);
+    }
+
+    const snap = await query.get().catch(() =>
+      coll('timeOffRequests').where('requestedBy','==', conCurrentUser?.email || '').limit(20).get()
+    );
+
+    const requests = [];
+    snap.forEach(d => requests.push({ id: d.id, ...d.data() }));
+
+    if (!requests.length) {
+      panel.style.display = 'none';
+      return;
+    }
+
+    panel.style.display = 'block';
+
+    const statusColor = { pending: '#f59e0b', approved: '#1dbb87', denied: '#ef5350' };
+    const statusLabel = { pending: '⏳ Pending', approved: '✅ Approved', denied: '❌ Denied' };
+
+    list.innerHTML = requests.map(r => `
+      <div style="background:rgba(8,18,36,.6);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:8px">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">
+          <div>
+            <div style="font-weight:700;color:#eaf0fb;font-size:.88rem">${esc(r.requestedByName||r.requestedBy)} — ${esc(r.type)}</div>
+            <div style="font-size:.78rem;color:var(--muted);margin-top:2px">${r.startDate}${r.endDate !== r.startDate ? ' → ' + r.endDate : ''}${r.note ? ' · ' + esc(r.note) : ''}</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <span style="font-size:.75rem;font-weight:700;color:${statusColor[r.status]||'var(--muted)'}">${statusLabel[r.status]||r.status}</span>
+            ${isAdmin && r.status === 'pending' ? `
+              <button class="btn" style="padding:4px 10px;font-size:.74rem;background:rgba(29,187,135,.12);color:#1dbb87;border-color:rgba(29,187,135,.35)"
+                onclick="reviewTimeOffRequest('${r.id}','approved')">Approve</button>
+              <button class="btn" style="padding:4px 10px;font-size:.74rem;background:rgba(239,83,80,.1);color:#ef5350;border-color:rgba(239,83,80,.3)"
+                onclick="reviewTimeOffRequest('${r.id}','denied')">Deny</button>
+            ` : ''}
+          </div>
+        </div>
+      </div>`).join('');
+  } catch(e) {
+    panel.style.display = 'none';
+  }
+}
+window.loadTimeOffRequests = loadTimeOffRequests;
+
+async function reviewTimeOffRequest(requestId, decision) {
+  if (!conDb) return;
+  try {
+    await coll('timeOffRequests').doc(requestId).update({
+      status: decision,
+      reviewedBy: conCurrentUser?.email || '',
+      reviewedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    });
+    loadTimeOffRequests();
+    renderCalendar(); // Refresh calendar to show/hide approved blocks
+  } catch(e) {
+    alert('Error updating request: ' + e.message);
+  }
+}
+window.reviewTimeOffRequest = reviewTimeOffRequest;
 
 // ════════════════════════════════════════════════════
 // ── REPORTS & ANALYTICS ──

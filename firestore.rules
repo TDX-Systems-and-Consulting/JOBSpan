@@ -236,6 +236,14 @@ service cloud.firestore {
           allow update: if inCompany(companyId) || request.auth == null;
           allow delete: if false;
         }
+        match /timeOffRequests/{requestId} {
+          // Any team member can create and read their own requests.
+          // Only owners/full access can update (approve/deny).
+          allow read: if inCompany(companyId);
+          allow create: if inCompany(companyId);
+          allow update: if inCompany(companyId) && hasFullAccess();
+          allow delete: if false;
+        }
         match /estimateGroups/{groupId} {
           allow read: if inCompany(companyId);
           allow write: if inCompany(companyId) && hasFullAccess();

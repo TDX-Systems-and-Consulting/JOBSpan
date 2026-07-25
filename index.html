@@ -1369,6 +1369,7 @@
             <span style="display:flex;align-items:center;gap:4px;font-size:.72rem;color:var(--muted)"><span style="width:10px;height:10px;border-radius:2px;background:#3b82f6;display:inline-block"></span>Time</span>
             <span id="calTeamLegend" style="display:flex;gap:6px;flex-wrap:wrap"></span>
             <button class="btn" onclick="openCalEventModal()" style="font-size:.74rem;padding:4px 10px">+ Event</button>
+            <button class="btn" onclick="openTimeOffModal()" style="font-size:.74rem;padding:4px 10px;background:rgba(139,92,246,.15);color:#a78bfa;border-color:rgba(139,92,246,.35)">🏖 Time Off</button>
           </div>
           <div class="view-toggle">
             <button class="view-toggle-btn active" id="calMonthBtn" onclick="switchCalView('month',this)">Month</button>
@@ -1394,6 +1395,52 @@
         <div class="cal-week-grid" id="calWeekHeader" style="margin-bottom:2px"></div>
         <div style="overflow-y:auto;max-height:600px">
           <div class="cal-week-grid" id="calWeekGrid"></div>
+        </div>
+      </div>
+      <!-- Time Off Requests Panel (Owner/Full Access only) -->
+      <div id="timeOffRequestsPanel" style="margin-top:20px;display:none">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+          <div style="font-size:.9rem;font-weight:700;color:#eaf0fb">🏖 Time Off Requests</div>
+        </div>
+        <div id="timeOffRequestsList"></div>
+      </div>
+    </div>
+
+    <!-- Time Off Request Modal -->
+    <div class="modal-overlay" id="timeOffModal" style="display:none" onclick="if(event.target===this)kClose('timeOffModal')">
+      <div class="modal-box" style="max-width:480px">
+        <div class="modal-head" style="padding:20px 24px">
+          <div style="font-size:1.1rem;font-weight:800;color:#eaf0fb">🏖 Request Time Off</div>
+          <button class="modal-close" onclick="kClose('timeOffModal')">✕</button>
+        </div>
+        <div style="padding:20px 24px;display:flex;flex-direction:column;gap:14px">
+          <div>
+            <label class="field-label">Type</label>
+            <select id="torType" style="width:100%;padding:9px 12px;border-radius:8px;border:1px solid var(--line);background:rgba(8,18,36,.6);color:#eaf0fb;font-size:.9rem">
+              <option value="Vacation">🌴 Vacation</option>
+              <option value="Personal">👤 Personal</option>
+              <option value="Sick">🤒 Sick</option>
+              <option value="Other">📋 Other</option>
+            </select>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+            <div>
+              <label class="field-label">Start Date</label>
+              <input type="date" id="torStart" style="width:100%;padding:9px 12px;border-radius:8px;border:1px solid var(--line);background:rgba(8,18,36,.6);color:#eaf0fb;font-size:.9rem;box-sizing:border-box">
+            </div>
+            <div>
+              <label class="field-label">End Date</label>
+              <input type="date" id="torEnd" style="width:100%;padding:9px 12px;border-radius:8px;border:1px solid var(--line);background:rgba(8,18,36,.6);color:#eaf0fb;font-size:.9rem;box-sizing:border-box">
+            </div>
+          </div>
+          <div>
+            <label class="field-label">Note (optional)</label>
+            <textarea id="torNote" rows="3" placeholder="Any additional details..." style="width:100%;padding:9px 12px;border-radius:8px;border:1px solid var(--line);background:rgba(8,18,36,.6);color:#eaf0fb;font-size:.85rem;box-sizing:border-box;resize:vertical"></textarea>
+          </div>
+          <div style="display:flex;gap:10px;justify-content:flex-end">
+            <button class="btn" onclick="kClose('timeOffModal')">Cancel</button>
+            <button class="btn-amber" onclick="submitTimeOffRequest()">Submit Request</button>
+          </div>
         </div>
       </div>
     </div>
