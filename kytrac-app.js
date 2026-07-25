@@ -16876,33 +16876,53 @@ function uploadJobFiles(input) {
   if (!conCurrentJobId || !input.files?.length) return;
   const files = Array.from(input.files);
   const listEl = document.getElementById('detailFilesList');
-  if (listEl) listEl.innerHTML = '<div class="small muted" style="text-align:center;padding:20px;grid-column:1/-1">Uploading ' + files.length + ' file(s)...</div>';
 
-  // Convert to base64 and store in Firestore
-  Promise.all(files.map(file => new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = e => resolve({ name: file.name, type: file.type, size: file.size, data: e.target.result });
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  }))).then(async results => {
-    for (const f of results) {
-      // Only store files under 900KB (Firestore 1MB doc limit)
-      if (f.size > 900000) {
-        alert(f.name + ' is too large (max 900KB). Skipping.');
-        continue;
+  (async () => {
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      if (listEl) listEl.innerHTML = `<div class="small muted" style="text-align:center;padding:20px;grid-column:1/-1">Compressing &amp; uploading ${i+1} of ${files.length}: ${file.name}…</div>`;
+
+      try {
+        let dataUrl;
+        const isImage = file.type.startsWith('image/');
+
+        if (isImage) {
+          // Always compress images — avoids the 900KB Firestore limit
+          // and handles real iPhone photos (typically 3–8MB) transparently
+          const raw = await new Promise((res, rej) => {
+            const r = new FileReader();
+            r.onload = e => res(e.target.result);
+            r.onerror = rej;
+            r.readAsDataURL(file);
+          });
+          dataUrl = await compressImage(raw, 1600, 0.8).catch(() => raw);
+        } else if (file.size > 900000) {
+          if (!confirm(`"${file.name}" is ${(file.size/1024/1024).toFixed(1)}MB. Non-image files over 900KB can't be stored in JOBSpan yet. Skip this file?`)) continue;
+          continue;
+        } else {
+          dataUrl = await new Promise((res, rej) => {
+            const r = new FileReader();
+            r.onload = e => res(e.target.result);
+            r.onerror = rej;
+            r.readAsDataURL(file);
+          });
+        }
+
+        await coll('jobs').doc(conCurrentJobId).collection('documents').add({
+          name: file.name,
+          type: file.type,
+          size: file.size,
+          data: dataUrl,
+          uploadedAt: firebase.firestore.FieldValue.serverTimestamp(),
+          uploadedBy: conCurrentUser?.email || '',
+          companyId: currentCompanyId,
+        });
+      } catch(e) {
+        alert('Error uploading ' + file.name + ': ' + e.message);
       }
-      await coll('jobs').doc(conCurrentJobId).collection('documents').add({
-        name: f.name,
-        type: f.type,
-        size: f.size,
-        data: f.data,
-        uploadedAt: firebase.firestore.FieldValue.serverTimestamp(),
-        uploadedBy: conCurrentUser?.email || '',
-        companyId: currentCompanyId,
-      });
     }
     loadJobDocs(conCurrentJobId);
-  }).catch(e => alert('Upload error: ' + e.message));
+  })();
 }
 window.uploadJobFiles = uploadJobFiles;
 window.openJobPhotos = openJobPhotos;
