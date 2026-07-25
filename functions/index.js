@@ -227,6 +227,8 @@ exports.gcalOAuthCallback = functions.https.onRequest(async (req, res) => {
   const { companyId, uid } = parsed;
 
   try {
+    const cfg = getGoogleOAuthConfig();
+    console.log('GCal callback - client_id:', cfg?.client_id?.slice(0,20), 'secret_len:', cfg?.client_secret?.length, 'redirect:', cfg?.redirect_uri);
     const { tokens } = await oauth2Client.getToken(code);
     if (!tokens.refresh_token) {
       // Happens if the user had already connected before and Google
