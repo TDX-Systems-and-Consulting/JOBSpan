@@ -333,9 +333,14 @@ exports.pushPersonalEventToGCal = functions.firestore
 
     const eventBody = {
       summary: after.title || 'JOBSpan Event',
-      description: after.meetLink ? `Meet link: ${after.meetLink}` : undefined,
-      start: after.time ? { dateTime: `${after.date}T${after.time}:00` } : { date: after.date },
-      end: after.time ? { dateTime: `${after.date}T${after.time}:00` } : { date: after.date }
+      description: after.meetLink ? `Meet link: ${after.meetLink}` : (after.notes || undefined),
+      location: after.location || undefined,
+      start: after.time
+        ? { dateTime: `${after.date}T${after.time}:00`, timeZone: 'America/Chicago' }
+        : { date: after.date },
+      end: after.time
+        ? { dateTime: `${after.date}T${after.endTime || after.time}:00`, timeZone: 'America/Chicago' }
+        : { date: after.date }
     };
 
     try {
