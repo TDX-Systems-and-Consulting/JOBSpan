@@ -13357,6 +13357,7 @@ function computeProposalData(job, itemized) {
     itemized: !!itemized,
     grandTotal,
     rooms,
+    jobDescription: job?.notes || '',
     paymentSchedule: job?.paymentSchedule || null
   };
 }
@@ -13478,7 +13479,7 @@ function renderProposalDocumentHtml(data, job, co) {
     <div class="co-contact">${esc(job?.address||'')}</div>
   </div>
 
-  <div class="intro">Thank you for the opportunity to work on your project. The following outlines the full scope of work${itemized ? ' with itemized pricing by category' : ''}, organized room by room.</div>
+  ${data.jobDescription ? `<div class="intro" style="white-space:pre-line">${esc(data.jobDescription)}</div>` : `<div class="intro">Thank you for the opportunity to work on your project. The following outlines the full scope of work${itemized ? ' with itemized pricing by category' : ''}, organized by category.</div>`}
 
   ${roomSections}
 
