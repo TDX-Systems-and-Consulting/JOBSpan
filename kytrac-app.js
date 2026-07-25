@@ -6228,7 +6228,7 @@ async function loadLienWaiverStatus(jobId, invId, containerEl) {
     snap.forEach(d => waivers.push({ id: d.id, ...d.data() }));
     const latest = waivers.sort((a,b) => (b.createdAt?.seconds||0) - (a.createdAt?.seconds||0))[0];
     const colors = { signed: '#1dbb87', pending: '#f59e0b', declined: '#ef5350' };
-    const labels = { signed: '✅ Lien Waiver Signed', pending: '⏳ Lien Waiver Sent', declined: '❌ Lien Waiver Declined' };
+    const labels = { signed: '✅ Lien Waiver Signed', pending: '⏳ Lien Waiver — Pending Signature', declined: '❌ Lien Waiver Declined' };
     const c = colors[latest.status] || 'var(--muted)';
     containerEl.innerHTML = `<div style="font-size:.72rem;color:${c};font-weight:700;margin-top:4px">${labels[latest.status]||latest.status}
       ${latest.signedAt ? ' · ' + new Date(latest.signedAt).toLocaleDateString() : ''}</div>`;
