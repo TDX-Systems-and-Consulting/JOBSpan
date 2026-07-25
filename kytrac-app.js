@@ -16800,89 +16800,77 @@ async function loadJobWeather(address) {
 // ════════════════════════════════════════════════════
 let _jobActivityListener = null;
 
+function renderActivityItems(feedEl, items) {
+  items.sort((a,b) => b.ts.localeCompare(a.ts));
+  if (!items.length) {
+    feedEl.innerHTML = '<div class="small muted" style="text-align:center;padding:20px">No activity yet</div>';
+    return;
+  }
+  feedEl.innerHTML = items.map(item => `
+    <div class="activity-item">
+      <div class="activity-icon" style="background:${item.iconBg}">${item.icon}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:.83rem;color:#eaf0fb;line-height:1.4">${esc(item.text)}</div>
+        <div class="activity-meta">${esc(item.sub)}</div>
+      </div>
+    </div>`).join('');
+}
+
 function loadJobActivity(jobId, mode) {
   if (!jobId || !conDb) return;
   const feedEl = document.getElementById(mode === 'full' ? 'detailActivityFull' : 'detailActivityFeed');
   if (!feedEl) return;
   feedEl.innerHTML = '<div class="small muted" style="text-align:center;padding:16px">Loading...</div>';
 
-  // Load logs and notes as activity
-  const activityItems = [];
+  const items = [];
 
-  // Get daily logs
-  coll('jobs').doc(jobId).collection('logs').orderBy('date','desc').limit(50).get()
-    .then(snap => {
-      snap.forEach(d => {
-        const log = d.data();
-        const isStatusChange = log.type === 'status_change';
-        const isClosedLost = isStatusChange && log.toStatus === 'Closed Lost';
-        activityItems.push({
-          type: log.type || 'log',
-          icon: isClosedLost ? '🔴' : (isStatusChange ? '🔄' : '📝'),
-          iconBg: isClosedLost ? 'rgba(220,38,38,.15)' : (isStatusChange ? 'rgba(139,92,246,.15)' : 'rgba(59,130,246,.15)'),
-          text: log.notes || 'Daily log entry',
-          sub: (log.date || '') + (log.userName ? ' · ' + log.userName : ''),
-          time: log.date || '',
-          ts: log.date || '0',
-        });
-      });
+  // Safe query: tries orderBy, falls back to unordered if index missing
+  function safeGet(ref, field, dir, lim) {
+    return ref.orderBy(field, dir).limit(lim).get()
+      .catch(() => ref.limit(lim).get())
+      .catch(() => ({ forEach: () => {} }));
+  }
 
-      // Get invoices
-      return coll('jobs').doc(jobId).collection('invoices').orderBy('date','desc').limit(20).get();
-    })
-    .then(snap => {
-      snap.forEach(d => {
-        const inv = d.data();
-        activityItems.push({
-          type: 'invoice',
-          icon: '🧾',
-          iconBg: 'rgba(217,119,6,.15)',
-          text: (inv.number || 'Invoice') + ' — ' + (inv.type || '') + ' — $' + (inv.total||0).toLocaleString(),
-          sub: inv.date + ' · ' + (inv.status || 'Draft'),
-          time: inv.date || '',
-          ts: inv.date || '0',
-        });
-      });
+  // 5s timeout so a missing index never leaves it stuck on Loading
+  const timer = setTimeout(() => {
+    if (feedEl.innerHTML.includes('Loading')) renderActivityItems(feedEl, items);
+  }, 5000);
+  const done = () => { clearTimeout(timer); renderActivityItems(feedEl, items); };
 
-      // Get phases
-      return coll('jobs').doc(jobId).collection('phases').orderBy('startDate').get();
-    })
-    .then(snap => {
-      snap.forEach(d => {
-        const p = d.data();
-        activityItems.push({
-          type: 'phase',
-          icon: '📅',
-          iconBg: 'rgba(139,92,246,.15)',
-          text: p.name + ' · ' + (p.status || 'Not Started'),
-          sub: (p.startDate || '') + (p.endDate ? ' → ' + p.endDate : ''),
-          time: p.startDate || '',
-          ts: p.startDate || '0',
-        });
-      });
+  const logsP = safeGet(coll('jobs').doc(jobId).collection('logs'), 'date', 'desc', 50)
+    .then(snap => snap.forEach(d => {
+      const log = d.data();
+      const isSC = log.type === 'status_change', isCL = isSC && log.toStatus === 'Closed Lost';
+      items.push({ icon: isCL?'🔴':(isSC?'🔄':'📝'), iconBg: isCL?'rgba(220,38,38,.15)':(isSC?'rgba(139,92,246,.15)':'rgba(59,130,246,.15)'),
+        text: log.notes||'Daily log entry', sub: (log.date||'')+(log.userName?' · '+log.userName:''), ts: log.date||'0' });
+    }));
 
-      // Sort by time descending
-      activityItems.sort((a,b) => b.ts.localeCompare(a.ts));
+  const invP = safeGet(coll('jobs').doc(jobId).collection('invoices'), 'date', 'desc', 20)
+    .then(snap => snap.forEach(d => {
+      const inv = d.data();
+      items.push({ icon:'🧾', iconBg:'rgba(217,119,6,.15)',
+        text:(inv.number||'Invoice')+' — $'+(inv.total||0).toLocaleString()+' · '+(inv.status||'Draft'),
+        sub: inv.date||'', ts: inv.date||'0' });
+    }));
 
-      if (!activityItems.length) {
-        feedEl.innerHTML = '<div class="small muted" style="text-align:center;padding:20px">No activity yet</div>';
-        return;
-      }
+  const phaseP = safeGet(coll('jobs').doc(jobId).collection('phases'), 'startDate', 'asc', 30)
+    .then(snap => snap.forEach(d => {
+      const p = d.data();
+      items.push({ icon:'📅', iconBg:'rgba(139,92,246,.15)',
+        text:(p.name||'Phase')+' · '+(p.status||'Not Started'),
+        sub:(p.startDate||'')+(p.endDate?' → '+p.endDate:''), ts: p.startDate||'0' });
+    }));
 
-      feedEl.innerHTML = activityItems.map(item => `
-        <div class="activity-item">
-          <div class="activity-icon" style="background:${item.iconBg}">${item.icon}</div>
-          <div style="flex:1;min-width:0">
-            <div style="font-size:.83rem;color:#eaf0fb;line-height:1.4">${esc(item.text)}</div>
-            <div class="activity-meta">${esc(item.sub)}</div>
-          </div>
-        </div>`).join('');
-    })
-    .catch(() => {
-      feedEl.innerHTML = '<div class="small muted" style="text-align:center;padding:16px">Could not load activity</div>';
-    });
+  const docsP = coll('documents').where('jobId','==',jobId).limit(20).get()
+    .then(snap => snap.forEach(d => {
+      const doc = d.data();
+      items.push({ icon:'📎', iconBg:'rgba(6,182,212,.15)',
+        text: doc.name||'File uploaded',
+        sub:(doc.uploadedDate||'')+(doc.uploadedByName?' · '+doc.uploadedByName:''), ts: doc.uploadedDate||'0' });
+    })).catch(()=>{});
+
+  Promise.all([logsP, invP, phaseP, docsP]).then(done).catch(done);
 }
-
 function addJobActivity(type) {
   if (!conCurrentJobId) return;
   const note = prompt('Add a note to this job:');
