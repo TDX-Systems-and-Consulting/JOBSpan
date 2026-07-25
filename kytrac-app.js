@@ -5252,6 +5252,8 @@ function renderJobInvoiceList(jobId, invs) {
         <button class="btn" style="padding:4px 10px;font-size:.76rem" onclick="openEditInvoice('${jobId}','${inv.id}')">Edit</button>
         <button class="btn" style="padding:4px 10px;font-size:.76rem" onclick="quickMarkPaid('${jobId}','${inv.id}',${inv.total||0})"${inv.status==='Paid'?' disabled':''}>✓ Mark Paid</button>
         <button class="btn" style="padding:4px 10px;font-size:.76rem" onclick="printInvoiceById('${jobId}','${inv.id}')">🖨 Print</button>
+        <button class="btn" style="padding:4px 10px;font-size:.76rem;background:rgba(99,179,237,.12);color:#63b3ed;border-color:rgba(99,179,237,.35)"
+          onclick="emailInvoiceToCustomer('${jobId}','${inv.id}')">✉️ Email</button>
         ${inv.qbInvoiceId
           ? `<span class="btn" style="padding:4px 10px;font-size:.76rem;opacity:.7;cursor:default">✓ Synced to QuickBooks</span>`
           : `<button class="btn" style="padding:4px 10px;font-size:.76rem;background:rgba(45,181,110,.15);color:#2db56e;border-color:rgba(45,181,110,.4)" onclick="pushInvoiceToQuickBooks('${jobId}','${inv.id}', this)">📗 Push to QuickBooks</button>`
@@ -6039,6 +6041,119 @@ window.importEstimateToInvoice = importEstimateToInvoice;
 window.printInvoice = printInvoice;
 window.printInvoiceById = printInvoiceById;
 
+// ── Email Invoice to Customer ──
+async function emailInvoiceToCustomer(jobId, invId) {
+  if (!conDb || !jobId || !invId) return;
+
+  const job = conJobs.find(j => j.id === jobId);
+  if (!job) { alert('Job not found.'); return; }
+
+  let inv = null;
+  try {
+    const d = await coll('jobs').doc(jobId).collection('invoices').doc(invId).get();
+    if (d.exists) inv = { id: d.id, ...d.data() };
+  } catch(e) {}
+  if (!inv) { alert('Invoice not found.'); return; }
+
+  const customerEmail = job.email || job.clientEmail || '';
+  const customerName = job.client || 'Customer';
+  const invNum = inv.number || 'Invoice';
+  const total = (inv.total || 0).toLocaleString(undefined, {minimumFractionDigits:2});
+  const due = inv.dueDate || '';
+  const payLink = inv.qbPaymentLink || '';
+
+  // Get portal link for invoice viewing
+  let portalUrl = '';
+  try {
+    const snap = await conDb.collection('portalTokens').where('jobId','==',jobId).limit(1).get();
+    if (!snap.empty) {
+      portalUrl = `${location.origin}${location.pathname}?portal=${snap.docs[0].id}`;
+    }
+  } catch(e) {}
+
+  const subject = `Invoice ${invNum} — $${total} — ${job.name || 'Your Project'}`;
+
+  const bodyHtml = `
+    <h2 style="color:#d97706;margin-top:0">Invoice ${invNum}</h2>
+    <p>Hi ${customerName},</p>
+    <p>Please find your invoice details below.</p>
+    <table style="width:100%;border-collapse:collapse;margin:16px 0">
+      <tr><td style="padding:8px;color:#666;width:140px">Project</td><td style="padding:8px;font-weight:600">${esc(job.name||'')}</td></tr>
+      <tr style="background:#f9f9f9"><td style="padding:8px;color:#666">Invoice #</td><td style="padding:8px;font-weight:600">${esc(invNum)}</td></tr>
+      <tr><td style="padding:8px;color:#666">Amount Due</td><td style="padding:8px;font-weight:700;font-size:1.1rem;color:#d97706">$${total}</td></tr>
+      ${due ? `<tr style="background:#f9f9f9"><td style="padding:8px;color:#666">Due Date</td><td style="padding:8px">${due}</td></tr>` : ''}
+    </table>
+    ${payLink ? `
+    <div style="text-align:center;margin:24px 0">
+      <a href="${payLink}" style="background:#d97706;color:#fff;padding:14px 32px;border-radius:10px;text-decoration:none;font-weight:700;font-size:1rem;display:inline-block">
+        💳 Pay Now
+      </a>
+    </div>` : ''}
+    ${portalUrl ? `<p style="font-size:.85rem;color:#666;text-align:center">
+      <a href="${portalUrl}" style="color:#d97706">View your project portal →</a>
+    </p>` : ''}
+    ${inv.notes ? `<p style="font-size:.85rem;color:#444;border-top:1px solid #eee;padding-top:12px;margin-top:16px">${esc(inv.notes)}</p>` : ''}`;
+
+  const bodyText = `Hi ${customerName},\n\nInvoice ${invNum} for $${total} is ready.\n${due ? 'Due: ' + due + '\n' : ''}${payLink ? '\nPay online: ' + payLink : ''}\n${portalUrl ? '\nView portal: ' + portalUrl : ''}`;
+
+  // Show quick email dialog
+  const existing = document.getElementById('invoiceEmailModal');
+  if (existing) existing.remove();
+
+  const modal = document.createElement('div');
+  modal.id = 'invoiceEmailModal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px';
+  modal.innerHTML = `
+    <div style="background:#0d1f35;border:1px solid var(--line);border-radius:16px;padding:28px;max-width:480px;width:100%">
+      <div style="font-size:1.1rem;font-weight:800;color:#eaf0fb;margin-bottom:4px">✉️ Email Invoice ${invNum}</div>
+      <div style="font-size:.8rem;color:var(--muted);margin-bottom:20px">$${total} · ${customerName}</div>
+      <div style="margin-bottom:14px">
+        <label style="font-size:.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-weight:700;display:block;margin-bottom:6px">Customer Email</label>
+        <input id="invEmailTo" value="${esc(customerEmail)}" placeholder="customer@email.com"
+          style="width:100%;padding:9px 12px;border-radius:8px;border:1px solid var(--line);background:rgba(8,18,36,.6);color:#eaf0fb;font-size:.9rem;box-sizing:border-box">
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <button id="invEmailSendBtn" onclick="doSendInvoiceEmail('${jobId}','${invId}')" class="btn-amber" style="flex:1;padding:10px;font-weight:700">✉️ Send Invoice</button>
+        <button onclick="document.getElementById('invoiceEmailModal').remove()" class="btn" style="padding:10px">Cancel</button>
+      </div>
+    </div>`;
+  modal.dataset.subject = subject;
+  modal.dataset.bodyHtml = bodyHtml;
+  modal.dataset.bodyText = bodyText;
+  modal.dataset.customerName = customerName;
+  document.body.appendChild(modal);
+}
+window.emailInvoiceToCustomer = emailInvoiceToCustomer;
+
+async function doSendInvoiceEmail(jobId, invId) {
+  const modal = document.getElementById('invoiceEmailModal');
+  const to = document.getElementById('invEmailTo')?.value.trim();
+  if (!to) { alert('Please enter an email address.'); return; }
+
+  const btn = document.getElementById('invEmailSendBtn');
+  if (btn) { btn.textContent = 'Sending…'; btn.disabled = true; }
+
+  try {
+    const sendEmail = conFunctions.httpsCallable('sendJobspanEmail');
+    await sendEmail({
+      to,
+      toName: modal?.dataset.customerName || '',
+      subject: modal?.dataset.subject || 'Your Invoice',
+      bodyHtml: modal?.dataset.bodyHtml || '',
+      bodyText: modal?.dataset.bodyText || '',
+      docType: 'invoice',
+      jobId
+    });
+    modal?.remove();
+    alert(`✅ Invoice sent to ${to}`);
+    loadJobInvoices(jobId);
+  } catch(e) {
+    if (btn) { btn.textContent = '✉️ Send Invoice'; btn.disabled = false; }
+    alert('Email send failed: ' + e.message);
+  }
+}
+window.doSendInvoiceEmail = doSendInvoiceEmail;
+
 // ════════════════════════════════════════════════════
 // ── LIEN WAIVER SYSTEM ──
 // E-SIGN Act compliant: stores signer name, drawn signature image,
@@ -6205,11 +6320,16 @@ async function sendLienWaiver(jobId, invId, type) {
 
     const portalUrl = `${location.origin}${location.pathname}?portal=${token}&waiver=${waiverId}`;
     const typeLabel = type === 'conditional' ? 'Conditional Lien Waiver' : 'Unconditional Lien Waiver';
+    const customerEmail = job.email || job.clientEmail || '';
 
-    // Copy link and show confirm
-    try { await navigator.clipboard.writeText(portalUrl); } catch(e) {}
-
-    alert(`${typeLabel} created and link copied to clipboard.\n\nSend this link to ${job.client || 'the customer'} for their e-signature.\n\nLink: ${portalUrl}`);
+    // Show send dialog instead of just copying to clipboard
+    showLienWaiverSendDialog({
+      waiverId, jobId, portalUrl, typeLabel,
+      customerName: job.client || 'Customer',
+      customerEmail,
+      invoiceNumber: inv?.number || null,
+      amount: inv?.total || 0,
+    });
 
     // Refresh invoice list to show waiver status
     loadJobInvoices(jobId);
@@ -6219,7 +6339,94 @@ async function sendLienWaiver(jobId, invId, type) {
 }
 window.sendLienWaiver = sendLienWaiver;
 
-// ── Lien waiver status badge for invoice card ──
+// ── Lien Waiver Send Dialog ──
+function showLienWaiverSendDialog({ waiverId, jobId, portalUrl, typeLabel, customerName, customerEmail, invoiceNumber, amount }) {
+  // Remove any existing dialog
+  const existing = document.getElementById('lienSendModal');
+  if (existing) existing.remove();
+
+  const amtStr = amount ? ' — $' + Number(amount).toLocaleString(undefined, {minimumFractionDigits:2}) : '';
+  const invStr = invoiceNumber ? ` (${invoiceNumber}${amtStr})` : '';
+
+  const modal = document.createElement('div');
+  modal.id = 'lienSendModal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px';
+  modal.innerHTML = `
+    <div style="background:#0d1f35;border:1px solid var(--line);border-radius:16px;padding:28px;max-width:480px;width:100%">
+      <div style="font-size:1.1rem;font-weight:800;color:#eaf0fb;margin-bottom:4px">📋 Send ${typeLabel}</div>
+      <div style="font-size:.8rem;color:var(--muted);margin-bottom:20px">${esc(customerName)}${invStr}</div>
+
+      <div style="margin-bottom:14px">
+        <label style="font-size:.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-weight:700;display:block;margin-bottom:6px">Customer Email</label>
+        <input id="lienSendEmail" value="${esc(customerEmail)}" placeholder="customer@email.com"
+          style="width:100%;padding:9px 12px;border-radius:8px;border:1px solid var(--line);background:rgba(8,18,36,.6);color:#eaf0fb;font-size:.9rem;box-sizing:border-box">
+      </div>
+
+      <div style="margin-bottom:20px">
+        <label style="font-size:.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-weight:700;display:block;margin-bottom:6px">Message (optional)</label>
+        <textarea id="lienSendNote" rows="3" placeholder="Hi ${esc(customerName)}, please review and sign the attached lien waiver..."
+          style="width:100%;padding:9px 12px;border-radius:8px;border:1px solid var(--line);background:rgba(8,18,36,.6);color:#eaf0fb;font-size:.85rem;box-sizing:border-box;resize:vertical"></textarea>
+      </div>
+
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <button onclick="emailLienWaiver('${waiverId}','${jobId}','${portalUrl.replace(/'/g,"\\'")}','${typeLabel.replace(/'/g,"\\'")}','${esc(customerName).replace(/'/g,"\\'")}','${invStr.replace(/'/g,"\\'")}'); document.getElementById('lienSendModal').remove();"
+          class="btn-amber" style="flex:1;padding:10px;font-weight:700">✉️ Send Email</button>
+        <button onclick="navigator.clipboard.writeText('${portalUrl.replace(/'/g,"\\'")}').then(()=>{this.textContent='✓ Copied!';setTimeout(()=>this.textContent='📋 Copy Link',2000)})"
+          class="btn" style="padding:10px;font-weight:700">📋 Copy Link</button>
+        <button onclick="document.getElementById('lienSendModal').remove()" class="btn" style="padding:10px">Close</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+}
+
+async function emailLienWaiver(waiverId, jobId, portalUrl, typeLabel, customerName, invStr) {
+  const emailEl = document.getElementById('lienSendEmail');
+  const noteEl = document.getElementById('lienSendNote');
+  const to = emailEl ? emailEl.value.trim() : '';
+  const note = noteEl ? noteEl.value.trim() : '';
+
+  if (!to) { alert('Please enter the customer email address.'); return; }
+
+  const subject = `${typeLabel} — Signature Required`;
+  const customNote = note || `Please review and sign the ${typeLabel} for your project.`;
+
+  const bodyHtml = `
+    <h2 style="color:#d97706;margin-top:0">${typeLabel}</h2>
+    <p>Hi ${customerName},</p>
+    <p>${customNote}${invStr ? '<br><strong>' + invStr.trim() + '</strong>' : ''}</p>
+    <p>Please click the button below to review and e-sign your lien waiver. Your signature is legally binding under the federal E-SIGN Act.</p>
+    <div style="text-align:center;margin:28px 0">
+      <a href="${portalUrl}" style="background:#d97706;color:#fff;padding:14px 32px;border-radius:10px;text-decoration:none;font-weight:700;font-size:1rem;display:inline-block">
+        ✍️ Review &amp; Sign Lien Waiver
+      </a>
+    </div>
+    <p style="font-size:.85rem;color:#666">Or copy this link into your browser:<br>
+      <a href="${portalUrl}" style="color:#d97706;word-break:break-all">${portalUrl}</a>
+    </p>`;
+
+  const bodyText = `Hi ${customerName},\n\n${customNote}\n\nPlease sign your ${typeLabel} here:\n${portalUrl}`;
+
+  try {
+    if (!conFunctions) throw new Error('Functions not available');
+    const sendEmail = conFunctions.httpsCallable('sendJobspanEmail');
+    const btn = document.querySelector('#lienSendModal .btn-amber');
+    if (btn) { btn.textContent = 'Sending…'; btn.disabled = true; }
+
+    await sendEmail({ to, toName: customerName, subject, bodyHtml, bodyText, docType: 'lienWaiver', jobId });
+
+    // Update waiver doc with email sent info
+    await coll('jobs').doc(jobId).collection('lienWaivers').doc(waiverId).update({
+      emailSentTo: to,
+      emailSentAt: firebase.firestore.FieldValue.serverTimestamp(),
+    }).catch(() => {});
+
+    alert(`✅ ${typeLabel} sent to ${to}`);
+    loadJobInvoices(jobId);
+  } catch(e) {
+    alert('Email send failed: ' + e.message + '\n\nYou can still copy the link and send manually.');
+  }
+}
+window.emailLienWaiver = emailLienWaiver;
 async function loadLienWaiverStatus(jobId, invId, containerEl) {
   if (!conDb || !containerEl) return;
   try {

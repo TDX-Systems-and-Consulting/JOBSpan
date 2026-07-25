@@ -997,3 +997,123 @@ exports.sendMessageNotificationSms = functions.firestore
       notifiedAt: admin.firestore.FieldValue.serverTimestamp()
     });
   });
+
+// ════════════════════════════════════════════════════
+// ── sendJobspanEmail ─────────────────────────────────
+// Sends transactional email via SendGrid from travis@jtxdgroup.com.
+// Called by the client for: lien waivers, invoices, proposals.
+//
+// ONE-TIME SETUP (on Mac with Firebase CLI):
+//   firebase functions:config:set sendgrid.key="SG.your_key_here"
+//   firebase deploy --only functions:sendJobspanEmail
+//
+// Config key: sendgrid.key
+// ════════════════════════════════════════════════════
+exports.sendJobspanEmail = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'Must be signed in.');
+  }
+
+  const { to, toName, subject, bodyHtml, bodyText, replyTo, docType, jobId } = data;
+
+  if (!to || !subject || (!bodyHtml && !bodyText)) {
+    throw new functions.https.HttpsError('invalid-argument', 'Missing required email fields.');
+  }
+
+  // Verify caller is a member of the company the job belongs to
+  const companyId = context.auth.token.companyId;
+  if (!companyId) {
+    throw new functions.https.HttpsError('permission-denied', 'No company association found.');
+  }
+
+  const config = functions.config();
+  const sgKey = config.sendgrid && config.sendgrid.key;
+  if (!sgKey) {
+    throw new functions.https.HttpsError('internal', 'SendGrid not configured. Set sendgrid.key in Firebase config.');
+  }
+
+  // Branded HTML wrapper
+  const db = admin.firestore();
+  let companyName = 'JTXD Contracting';
+  let companyLogo = '';
+  try {
+    const settDoc = await db.collection('companies').doc(companyId)
+      .collection('settings').doc('company').get();
+    if (settDoc.exists) {
+      companyName = settDoc.data().companyName || companyName;
+      companyLogo = settDoc.data().logoUrl || '';
+    }
+  } catch(e) {}
+
+  const brandedHtml = `<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f4f4f4;font-family:Arial,sans-serif">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f4;padding:32px 0">
+    <tr><td align="center">
+      <table width="600" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:12px;overflow:hidden;max-width:600px;width:100%">
+        <!-- Header -->
+        <tr><td style="background:#04121f;padding:24px 32px;text-align:center">
+          ${companyLogo ? `<img src="${companyLogo}" style="height:48px;margin-bottom:8px"><br>` : ''}
+          <span style="color:#d97706;font-size:1.3rem;font-weight:800;letter-spacing:.02em">${companyName}</span>
+        </td></tr>
+        <!-- Body -->
+        <tr><td style="padding:32px;color:#1a1a1a;font-size:15px;line-height:1.6">
+          ${bodyHtml || `<p>${bodyText}</p>`}
+        </td></tr>
+        <!-- Footer -->
+        <tr><td style="background:#f9f9f9;padding:20px 32px;text-align:center;font-size:12px;color:#888;border-top:1px solid #eee">
+          This email was sent by ${companyName} via JOBSpan.<br>
+          Questions? Reply to this email or contact us directly.
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+
+  // Send via SendGrid REST API
+  // native fetch available in Node 20
+  const payload = {
+    personalizations: [{
+      to: [{ email: to, name: toName || to }]
+    }],
+    from: { email: 'travis@jtxdgroup.com', name: companyName },
+    reply_to: { email: replyTo || 'travis@jtxdgroup.com', name: companyName },
+    subject,
+    content: [
+      { type: 'text/plain', value: bodyText || subject },
+      { type: 'text/html', value: brandedHtml }
+    ]
+  };
+
+  const sgRes = await fetch('https://api.sendgrid.com/v3/mail/send', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${sgKey}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(payload)
+  });
+
+  if (!sgRes.ok) {
+    const errText = await sgRes.text();
+    console.error('SendGrid error:', sgRes.status, errText);
+    throw new functions.https.HttpsError('internal', `Email send failed: ${sgRes.status}`);
+  }
+
+  // Log the send to Firestore for audit trail
+  if (jobId && docType) {
+    try {
+      await db.collection('companies').doc(companyId)
+        .collection('emailLog').add({
+          jobId, docType, to, subject,
+          sentAt: admin.firestore.FieldValue.serverTimestamp(),
+          sentBy: context.auth.token.email || '',
+          status: 'sent'
+        });
+    } catch(e) {}
+  }
+
+  return { success: true, message: `Email sent to ${to}` };
+});
