@@ -153,9 +153,13 @@ exports.syncMyClaims = functions.https.onCall(async (data, context) => {
 const { google } = require('googleapis');
 
 function getGoogleOAuthConfig() {
-  const cfg = functions.config().google || {};
-  if (!cfg.client_id || !cfg.client_secret || !cfg.redirect_uri) return null;
-  return cfg;
+  // Try process.env first (set via firebase functions:secrets or .env),
+  // fall back to functions.config() for backward compatibility.
+  const client_id = process.env.GOOGLE_CLIENT_ID || (functions.config().google || {}).client_id;
+  const client_secret = process.env.GOOGLE_CLIENT_SECRET || (functions.config().google || {}).client_secret;
+  const redirect_uri = process.env.GOOGLE_REDIRECT_URI || (functions.config().google || {}).redirect_uri;
+  if (!client_id || !client_secret || !redirect_uri) return null;
+  return { client_id, client_secret, redirect_uri };
 }
 
 function newOAuth2Client() {
