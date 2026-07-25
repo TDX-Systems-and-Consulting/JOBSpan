@@ -4099,8 +4099,19 @@ function conInitFirebase() {
     conAuth = firebase.auth();
     conFunctions = firebase.functions();
     conFirebaseReady = true;
-    ktRevealSignIn();
+
+    // Don't reveal the sign-in wall immediately — wait briefly for
+    // onAuthStateChanged to fire first. If the user has an existing
+    // session, it resolves within ~300ms and we never show the wall.
+    // Only show it if no user arrives within that window.
+    let authResolved = false;
+    const authWallTimer = setTimeout(() => {
+      if (!authResolved && !window._signingIn) ktRevealSignIn();
+    }, 600);
+
     conAuth.onAuthStateChanged(user => {
+      authResolved = true;
+      clearTimeout(authWallTimer);
       if (user) {
         conCurrentUser = user;
 
@@ -4168,9 +4179,9 @@ function conInitFirebase() {
         }
       } else {
         conCurrentUser = null;
-        // Don't flash the auth wall if the user just clicked Sign In —
-        // the popup briefly causes a null auth state before resolving.
-        if (!window._signingIn) conShowAuthWall();
+        // onAuthStateChanged confirmed no active session — show sign-in wall.
+        // Skip if user just clicked Sign In (popup in flight).
+        if (!window._signingIn) ktRevealSignIn();
       }
     });
   } catch(e) {
