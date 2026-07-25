@@ -1026,8 +1026,7 @@ exports.sendJobspanEmail = functions.https.onCall(async (data, context) => {
     throw new functions.https.HttpsError('permission-denied', 'No company association found.');
   }
 
-  const config = functions.config();
-  const sgKey = config.sendgrid && config.sendgrid.key;
+  const sgKey = process.env.SENDGRID_KEY || (functions.config().sendgrid && functions.config().sendgrid.key);
   if (!sgKey) {
     throw new functions.https.HttpsError('internal', 'SendGrid not configured. Set sendgrid.key in Firebase config.');
   }
