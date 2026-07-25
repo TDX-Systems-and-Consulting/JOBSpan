@@ -13064,10 +13064,16 @@ function openAddEstItemModal(itemId, groupId, subgroupId) {
   setVal('estItemUnit', item?.unit || 'ea');
   document.getElementById('estItemCostType').value = item?.costType || 'Labor';
   setVal('estItemUnitCost', item?.unitCost || '');
-  setVal('estItemMarkup', item?.markup !== undefined ? item.markup : getDefaultMarkupForCostType(item?.costType || 'Labor'));
-  setVal('estItemUnitPrice', item?.unitPrice || '');
+  const markup = item?.markup !== undefined ? item.markup : getDefaultMarkupForCostType(item?.costType || 'Labor');
+  setVal('estItemMarkup', markup);
   setVal('estItemNotes', item?.notes || '');
   setVal('estItemPhase', item?.phase || '');
+
+  // Only pre-fill Unit Price if it was manually overridden (differs from cost×markup)
+  const calcedPrice = (item?.unitCost || 0) * (1 + markup/100);
+  const storedPrice = item?.unitPrice || 0;
+  const isManualOverride = storedPrice > 0 && Math.abs(storedPrice - calcedPrice) > 0.01;
+  setVal('estItemUnitPrice', isManualOverride ? storedPrice : '');
 
   // Populate group dropdown
   const groupSel = document.getElementById('estItemGroupSel');
@@ -13128,13 +13134,24 @@ function onEstItemCostTypeChange() {
 }
 window.onEstItemCostTypeChange = onEstItemCostTypeChange;
 
+function clearUnitPriceOverride() {
+  // When cost or markup changes, clear any manual Unit Price override
+  // so the field recalculates from unitCost × markup instead of staying stuck
+  const priceEl = document.getElementById('estItemUnitPrice');
+  if (priceEl) priceEl.value = '';
+}
+window.clearUnitPriceOverride = clearUnitPriceOverride;
+
 function calcEstItemPreview() {
   const qty = parseFloat(document.getElementById('estItemQty')?.value) || 1;
   const unitCost = parseFloat(document.getElementById('estItemUnitCost')?.value) || 0;
   const markup = parseFloat(document.getElementById('estItemMarkup')?.value) || 0;
   const manualPrice = parseFloat(document.getElementById('estItemUnitPrice')?.value);
 
-  const unitPrice = manualPrice || unitCost * (1 + markup/100);
+  const unitPrice = isNaN(manualPrice) || document.getElementById('estItemUnitPrice')?.value === ''
+    ? unitCost * (1 + markup/100)
+    : manualPrice;
+
   const extCost = qty * unitCost;
   const extPrice = qty * unitPrice;
   const profit = extPrice - extCost;
@@ -13146,9 +13163,12 @@ function calcEstItemPreview() {
   setEl('estPreviewProfit', '$' + profit.toFixed(2));
   setEl('estPreviewMargin', margin.toFixed(1) + '%');
 
-  // Auto-fill unit price if not manually set
+  // Write calculated price into the Unit Price field as placeholder
+  // so user can see what it will be, and can override if needed
   const priceEl = document.getElementById('estItemUnitPrice');
-  if (priceEl && !manualPrice) priceEl.placeholder = '$' + unitPrice.toFixed(2);
+  if (priceEl && priceEl.value === '') {
+    priceEl.placeholder = '$' + unitPrice.toFixed(2);
+  }
 }
 
 function saveEstItem() {
