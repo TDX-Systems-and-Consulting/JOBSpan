@@ -228,6 +228,14 @@ service cloud.firestore {
           allow read: if inCompany(companyId) && hasFullAccess() || request.auth == null;
           allow write: if (inCompany(companyId) && hasFullAccess()) || request.auth == null;
         }
+        match /lienWaivers/{waiverId} {
+          // Team members create waivers; portal visitors (anonymous) update
+          // them to capture signatures/declines.
+          allow read: if inCompany(companyId) || request.auth == null;
+          allow create: if inCompany(companyId);
+          allow update: if inCompany(companyId) || request.auth == null;
+          allow delete: if false;
+        }
         match /estimateGroups/{groupId} {
           allow read: if inCompany(companyId);
           allow write: if inCompany(companyId) && hasFullAccess();

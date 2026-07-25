@@ -6169,17 +6169,30 @@ async function sendLienWaiver(jobId, invId, type) {
   };
 
   try {
-    const ref = await coll('jobs').doc(jobId).collection('lienWaivers').add(waiverData);
+    const ref = await coll('jobs').doc(jobId).collection('lienWaivers').add({
+      ...waiverData,
+      companyId: currentCompanyId || null,
+    });
     const waiverId = ref.id;
 
-    // Ensure portal token exists — portalTokens lives at root, not under company
-    const tokenQuery = await conDb.collection('portalTokens')
-      .where('jobId','==',jobId).limit(1).get();
-
+    // Reuse existing portal token for this job if one exists (same pattern
+    // as shareCustomerPortal and sendProposalViaEmail which both work).
     let token;
-    if (!tokenQuery.empty) {
-      token = tokenQuery.docs[0].id;
-    } else {
+    try {
+      const snap = await conDb.collection('portalTokens')
+        .where('jobId','==',jobId).limit(1).get();
+      if (!snap.empty) {
+        token = snap.docs[0].id;
+      } else {
+        token = jobId + '-hash-' + Math.random().toString(36).slice(2,10);
+        await conDb.collection('portalTokens').doc(token).set({
+          jobId, companyId: currentCompanyId || null,
+          created: Date.now(), createdBy: conCurrentUser?.email || '',
+          expires: null, shareInvoices: true
+        });
+      }
+    } catch(tokenErr) {
+      // Token lookup failed — generate a fresh one
       token = jobId + '-hash-' + Math.random().toString(36).slice(2,10);
       await conDb.collection('portalTokens').doc(token).set({
         jobId, companyId: currentCompanyId || null,
