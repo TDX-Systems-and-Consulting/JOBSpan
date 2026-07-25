@@ -212,29 +212,28 @@ exports.gcalOAuthStart = functions.https.onRequest(async (req, res) => {
 // collection (never client-readable), and flips a plain boolean flag on
 // the team member record so the UI can show "Connected".
 exports.gcalOAuthCallback = functions.https.onRequest(async (req, res) => {
-  const oauth2Client = newOAuth2Client();
-  if (!oauth2Client) {
-    res.status(500).send('Google Calendar OAuth is not configured yet.');
-    return;
-  }
-  const { code, state, error } = req.query;
-  if (error) { res.status(400).send('Google denied access: ' + error + '. You can close this tab and try again.'); return; }
-  if (!code || !state) { res.status(400).send('Missing code/state from Google.'); return; }
-
-  let parsed;
-  try { parsed = JSON.parse(Buffer.from(state, 'base64').toString('utf8')); }
-  catch (e) { res.status(400).send('Invalid state.'); return; }
-  const { companyId, uid } = parsed;
-
+  console.log('gcalOAuthCallback invoked, error:', req.query.error || 'none', 'code:', !!req.query.code);
   try {
+    const oauth2Client = newOAuth2Client();
+    if (!oauth2Client) {
+      res.status(500).send('Google Calendar OAuth is not configured yet.');
+      return;
+    }
+    const { code, state, error } = req.query;
+    if (error) { res.status(400).send('Google denied access: ' + error); return; }
+    if (!code || !state) { res.status(400).send('Missing code/state from Google.'); return; }
+
+    let parsed;
+    try { parsed = JSON.parse(Buffer.from(state, 'base64').toString('utf8')); }
+    catch (e) { res.status(400).send('Invalid state.'); return; }
+    const { companyId, uid } = parsed;
+
     const cfg = getGoogleOAuthConfig();
-    console.log('GCal callback - client_id:', cfg?.client_id?.slice(0,20), 'secret_len:', cfg?.client_secret?.length, 'redirect:', cfg?.redirect_uri);
+    console.log('GCal callback - client_id prefix:', cfg?.client_id?.slice(0, 20), 'secret_len:', cfg?.client_secret?.length);
+
     const { tokens } = await oauth2Client.getToken(code);
     if (!tokens.refresh_token) {
-      // Happens if the user had already connected before and Google
-      // didn't re-issue a refresh_token this time - prompt=consent above
-      // should prevent this, but guard anyway.
-      res.status(400).send('Google did not return a refresh token. Please try disconnecting and reconnecting.');
+      res.status(400).send('Google did not return a refresh token. Please disconnect and reconnect.');
       return;
     }
     const db = admin.firestore();
@@ -242,18 +241,15 @@ exports.gcalOAuthCallback = functions.https.onRequest(async (req, res) => {
       refreshToken: tokens.refresh_token,
       connectedAt: admin.firestore.FieldValue.serverTimestamp()
     });
-
-    // Flip the plain (non-secret) status flag the client can read.
     const email = (await admin.auth().getUser(uid)).email.toLowerCase();
     const key = email.replace(/\./g, '_');
     await db.collection('companies').doc(companyId).collection('settings').doc('team').set(
       { members: { [key]: { googleCalendarConnected: true } } },
       { merge: true }
     );
-
     res.send('<html><body style="font-family:sans-serif;text-align:center;padding:60px"><h2>✅ Google Calendar connected</h2><p>You can close this tab and go back to JOBSpan.</p></body></html>');
   } catch (e) {
-    console.error('gcalOAuthCallback error:', e.message);
+    console.error('gcalOAuthCallback top-level error:', e.message, e.stack);
     res.status(500).send('Error connecting Google Calendar: ' + e.message);
   }
 });
