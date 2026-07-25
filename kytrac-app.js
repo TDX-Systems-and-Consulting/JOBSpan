@@ -566,15 +566,21 @@ function conLoadFirebase() {
 
 function conSignIn() {
   if (!conFirebaseReady) {
-    // If somehow called before ready, just wait and retry
     const btn = document.getElementById('conSignInBtn');
     if (btn) { btn.textContent = 'Connecting...'; btn.disabled = true; }
     setTimeout(conSignIn, 1000);
     return;
   }
+  // Set flag so onAuthStateChanged null bounce doesn't flash the auth wall
+  window._signingIn = true;
+  const btn = document.getElementById('conSignInBtn');
+  if (btn) { btn.textContent = 'Signing in...'; btn.disabled = true; }
+
   const provider = new firebase.auth.GoogleAuthProvider();
   conAuth.signInWithPopup(provider).catch(e => {
-    alert('Sign-in failed: ' + e.message);
+    window._signingIn = false;
+    if (btn) { btn.textContent = 'Sign in with Google'; btn.disabled = false; }
+    if (e.code !== 'auth/popup-closed-by-user') alert('Sign-in failed: ' + e.message);
   });
 }
 
@@ -4108,6 +4114,7 @@ function conInitFirebase() {
         const email = (user.email || '').toLowerCase();
 
         const continueLogin = () => {
+          window._signingIn = false; // popup resolved — clear the flag
           // Sync Custom Claims (companyId/role/fullAccessOverride) before
           // anything else - Firestore Security Rules trust the token
           // claims, not client-side state, so this has to land (and the
@@ -4161,7 +4168,9 @@ function conInitFirebase() {
         }
       } else {
         conCurrentUser = null;
-        conShowAuthWall();
+        // Don't flash the auth wall if the user just clicked Sign In —
+        // the popup briefly causes a null auth state before resolving.
+        if (!window._signingIn) conShowAuthWall();
       }
     });
   } catch(e) {
