@@ -312,12 +312,14 @@ exports.pushPersonalEventToGCal = functions.firestore
     const before = change.before.exists ? change.before.data() : null;
     const after = change.after.exists ? change.after.data() : null;
     const assigneeEmail = (after || before)?.assignee;
-    if (!assigneeEmail) return null; // unassigned events don't sync anywhere
+    console.log('pushPersonalEventToGCal fired', eventId, 'assignee:', assigneeEmail);
+    if (!assigneeEmail) { console.log('No assignee - skipping'); return null; }
 
     const uid = await getUidForEmail(assigneeEmail);
-    if (!uid) return null;
+    console.log('pushPersonalEventToGCal uid for', assigneeEmail, ':', uid);
+    if (!uid) { console.log('No uid found - user never logged in'); return null; }
     const cal = await getCalendarClientForUser(companyId, uid);
-    if (!cal) return null; // not connected - nothing to do
+    console.log('pushPersonalEventToGCal cal client:', cal ? 'obtained' : 'null - not connected');
 
     // Deleted in JOBSpan -> delete on Google Calendar too, if we'd
     // previously pushed one.
