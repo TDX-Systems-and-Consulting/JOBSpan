@@ -3395,9 +3395,10 @@ window.switchDetailTab = switchDetailTab;
 // Path: companies/{companyId}/userReadState/{userEmail}/readCOs/{coId}
 
 function getReadStateRef(type) {
-  const email = (conCurrentUser?.email || '').replace(/\./g, '_');
-  if (!email || !currentCompanyId) return null;
-  return coll('userReadState').doc(email).collection(type);
+  const email = (conCurrentUser?.email || '').replace(/\./g, '_').replace(/@/g, '_at_');
+  if (!email || !currentCompanyId || !conDb) return null;
+  return conDb.collection('companies').doc(currentCompanyId)
+    .collection('userReadState').doc(email).collection(type);
 }
 
 // ── Update a sidebar badge ──
@@ -3421,31 +3422,22 @@ async function loadGlobalNotes() {
   const myEmail = (conCurrentUser?.email || '').toLowerCase();
   const isOwnerOrFullAccess = conUserRole === 'Owner' || window._hasFullAccess;
 
-  // Get all jobs then all notes for each
   const allNotes = [];
-  try {
-    // Query notes across all jobs using collection group query
-    const snap = await conDb.collectionGroup('jobNotes')
-      .orderBy('createdMs', 'desc').limit(100).get();
-    snap.forEach(d => {
-      const n = { id: d.id, ...d.data() };
-      // Extract jobId from path: companies/{co}/jobs/{jobId}/jobNotes/{noteId}
-      const pathParts = d.ref.path.split('/');
-      n.jobId = pathParts[pathParts.indexOf('jobs') + 1];
-      n.jobName = conJobs.find(j => j.id === n.jobId)?.name || 'Unknown Job';
-      allNotes.push(n);
-    });
-  } catch(e) {
-    // Collection group may need index — fall back to per-job query
-    for (const job of conJobs.slice(0, 20)) {
+  // Skip collection group query (needs Firestore index) — go straight to per-job
+  for (const job of conJobs.slice(0, 30)) {
+    try {
+      const snap = await coll('jobs').doc(job.id).collection('jobNotes')
+        .orderBy('createdMs', 'desc').limit(20).get();
+      snap.forEach(d => allNotes.push({ id: d.id, ...d.data(), jobId: job.id, jobName: job.name }));
+    } catch(e) {
+      // orderBy may fail without index — try without
       try {
-        const snap = await coll('jobs').doc(job.id).collection('jobNotes')
-          .orderBy('createdMs', 'desc').limit(20).get();
-        snap.forEach(d => allNotes.push({ id: d.id, ...d.data(), jobId: job.id, jobName: job.name }));
+        const snap2 = await coll('jobs').doc(job.id).collection('jobNotes').limit(20).get();
+        snap2.forEach(d => allNotes.push({ id: d.id, ...d.data(), jobId: job.id, jobName: job.name }));
       } catch(e2) {}
     }
-    allNotes.sort((a, b) => (b.createdMs || 0) - (a.createdMs || 0));
   }
+  allNotes.sort((a, b) => (b.createdMs || 0) - (a.createdMs || 0));
 
   // Get read state for current user
   const readRef = getReadStateRef('readNotes');
