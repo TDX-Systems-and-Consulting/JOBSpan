@@ -1161,18 +1161,59 @@
         Showing your assigned jobs only. Company-wide financials, pipeline, and labor cost data aren't shown for your role.
       </div>
 
-      <!-- KPI Stats — 5 tiles -->
-      <div class="kt-stats" id="conStats" style="margin-bottom:16px;grid-template-columns:repeat(5,1fr)">
-        <div class="kt-stat"><div class="kt-stat-val" id="statActiveJobs">0</div><div class="kt-stat-label">Active Jobs</div></div>
-        <div class="kt-stat" id="statContractWrap"><div class="kt-stat-val" id="statContractTotal">$0</div><div class="kt-stat-label">Contract Value</div></div>
-        <div class="kt-stat" id="statMarginWrap"><div class="kt-stat-val" id="statAvgMargin">0%</div><div class="kt-stat-label">Avg Margin</div></div>
-        <div class="kt-stat" id="statLaborEffTile" style="cursor:default">
-          <div class="kt-stat-val" id="statLaborEffVal">—</div>
-          <div class="kt-stat-label">Labor Efficiency</div>
+      <!-- Row 1: Operations (counts & percentages) -->
+      <div class="kt-stats" id="conStats" style="margin-bottom:10px;grid-template-columns:repeat(6,1fr)">
+        <div class="kt-stat" id="statActiveJobsTile" title="Total active jobs">
+          <div class="kt-stat-val" id="statActiveJobs" style="color:#4d8dff">0</div>
+          <div class="kt-stat-label">Active Jobs</div>
         </div>
-        <div class="kt-stat" id="statLogsTile">
+        <div class="kt-stat" id="statEstPendingTile" title="Proposals sent, awaiting customer approval">
+          <div class="kt-stat-val" id="statEstPending" style="color:#1dbb87">0</div>
+          <div class="kt-stat-label">Estimates Pending</div>
+        </div>
+        <div class="kt-stat" id="statCloseRateTile" title="Approved ÷ total proposals sent">
+          <div class="kt-stat-val" id="statCloseRate" style="color:#1dbb87">—</div>
+          <div class="kt-stat-label">Close Rate</div>
+        </div>
+        <div class="kt-stat" id="statAvgMarginTile" title="Average margin across active jobs">
+          <div class="kt-stat-val" id="statAvgMargin" style="color:#1dbb87">0%</div>
+          <div class="kt-stat-label">Avg Margin</div>
+        </div>
+        <div class="kt-stat" id="statUnprocessedCOTile" title="Change orders awaiting action">
+          <div class="kt-stat-val" id="statUnprocessedCO" style="color:#1dbb87">0</div>
+          <div class="kt-stat-label">Unprocessed COs</div>
+        </div>
+        <div class="kt-stat" id="statLogsTile" title="Daily logs submitted vs crew clocked in">
           <div class="kt-stat-val" id="statLogsToday" style="color:#1dbb87">—</div>
           <div class="kt-stat-label">Logs Today</div>
+        </div>
+      </div>
+
+      <!-- Row 2: Money (all dollar values, QBO-synced daily) -->
+      <div class="kt-stats" id="conStatsFinancial" style="margin-bottom:16px;grid-template-columns:repeat(6,1fr)">
+        <div class="kt-stat" id="statCollectedTile" title="Cash collected this month (QBO)">
+          <div class="kt-stat-val" id="statCollectedMTD" style="color:#1dbb87">—</div>
+          <div class="kt-stat-label">Collected MTD</div>
+        </div>
+        <div class="kt-stat" id="statSpentTile" title="Cash spent this month (QBO)">
+          <div class="kt-stat-val" id="statSpentMTD" style="color:#f59e0b">—</div>
+          <div class="kt-stat-label">Spent MTD</div>
+        </div>
+        <div class="kt-stat" id="statNetTile" title="Collected minus Spent this month">
+          <div class="kt-stat-val" id="statNetMTD" style="color:#1dbb87">—</div>
+          <div class="kt-stat-label">Net MTD</div>
+        </div>
+        <div class="kt-stat" id="statContractWrap" title="Total contract value of active jobs">
+          <div class="kt-stat-val" id="statContractTotal" style="color:#f59e0b">$0</div>
+          <div class="kt-stat-label">Contract Value</div>
+        </div>
+        <div class="kt-stat" id="statAvgJobValTile" title="Average value per active job">
+          <div class="kt-stat-val" id="statAvgJobVal" style="color:#f59e0b">—</div>
+          <div class="kt-stat-label">Avg Job Value</div>
+        </div>
+        <div class="kt-stat" id="statOutstandingTile" title="Total unpaid invoice balance">
+          <div class="kt-stat-val" id="statOutstanding" style="color:#1dbb87">—</div>
+          <div class="kt-stat-label">Outstanding Invoices</div>
         </div>
       </div>
 

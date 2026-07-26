@@ -244,6 +244,11 @@ service cloud.firestore {
           allow update: if inCompany(companyId) && hasFullAccess();
           allow delete: if false;
         }
+        match /kpiCache/{docId} {
+          // Dashboard KPI cache — readable by all team members, written by Cloud Functions only
+          allow read: if inCompany(companyId);
+          allow write: if false; // Cloud Functions use Admin SDK, bypasses rules
+        }
         match /jobNotes/{noteId} {
           // PM paper trail — immutable once saved, author or owner can delete.
           allow read: if inCompany(companyId);

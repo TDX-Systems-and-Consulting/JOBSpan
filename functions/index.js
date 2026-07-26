@@ -1125,3 +1125,92 @@ exports.sendJobspanEmail = functions.https.onCall(async (data, context) => {
 
   return { success: true, message: `Email sent to ${to}` };
 });
+
+// ════════════════════════════════════════════════════
+// ── dailyKpiRefresh ──────────────────────────────────
+// Runs every day at 6am CT, pulls MTD financials from QBO,
+// writes to companies/{companyId}/kpiCache/mtd so the dashboard
+// can read instantly without live API calls on page load.
+// ════════════════════════════════════════════════════
+exports.dailyKpiRefresh = functions.pubsub
+  .schedule('0 11 * * *') // 11am UTC = 6am CT
+  .timeZone('America/Chicago')
+  .onRun(async () => {
+    const db = admin.firestore();
+
+    // Get all companies that have QBO connected
+    const companiesSnap = await db.collection('companies').get();
+
+    for (const companyDoc of companiesSnap.docs) {
+      const companyId = companyDoc.id;
+      try {
+        // Load QBO tokens
+        const tokenDoc = await db.collection('companies').doc(companyId)
+          .collection('quickbooksTokens').doc('main').get();
+        if (!tokenDoc.exists) continue;
+
+        const tokens = tokenDoc.data();
+        const realmId = tokens.realmId;
+        if (!realmId || !tokens.accessToken) continue;
+
+        const now = new Date();
+        const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
+          .toISOString().split('T')[0];
+        const today = now.toISOString().split('T')[0];
+
+        // Helper to call QBO API
+        const qboGet = async (path) => {
+          const res = await fetch(
+            `https://quickbooks.api.intuit.com/v3/company/${realmId}/${path}`,
+            { headers: {
+              'Authorization': `Bearer ${tokens.accessToken}`,
+              'Accept': 'application/json'
+            }}
+          );
+          if (!res.ok) throw new Error('QBO API error: ' + res.status);
+          return res.json();
+        };
+
+        // Collected MTD — sum of payments received
+        let collectedMTD = 0;
+        try {
+          const paymentsQuery = `SELECT * FROM Payment WHERE TxnDate >= '${firstOfMonth}' AND TxnDate <= '${today}' MAXRESULTS 1000`;
+          const paymentsRes = await qboGet(`query?query=${encodeURIComponent(paymentsQuery)}`);
+          const payments = paymentsRes?.QueryResponse?.Payment || [];
+          collectedMTD = payments.reduce((s, p) => s + (p.TotalAmt || 0), 0);
+        } catch(e) { console.warn('QBO payments query failed:', e.message); }
+
+        // Spent MTD — sum of bills paid + expenses
+        let spentMTD = 0;
+        try {
+          const billsQuery = `SELECT * FROM Bill WHERE TxnDate >= '${firstOfMonth}' AND TxnDate <= '${today}' MAXRESULTS 1000`;
+          const billsRes = await qboGet(`query?query=${encodeURIComponent(billsQuery)}`);
+          const bills = billsRes?.QueryResponse?.Bill || [];
+          spentMTD += bills.reduce((s, b) => s + (b.TotalAmt || 0), 0);
+        } catch(e) { console.warn('QBO bills query failed:', e.message); }
+
+        try {
+          const expQuery = `SELECT * FROM Purchase WHERE TxnDate >= '${firstOfMonth}' AND TxnDate <= '${today}' MAXRESULTS 1000`;
+          const expRes = await qboGet(`query?query=${encodeURIComponent(expQuery)}`);
+          const expenses = expRes?.QueryResponse?.Purchase || [];
+          spentMTD += expenses.reduce((s, e) => s + (e.TotalAmt || 0), 0);
+        } catch(e) { console.warn('QBO expenses query failed:', e.message); }
+
+        // Write to Firestore cache
+        await db.collection('companies').doc(companyId)
+          .collection('kpiCache').doc('mtd').set({
+            collectedMTD: Math.round(collectedMTD * 100) / 100,
+            spentMTD: Math.round(spentMTD * 100) / 100,
+            netMTD: Math.round((collectedMTD - spentMTD) * 100) / 100,
+            refreshedAt: admin.firestore.FieldValue.serverTimestamp(),
+            periodStart: firstOfMonth,
+            periodEnd: today,
+          });
+
+        console.log(`KPI refresh complete for ${companyId}: collected=$${collectedMTD} spent=$${spentMTD}`);
+      } catch(e) {
+        console.error(`KPI refresh failed for ${companyId}:`, e.message);
+      }
+    }
+    return null;
+  });

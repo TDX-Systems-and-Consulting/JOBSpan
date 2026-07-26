@@ -862,46 +862,157 @@ function getJobValue(job) {
 
 function conRenderStats() {
   const closedStatuses = ['Closed Won','Closed Lost','Closed Hipshot Sent'];
-  const active = conJobs.filter(j => !closedStatuses.includes(j.status)).length;
-  document.getElementById('statActiveJobs').textContent = active;
-  const totalContract = conJobs.reduce((s, j) => s + getJobValue(j), 0);
-  document.getElementById('statContractTotal').textContent = '$' + Math.round(totalContract).toLocaleString();
-  const margins = conJobs.filter(j => getJobValue(j) > 0 && j.estCost > 0 && j.estCost < getJobValue(j)).map(j => (getJobValue(j) - j.estCost) / getJobValue(j) * 100);
-  const avgMargin = margins.length ? (margins.reduce((a,b) => a+b, 0) / margins.length).toFixed(1) : '0';
-  document.getElementById('statAvgMargin').textContent = avgMargin + '%';
+  const active = conJobs.filter(j => !closedStatuses.includes(j.status));
 
-  // Logs Today — count today's logs vs crew clocked in, color signal
+  // ── Helper: set tile value and color ──
+  function setTile(valId, tileId, value, color, topColor) {
+    const v = document.getElementById(valId);
+    const t = document.getElementById(tileId);
+    if (v) { v.textContent = value; v.style.color = color; }
+    if (t) t.style.borderTopColor = topColor || color;
+  }
+
+  // ── Row 1: Operations ──
+
+  // Active Jobs — amber (neutral count)
+  setTile('statActiveJobs', 'statActiveJobsTile', active.length, '#4d8dff', '#4d8dff');
+
+  // Avg Margin
+  const margins = active.filter(j => getJobValue(j) > 0 && j.estCost > 0)
+    .map(j => (getJobValue(j) - j.estCost) / getJobValue(j) * 100);
+  const avgMargin = margins.length ? margins.reduce((a,b) => a+b,0) / margins.length : 0;
+  const marginColor = avgMargin >= 20 ? '#1dbb87' : avgMargin >= 15 ? '#f59e0b' : '#ef5350';
+  setTile('statAvgMargin', 'statAvgMarginTile', avgMargin.toFixed(1) + '%', marginColor);
+
+  // Estimates Pending — proposals in 'pending' status
+  const estPending = conJobs.reduce((count, j) => {
+    // We don't have proposals loaded globally — use job status as proxy
+    return count;
+  }, 0);
+  // Load proposals pending count async
+  if (conDb && currentCompanyId) {
+    let pendingCount = 0;
+    const pendingPromises = conJobs.map(j =>
+      coll('jobs').doc(j.id).collection('proposals')
+        .where('status','==','pending').get()
+        .then(s => { pendingCount += s.size; })
+        .catch(() => {})
+    );
+    Promise.all(pendingPromises).then(() => {
+      const epColor = pendingCount === 0 ? '#1dbb87' : pendingCount <= 2 ? '#f59e0b' : '#ef5350';
+      setTile('statEstPending', 'statEstPendingTile', pendingCount, epColor);
+    });
+  }
+
+  // Close Rate — approved ÷ (approved + declined) proposals
+  if (conDb) {
+    let approved = 0, total = 0;
+    const crPromises = conJobs.map(j =>
+      coll('jobs').doc(j.id).collection('proposals').get()
+        .then(s => s.forEach(d => {
+          const st = d.data().status;
+          if (st === 'approved') { approved++; total++; }
+          else if (st === 'declined') total++;
+        })).catch(() => {})
+    );
+    Promise.all(crPromises).then(() => {
+      const rate = total > 0 ? Math.round(approved / total * 100) : null;
+      const crColor = rate === null ? '#94a3b8' : rate >= 50 ? '#1dbb87' : rate >= 30 ? '#f59e0b' : '#ef5350';
+      setTile('statCloseRate', 'statCloseRateTile', rate !== null ? rate + '%' : '—', crColor);
+    });
+  }
+
+  // Unprocessed COs
+  if (conDb) {
+    let unprocessed = 0;
+    const coPromises = conJobs.map(j =>
+      coll('jobs').doc(j.id).collection('changeorders').get()
+        .then(s => s.forEach(d => {
+          const st = (d.data().status || '').toLowerCase();
+          if (!['approved','declined','rejected','paid','invoiced'].includes(st)) unprocessed++;
+        })).catch(() => {})
+    );
+    Promise.all(coPromises).then(() => {
+      const coColor = unprocessed === 0 ? '#1dbb87' : unprocessed <= 2 ? '#f59e0b' : '#ef5350';
+      setTile('statUnprocessedCO', 'statUnprocessedCOTile', unprocessed, coColor);
+      setNavBadge('navCOBadge', unprocessed);
+    });
+  }
+
+  // Logs Today — color signal
   const logsEl = document.getElementById('statLogsToday');
-  const logsTileEl = document.getElementById('statLogsTile');
   if (logsEl && conDb) {
     const today = new Date().toISOString().split('T')[0];
-    // Count today's logs across all jobs
     Promise.all([
       conDb.collectionGroup('logs').where('date','==',today).get().catch(() => null),
       coll('timeEntries').where('date','==',today).where('clockOut','!=',null).get().catch(() => null)
     ]).then(([logsSnap, timeSnap]) => {
       const logCount = logsSnap ? logsSnap.size : 0;
       const clockedOutCount = timeSnap ? new Set(timeSnap.docs.map(d => d.data().userId)).size : 0;
-      const clockedInCount = 0; // Would need separate query — use clocked out as proxy
-
-      logsEl.textContent = logCount;
-
-      // Color: green if logs exist and >= clocked out employees
-      // yellow if fewer logs than clock-outs, red if clock-outs with zero logs
-      if (clockedOutCount === 0) {
-        logsEl.style.color = '#eaf0fb'; // neutral — no one clocked out yet
-      } else if (logCount === 0) {
-        logsEl.style.color = '#ef5350'; // red — people worked, no logs
-        logsEl.textContent = '⚠ ' + logCount;
-      } else if (logCount < clockedOutCount) {
-        logsEl.style.color = '#f59e0b'; // yellow — some logs missing
-        logsEl.textContent = logCount + '/' + clockedOutCount;
-      } else {
-        logsEl.style.color = '#1dbb87'; // green — all covered
+      let logsColor = '#1dbb87', logsVal = logCount.toString();
+      if (clockedOutCount > 0) {
+        if (logCount === 0) { logsColor = '#ef5350'; logsVal = '⚠ 0'; }
+        else if (logCount < clockedOutCount) { logsColor = '#f59e0b'; logsVal = `${logCount}/${clockedOutCount}`; }
       }
-    }).catch(() => { logsEl.textContent = '—'; });
-  } else if (logsEl) {
-    logsEl.textContent = '—';
+      setTile('statLogsToday', 'statLogsTile', logsVal, logsColor);
+    }).catch(() => { if (logsEl) logsEl.textContent = '—'; });
+  }
+
+  // ── Row 2: Money ──
+
+  // Contract Value — amber (reference)
+  const totalContract = active.reduce((s,j) => s + getJobValue(j), 0);
+  setTile('statContractTotal', 'statContractWrap',
+    '$' + Math.round(totalContract).toLocaleString(), '#f59e0b');
+
+  // Avg Job Value
+  const avgJobVal = active.length ? totalContract / active.length : 0;
+  const ajvColor = avgJobVal >= 8000 ? '#1dbb87' : avgJobVal >= 3000 ? '#f59e0b' : '#ef5350';
+  setTile('statAvgJobVal', 'statAvgJobValTile',
+    avgJobVal ? '$' + Math.round(avgJobVal).toLocaleString() : '—', ajvColor);
+
+  // Outstanding Invoices — sum unpaid across all jobs
+  if (conDb) {
+    let outstanding = 0;
+    const invPromises = conJobs.map(j =>
+      coll('jobs').doc(j.id).collection('invoices').get()
+        .then(s => s.forEach(d => {
+          const inv = d.data();
+          if (inv.status !== 'Paid') outstanding += (inv.total || 0) - (inv.amtPaid || 0);
+        })).catch(() => {})
+    );
+    Promise.all(invPromises).then(() => {
+      const outColor = outstanding === 0 ? '#1dbb87' : outstanding <= 10000 ? '#f59e0b' : '#ef5350';
+      setTile('statOutstanding', 'statOutstandingTile',
+        outstanding > 0 ? '$' + Math.round(outstanding).toLocaleString() : '$0', outColor);
+    });
+  }
+
+  // QBO MTD numbers — load from cached Firestore doc (written by daily Cloud Function)
+  if (conDb && currentCompanyId) {
+    coll('kpiCache').doc('mtd').get().then(doc => {
+      if (!doc.exists) {
+        // No cache yet — show dashes
+        ['statCollectedMTD','statSpentMTD','statNetMTD'].forEach(id => {
+          const el = document.getElementById(id);
+          if (el) el.textContent = '—';
+        });
+        return;
+      }
+      const d = doc.data();
+      const collected = d.collectedMTD || 0;
+      const spent = d.spentMTD || 0;
+      const net = collected - spent;
+
+      setTile('statCollectedMTD', 'statCollectedTile',
+        '$' + Math.round(collected).toLocaleString(), '#1dbb87');
+      setTile('statSpentMTD', 'statSpentTile',
+        '$' + Math.round(spent).toLocaleString(), '#f59e0b');
+
+      const netColor = net > 0 ? '#1dbb87' : net < 0 ? '#ef5350' : '#f59e0b';
+      setTile('statNetMTD', 'statNetTile',
+        (net >= 0 ? '+$' : '-$') + Math.abs(Math.round(net)).toLocaleString(), netColor);
+    }).catch(() => {});
   }
 }
 
@@ -4919,25 +5030,29 @@ function renderHomeDashboard() {
 
   if (!fullAccess) return;
 
-  // ── Pipeline — horizontal strip ──
+  // ── Pipeline — horizontal strip (active stages only) ──
   const pipeline = document.getElementById('homePipelineSummary');
   if (pipeline) {
     const groups = [
-      { label: 'Sales', color: '#f97316', statuses: ['New Lead','Hipshot Needed','Appointment Set','Estimating','Submitted'] },
-      { label: 'Active', color: '#0d9488', statuses: ['Approved','Design Phase','Permitting','Scheduled','Work In Progress','Contracted','Inspection Pending'] },
-      { label: 'Finance', color: '#7c3aed', statuses: ['Invoicing','Pending Payment','Delinquent'] },
-      { label: 'Closed Won', color: '#db2777', statuses: ['Closed Won'] },
-      { label: 'Closed Lost', color: '#dc2626', statuses: ['Closed Lost','Closed Hipshot Sent'] },
+      { label: 'Estimates', color: '#f97316', key: 'estimates',
+        statuses: ['New Lead','Hipshot Needed','Appointment Set','Estimating','Submitted'] },
+      { label: 'Active', color: '#0d9488', key: 'active',
+        statuses: ['Approved','Design Phase','Permitting','Scheduled','Work In Progress','Contracted','Inspection Pending'] },
+      { label: 'Finance', color: '#7c3aed', key: 'finance',
+        statuses: ['Invoicing','Pending Payment','Delinquent'] },
     ];
     pipeline.innerHTML = groups.map((g, i) => {
       const jobs = conJobs.filter(j => g.statuses.includes(j.status));
       const val = jobs.reduce((s,j) => s + getJobValue(j), 0);
-      return `<div style="padding:14px 16px;border-right:${i < groups.length-1 ? '1px solid rgba(110,145,210,.1)' : 'none'};text-align:center">
+      return `<div style="padding:14px 16px;border-right:${i < groups.length-1 ? '1px solid rgba(110,145,210,.1)' : 'none'};text-align:center;flex:1">
         <div style="display:flex;align-items:center;justify-content:center;gap:6px;margin-bottom:6px">
           <div style="width:8px;height:8px;border-radius:50%;background:${g.color}"></div>
           <span style="font-size:.78rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">${g.label}</span>
         </div>
-        <div style="font-size:1.4rem;font-weight:900;color:${g.color}">${jobs.length}</div>
+        <div onclick="filterJobsToStage('${g.key}')"
+          style="font-size:1.6rem;font-weight:900;color:${g.color};cursor:pointer;transition:opacity .15s"
+          title="Click to view ${g.label} jobs"
+          onmouseover="this.style.opacity='.7'" onmouseout="this.style.opacity='1'">${jobs.length}</div>
         ${val > 0 ? `<div style="font-size:.72rem;color:var(--muted);margin-top:2px">$${Math.round(val).toLocaleString()}</div>` : '<div style="font-size:.72rem;color:var(--muted);margin-top:2px">—</div>'}
       </div>`;
     }).join('');
@@ -4949,6 +5064,27 @@ function renderHomeDashboard() {
   renderCompanyLaborEfficiency();
 }
 window.renderHomeDashboard = renderHomeDashboard;
+
+// Pipeline click — filter Jobs page to selected stage group
+function filterJobsToStage(key) {
+  const statusMap = {
+    estimates: ['New Lead','Hipshot Needed','Appointment Set','Estimating','Submitted'],
+    active: ['Approved','Design Phase','Permitting','Scheduled','Work In Progress','Contracted','Inspection Pending'],
+    finance: ['Invoicing','Pending Payment','Delinquent'],
+  };
+  const statuses = statusMap[key] || [];
+  // Navigate to Jobs page and filter
+  ktNav('jobs', document.querySelector('.kt-nav-item:nth-child(5)'));
+  setTimeout(() => {
+    // Set filter dropdown if it exists
+    const filterEl = document.getElementById('jobsStatusFilter');
+    if (filterEl && statuses.length) {
+      filterEl.value = statuses[0];
+      filterEl.dispatchEvent(new Event('change'));
+    }
+  }, 200);
+}
+window.filterJobsToStage = filterJobsToStage;
 
 // ── TODAY'S ACTIVITY ──
 function renderNeedsAttention() {
