@@ -603,11 +603,29 @@ const KANBAN_COLUMNS = [
 
 // Pipeline strip bucket → which Firestore statuses belong to each group
 const PIPELINE_BUCKETS = {
-  estimates: ['New Lead','Appointment Set','Building Estimate','Submitted'],
-  active:    ['Approved','To Be Scheduled','Permitting','Scheduled','In Progress','Inspection Pending'],
-  finance:   ['Complete'],
+  estimates: ['New Lead', 'Appointment Set'],
+  bidding:   ['Building Estimate', 'Submitted'],
+  approved:  ['Approved'],
+  scheduled: ['To Be Scheduled', 'Permitting', 'Scheduled'],
+  inprogress:['In Progress', 'Inspection Pending'],
+  closing:   ['Complete'],
 };
 
+// Flat list of all "in-flight" statuses (excludes Closed lanes and Estimates)
+const ACTIVE_STATUSES = [
+  ...PIPELINE_BUCKETS.approved,
+  ...PIPELINE_BUCKETS.scheduled,
+  ...PIPELINE_BUCKETS.inprogress,
+];
+// All non-closed statuses (used for schedule, logs, etc.)
+const ALL_OPEN_STATUSES = [
+  ...PIPELINE_BUCKETS.estimates,
+  ...PIPELINE_BUCKETS.bidding,
+  ...PIPELINE_BUCKETS.approved,
+  ...PIPELINE_BUCKETS.scheduled,
+  ...PIPELINE_BUCKETS.inprogress,
+  ...PIPELINE_BUCKETS.closing,
+];
 const CON_JOB_STATUSES = KYTRAC_STATUSES.map(s => s.name);
 
 // ── Run status migration on load ────────────────────────────────────────────
@@ -1104,7 +1122,7 @@ function conRenderStats() {
 function conRenderSchedule() {
   const el = document.getElementById('conScheduleList');
   if (!el) return;
-  const jobsWithDates = conJobs.filter(j => j.startDate && PIPELINE_BUCKETS.active.includes(j.status));
+  const jobsWithDates = conJobs.filter(j => j.startDate && ACTIVE_STATUSES.includes(j.status));
   if (!jobsWithDates.length) { el.innerHTML = '<p class="muted">No active jobs with scheduled dates.</p>'; return; }
   el.innerHTML = jobsWithDates.sort((a,b) => a.startDate.localeCompare(b.startDate)).map(j => `
     <div class="fin-row">
@@ -2978,7 +2996,7 @@ function renderJCDAlerts(containerId) {
   const alerts = [];
 
   conJobs.forEach(j => {
-    if (!PIPELINE_BUCKETS.active.includes(j.status)) return;
+    if (!ACTIVE_STATUSES.includes(j.status)) return;
     const cv = getJobValue(j);
     const ec = j.estCost || 0;
     const ac = getJobTotalActual(j.id);
@@ -5120,8 +5138,11 @@ function renderHomeDashboard() {
   if (pipeline) {
     const groups = [
       { label: 'Estimates', color: '#f97316', key: 'estimates', statuses: PIPELINE_BUCKETS.estimates },
-      { label: 'Active',    color: '#0d9488', key: 'active',    statuses: PIPELINE_BUCKETS.active },
-      { label: 'Finance',   color: '#7c3aed', key: 'finance',   statuses: PIPELINE_BUCKETS.finance },
+      { label: 'Bidding',   color: '#d97706', key: 'bidding',   statuses: PIPELINE_BUCKETS.bidding },
+      { label: 'Approved',  color: '#16a34a', key: 'approved',  statuses: PIPELINE_BUCKETS.approved },
+      { label: 'Scheduled', color: '#0d9488', key: 'scheduled', statuses: PIPELINE_BUCKETS.scheduled },
+      { label: 'In Progress',color:'#3b82f6', key: 'inprogress',statuses: PIPELINE_BUCKETS.inprogress },
+      { label: 'Closing',   color: '#7c3aed', key: 'closing',   statuses: PIPELINE_BUCKETS.closing },
     ];
     pipeline.innerHTML = groups.map((g, i) => {
       const jobs = conJobs.filter(j => g.statuses.includes(j.status));
@@ -5221,7 +5242,7 @@ function renderNeedsAttention() {
       items.push({ color:'#2563eb', icon:'🔍', text: job.name, sub: 'Inspection pending', jobId: job.id });
     }
     // Jobs with no logs in 3+ days (active jobs only)
-    const activeStatuses = PIPELINE_BUCKETS.active;
+    const activeStatuses = ACTIVE_STATUSES;
     if (activeStatuses.includes(job.status)) {
       const lastLog = job.lastLogDate || '';
       if (!lastLog) {
@@ -8879,7 +8900,7 @@ function renderTodaySummary() {
 }
 
 function populateTimeFilters() {
-  const activeStatuses = PIPELINE_BUCKETS.active;
+  const activeStatuses = ACTIVE_STATUSES;
   const activeJobs = conJobs.filter(j => activeStatuses.includes(j.status));
 
   const jobSel = document.getElementById('clockJobSelect');
@@ -9299,7 +9320,7 @@ function renderVendors() {
   const insExpired = allVendors.filter(v => v.insExp && v.insExp < today).length;
   const setEl = (id,v) => { const el=document.getElementById(id); if(el) el.textContent=v; };
   setEl('vendorStatTotal', allVendors.length);
-  setEl('vendorStatActive', conJobs.filter(j=>PIPELINE_BUCKETS.active.includes(j.status)).length + ' jobs active');
+  setEl('vendorStatActive', conJobs.filter(j=>ACTIVE_STATUSES.includes(j.status)).length + ' jobs active');
   setEl('vendorStatInsWarn', insWarn + (insExpired > 0 ? ` (+${insExpired} expired)` : ''));
 
   if (countEl) countEl.textContent = `${allVendors.length} vendor${allVendors.length!==1?'s':''} total`;
@@ -10150,7 +10171,7 @@ function showJobPickerForLog() {
   if (existing) existing.remove();
 
   const activeJobs = conJobs.filter(j =>
-    PIPELINE_BUCKETS.active.includes(j.status) || j.status === 'Building Estimate'
+    ALL_OPEN_STATUSES.includes(j.status)
   );
   const jobList = activeJobs.length ? activeJobs : conJobs;
 
@@ -11782,7 +11803,7 @@ function renderOverviewReport(el, jobs, f) {
   const estMarginPct = totalContract ? Math.round(estMargin/totalContract*100) : 0;
   const actMarginPct = totalContract ? Math.round(actMargin/totalContract*100) : 0;
 
-  const activeJobs = jobs.filter(j => PIPELINE_BUCKETS.active.includes(j.status));
+  const activeJobs = jobs.filter(j => ACTIVE_STATUSES.includes(j.status));
   const wonJobs = jobs.filter(j => j.status === 'Closed Completed');
   const lostJobs = jobs.filter(j => j.status === 'Closed Lost');
   const winRate = (wonJobs.length + lostJobs.length) > 0
@@ -12614,7 +12635,7 @@ function openPOModal(id) {
 
   // Pre-fill ship to from job address
   if (!po) {
-    const firstActiveJob = conJobs.find(j => PIPELINE_BUCKETS.active.includes(j.status));
+    const firstActiveJob = conJobs.find(j => ACTIVE_STATUSES.includes(j.status));
     if (firstActiveJob?.address) setVal('poShipTo', firstActiveJob.address);
   }
 
