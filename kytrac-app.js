@@ -5108,7 +5108,8 @@ async function renderOffToday() {
     });
 
     if (!offToday.length) {
-      card.style.display = 'none';
+      card.style.display = 'block';
+      el.innerHTML = '<div style="color:#1dbb87;font-weight:700;font-size:.88rem">✅ Fully Staffed</div>';
       return;
     }
 
