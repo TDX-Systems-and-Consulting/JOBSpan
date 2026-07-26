@@ -1541,14 +1541,29 @@ function parseMentions(text, teamMembers) {
 function computeNotifyTargets(text, teamMembers, opts) {
   opts = opts || {};
   const mentioned = parseMentions(text, teamMembers);
-  if (mentioned.length) {
-    return mentioned.map(m => ({ name: m.name, email: m.email, phone: m.phone || '' }));
+  const owner = teamMembers.find(m => m.role === 'Owner');
+
+  // Always notify the Owner on every message — no message gets missed.
+  // @mentioned team members are added on top of that.
+  // If the message IS from the owner themselves, skip their own notification.
+  const targets = [];
+
+  // Add owner first (unless they sent the message)
+  if (owner && owner.phone) {
+    const senderEmail = opts.senderEmail || '';
+    if (senderEmail.toLowerCase() !== (owner.email || '').toLowerCase()) {
+      targets.push({ name: owner.name, email: owner.email, phone: owner.phone });
+    }
   }
-  if (opts.fromCustomer) {
-    const owner = teamMembers.find(m => m.role === 'Owner');
-    return owner ? [{ name: owner.name, email: owner.email, phone: owner.phone || '' }] : [];
-  }
-  return [];
+
+  // Add @mentioned people (deduplicated, skip if already in targets)
+  mentioned.forEach(m => {
+    if (!targets.find(t => t.email === m.email)) {
+      targets.push({ name: m.name, email: m.email, phone: m.phone || '' });
+    }
+  });
+
+  return targets;
 }
 
 // Fetches the current team roster as a flat array (helper for message
@@ -1623,7 +1638,7 @@ function sendJobMessage() {
   const job = conJobs.find(j => j.id === conCurrentJobId);
 
   fetchTeamMembersFlat(conDb, currentCompanyId).then(teamMembers => {
-    let notifyTargets = computeNotifyTargets(text, teamMembers, { fromCustomer: false });
+    let notifyTargets = computeNotifyTargets(text, teamMembers, { fromCustomer: false, senderEmail: conCurrentUser?.email || '' });
     // If this is a reply to the customer, also notify (text) the customer
     // directly at the phone number on file for this job - separate from
     // the @mention team-routing logic above, both can fire together.
@@ -9989,7 +10004,7 @@ function sendPortalMessage() {
   input.value = '';
 
   fetchTeamMembersFlat(_portalDb, _portalCompanyId).then(teamMembers => {
-    const notifyTargets = computeNotifyTargets(text, teamMembers, { fromCustomer: true });
+    const notifyTargets = computeNotifyTargets(text, teamMembers, { fromCustomer: true, senderEmail: '' });
     const data = {
       text,
       authorEmail: '',
