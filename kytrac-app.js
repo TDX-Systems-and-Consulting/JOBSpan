@@ -13612,7 +13612,7 @@ function renderProposalDocumentHtml(data, job, co) {
     .cat-block { padding: 14px 16px; border: 1px solid #e5e7eb; border-top: none; }
     .cat-block:last-child { border-radius: 0 0 8px 8px; }
     .cat-name { font-weight: 700; font-size: .98rem; color: #111827; overflow: hidden; }
-    .cat-scope { color: #4b5563; font-size: .88rem; margin-top: 6px; line-height: 1.55; }
+    .cat-scope { color: #4b5563; font-size: .88rem; margin-top: 6px; line-height: 1.55; white-space: pre-line; }
     .cat-bid-caveat { color: #92400e; background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; padding: 6px 10px; font-size: .82rem; margin-top: 8px; line-height: 1.5; }
     .total-box { margin-top: 36px; padding: 20px 24px; background: #1f2937; color: #fff; border-radius: 10px; display: flex; justify-content: space-between; align-items: center; }
     .total-box .label { font-size: 1rem; font-weight: 700; letter-spacing: .04em; }
@@ -13924,19 +13924,32 @@ function printEstimate() {
 
     const subRows = (group.subgroups||[]).map(sub => {
       const st = calcGroupTotals(sub.items||[]);
+      const isDescOnly = st.price <= 0 && sub.scopeNotes;
       const subItemRows = (sub.items||[]).map(item => {
         const qty = item.qty||1;
         const uc = item.unitCost||0;
         const up = item.unitPrice||uc;
         return `<tr style="font-size:.82rem">
-          <td style="padding:5px 8px 5px 32px">${esc(item.desc||'')}</td>
+          <td style="padding:5px 8px 5px 32px">${esc(item.desc||'')}${item.notes ? `<div style="font-size:.75rem;color:#6b7280;font-style:italic;margin-top:2px">${esc(item.notes)}</div>` : ''}</td>
           <td style="text-align:center">${qty} ${item.unit||''}</td>
           <td style="text-align:right">$${(qty*uc).toFixed(2)}</td>
           <td style="text-align:right;font-weight:600">$${(qty*up).toFixed(2)}</td>
         </tr>`;
       }).join('');
+
+      // Description-only subgroup — show name + scope notes, no price columns
+      if (isDescOnly) {
+        return `<tr style="background:#f9fafb">
+          <td colspan="4" style="padding:6px 8px 2px 20px;font-weight:700;color:#374151">${esc(sub.name)}</td>
+        </tr>
+        <tr><td colspan="4" style="padding:2px 8px 8px 20px;font-size:.8rem;color:#6b7280;white-space:pre-line">${esc(sub.scopeNotes)}</td></tr>`;
+      }
+
       return `<tr style="background:#f3f4f6">
-        <td style="padding:6px 8px 6px 20px;font-weight:700;color:#374151">${esc(sub.name)}</td>
+        <td style="padding:6px 8px 6px 20px;font-weight:700;color:#374151">
+          ${esc(sub.name)}
+          ${sub.scopeNotes ? `<div style="font-size:.78rem;color:#6b7280;font-weight:400;font-style:italic;white-space:pre-line;margin-top:2px">${esc(sub.scopeNotes)}</div>` : ''}
+        </td>
         <td></td>
         <td style="text-align:right;font-weight:600">$${st.cost.toFixed(2)}</td>
         <td style="text-align:right;font-weight:700;color:#d97706">$${st.price.toFixed(2)}</td>
@@ -13955,12 +13968,19 @@ function printEstimate() {
       </tr>`;
     }).join('');
 
-    return `<tr style="background:#e5e7eb">
+    // Only show group total row if there are multiple pricing subgroups
+    // — when there's just one, the subgroup row already shows the total
+    const pricingSubCount = (group.subgroups||[]).filter(s => calcGroupTotals(s.items||[]).price > 0).length;
+    const showGroupTotal = pricingSubCount !== 1 || (group.directItems||[]).length > 0;
+
+    return `${showGroupTotal ? `<tr style="background:#e5e7eb">
       <td style="padding:8px;font-weight:900;font-size:.95rem">${esc(group.name)}</td>
       <td></td>
       <td style="text-align:right;font-weight:700">$${totals.cost.toFixed(2)}</td>
       <td style="text-align:right;font-weight:700;color:#d97706">$${totals.price.toFixed(2)}</td>
-    </tr>${subRows}${directRows}`;
+    </tr>` : `<tr style="background:#e5e7eb">
+      <td colspan="4" style="padding:8px;font-weight:900;font-size:.95rem">${esc(group.name)}</td>
+    </tr>`}${subRows}${directRows}`;
   }).join('');
 
   const profit = allPrice - allCost;
