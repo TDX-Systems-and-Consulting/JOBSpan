@@ -12886,7 +12886,6 @@ function renderSubgroupHTML(groupId, sub) {
     <div class="est-subgroup-head" onclick="toggleGroupCollapse('${sub.id}')">
       <span class="est-group-toggle ${isCollapsed?'':'open'}" style="font-size:.75rem">▶</span>
       <span class="est-subgroup-name">${esc(sub.name)}</span>
-      ${sub.scopeNotes ? `<span title="${esc(sub.scopeNotes)}" style="font-size:.85rem;cursor:help" onclick="event.stopPropagation()">📝</span>` : ''}
       ${sub.pendingBid ? `<span title="${esc(sub.pendingBidNote || 'Pending Vendor Bid — customer sees a preliminary-pricing caveat on the Proposal')}" style="font-size:.85rem;cursor:help" onclick="event.stopPropagation()">⚠️</span>` : ''}
       <span style="font-size:.74rem;color:var(--muted)">${(sub.items||[]).length} items · Cost $${Math.round(totals.cost).toLocaleString()} · Price $${Math.round(totals.price).toLocaleString()}</span>
       <span style="font-size:.74rem;color:${marginColor}">${Math.round(totals.margin)}%</span>
@@ -12897,6 +12896,7 @@ function renderSubgroupHTML(groupId, sub) {
         <button onclick="deleteSubgroup('${groupId}','${sub.id}')" class="btn btn-danger" style="padding:1px 6px;font-size:.68rem">✕</button>
       </div>
     </div>
+    ${sub.scopeNotes ? `<div style="padding:4px 12px 6px 36px;font-size:.78rem;color:#94a3b8;font-style:italic;line-height:1.5;white-space:pre-wrap;border-left:2px solid rgba(217,119,6,.25);margin:0 0 2px 16px">${esc(sub.scopeNotes)}</div>` : ''}
     ${isCollapsed ? '' : `<div>
       ${(sub.items||[]).map(item => renderItemRowHTML(item, groupId, sub.id)).join('')}
       <div style="padding:4px 12px 8px 48px">
