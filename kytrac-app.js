@@ -14310,11 +14310,21 @@ function loadProposals(jobId) {
       conProposals = [];
       snap.forEach(d => conProposals.push({ id: d.id, ...d.data() }));
       renderProposalHistory();
-      // Catches customer signatures made through the anonymous portal —
-      // the portal can't write to the job doc itself (only to the
-      // proposal, per its security rule), so this is where that gets
-      // reconciled: the next time an authenticated app user loads this
-      // job's proposals, advance the pipeline status if it's due.
+      // Auto-backfill contractValue from approved proposal if job doesn't have one yet
+      const approvedProp = conProposals.find(p => p.status === 'approved');
+      if (approvedProp?.snapshot?.grandTotal) {
+        const job = conJobs.find(j => j.id === jobId);
+        if (job && !job.contractValue) {
+          coll('jobs').doc(jobId).update({
+            contractValue: approvedProp.snapshot.grandTotal,
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+          }).then(() => {
+            job.contractValue = approvedProp.snapshot.grandTotal;
+            conRenderStats();
+          }).catch(() => {});
+        }
+      }
+      // Catches customer signatures made through the anonymous portal
       if (conProposals[0] && conProposals[0].status === 'approved') {
         maybeAdvanceJobStatusForApproval(jobId);
       }
