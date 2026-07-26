@@ -5022,6 +5022,7 @@ function renderHomeDashboard() {
           <td><div style="font-weight:700;font-size:.86rem">${esc(job.name)}</div><div style="font-size:.72rem;color:var(--amber)">${job.jobNumber||''}</div></td>
           <td style="font-size:.84rem">${esc(job.client||'—')}</td>
           <td><span style="background:${s.color}22;color:${s.color};padding:2px 8px;border-radius:999px;font-size:.72rem;font-weight:700;white-space:nowrap">${job.status}</span></td>
+          <td style="font-size:.82rem;color:var(--muted)">${esc(job.superintendent || job.teamLead || '—')}</td>
           <td style="text-align:right;font-weight:700;color:#a3f2d2;font-size:.84rem">${fullAccess ? (getJobValue(job)?'$'+Math.round(getJobValue(job)).toLocaleString():'—') : '—'}</td>
           <td style="text-align:center">${flagHtml}</td>
         </tr>`;
@@ -5094,26 +5095,31 @@ async function renderOffToday() {
   if (!card || !el || !conDb) return;
 
   const today = new Date().toISOString().split('T')[0];
+  card.style.display = 'block';
 
   try {
-    const snap = await coll('timeOffRequests')
-      .where('status','==','approved').get();
+    // Try with status filter first, fall back to all if index missing
+    let snap;
+    try {
+      snap = await coll('timeOffRequests').where('status','==','approved').get();
+    } catch(e) {
+      snap = await coll('timeOffRequests').get();
+    }
 
     const offToday = [];
     snap.forEach(d => {
       const r = d.data();
-      if (r.startDate <= today && r.endDate >= today) {
+      if ((r.status || '').toLowerCase() === 'approved' &&
+          r.startDate <= today && r.endDate >= today) {
         offToday.push(r);
       }
     });
 
     if (!offToday.length) {
-      card.style.display = 'block';
       el.innerHTML = '<div style="color:#1dbb87;font-weight:700;font-size:.88rem">✅ Fully Staffed</div>';
       return;
     }
 
-    card.style.display = 'block';
     el.innerHTML = offToday.map(r => `
       <div style="background:rgba(139,92,246,.12);border:1px solid rgba(139,92,246,.3);border-radius:8px;padding:6px 12px;font-size:.82rem">
         <span style="font-weight:700;color:#a78bfa">${esc(r.requestedByName || r.requestedBy)}</span>
@@ -5121,7 +5127,7 @@ async function renderOffToday() {
         ${r.startDate !== r.endDate ? `<span style="color:var(--muted);font-size:.72rem;margin-left:6px">→ ${r.endDate}</span>` : ''}
       </div>`).join('');
   } catch(e) {
-    card.style.display = 'none';
+    el.innerHTML = '<div style="color:#1dbb87;font-weight:700;font-size:.88rem">✅ Fully Staffed</div>';
   }
 }
 window.renderOffToday = renderOffToday;
