@@ -248,7 +248,7 @@ service cloud.firestore {
           // PM paper trail — immutable once saved, author or owner can delete.
           allow read: if inCompany(companyId);
           allow create: if inCompany(companyId);
-          allow delete: if inCompany(companyId) && (hasFullAccess() || request.auth.token.email == resource.data.authorEmail);
+          allow delete: if inCompany(companyId) && hasFullAccess();
           allow update: if false;
         }
         match /estimateGroups/{groupId} {

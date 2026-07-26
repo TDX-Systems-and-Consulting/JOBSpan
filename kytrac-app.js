@@ -3408,7 +3408,7 @@ function renderJobNotes(notes) {
             <div style="font-size:.72rem;color:var(--muted)">${dateStr} · ${timeStr}</div>
           </div>
         </div>
-        ${isMe ? `<button onclick="deleteJobNote('${n.id}')" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:.8rem;padding:4px" title="Delete note">✕</button>` : ''}
+        ${(conUserRole === 'Owner' || window._hasFullAccess) ? `<button onclick="deleteJobNote('${n.id}')" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:.8rem;padding:4px" title="Delete note">✕</button>` : ''}
       </div>
       <div style="font-size:.9rem;color:#eaf0fb;line-height:1.6;white-space:pre-wrap;word-break:break-word">${esc(n.text || '')}</div>
       ${n.category ? `<div style="margin-top:8px"><span style="background:rgba(217,119,6,.15);color:#f59e0b;padding:2px 8px;border-radius:6px;font-size:.72rem;font-weight:700">${esc(n.category)}</span></div>` : ''}
