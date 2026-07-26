@@ -869,8 +869,40 @@ function conRenderStats() {
   const margins = conJobs.filter(j => getJobValue(j) > 0 && j.estCost > 0 && j.estCost < getJobValue(j)).map(j => (getJobValue(j) - j.estCost) / getJobValue(j) * 100);
   const avgMargin = margins.length ? (margins.reduce((a,b) => a+b, 0) / margins.length).toFixed(1) : '0';
   document.getElementById('statAvgMargin').textContent = avgMargin + '%';
-  const today = new Date().toISOString().split('T')[0];
-  document.getElementById('statLogsToday').textContent = '—';
+
+  // Logs Today — count today's logs vs crew clocked in, color signal
+  const logsEl = document.getElementById('statLogsToday');
+  const logsTileEl = document.getElementById('statLogsTile');
+  if (logsEl && conDb) {
+    const today = new Date().toISOString().split('T')[0];
+    // Count today's logs across all jobs
+    Promise.all([
+      conDb.collectionGroup('logs').where('date','==',today).get().catch(() => null),
+      coll('timeEntries').where('date','==',today).where('clockOut','!=',null).get().catch(() => null)
+    ]).then(([logsSnap, timeSnap]) => {
+      const logCount = logsSnap ? logsSnap.size : 0;
+      const clockedOutCount = timeSnap ? new Set(timeSnap.docs.map(d => d.data().userId)).size : 0;
+      const clockedInCount = 0; // Would need separate query — use clocked out as proxy
+
+      logsEl.textContent = logCount;
+
+      // Color: green if logs exist and >= clocked out employees
+      // yellow if fewer logs than clock-outs, red if clock-outs with zero logs
+      if (clockedOutCount === 0) {
+        logsEl.style.color = '#eaf0fb'; // neutral — no one clocked out yet
+      } else if (logCount === 0) {
+        logsEl.style.color = '#ef5350'; // red — people worked, no logs
+        logsEl.textContent = '⚠ ' + logCount;
+      } else if (logCount < clockedOutCount) {
+        logsEl.style.color = '#f59e0b'; // yellow — some logs missing
+        logsEl.textContent = logCount + '/' + clockedOutCount;
+      } else {
+        logsEl.style.color = '#1dbb87'; // green — all covered
+      }
+    }).catch(() => { logsEl.textContent = '—'; });
+  } else if (logsEl) {
+    logsEl.textContent = '—';
+  }
 }
 
 function conRenderSchedule() {
@@ -4842,16 +4874,7 @@ function getMyJobIds() {
 window.getMyJobIds = getMyJobIds;
 
 function renderHomeDashboard() {
-  // Role-scoping: Owner/Project Manager/fullAccessOverride see the full
-  // company dashboard unchanged. Every other role sees only their
-  // assigned jobs, with no company financials, pipeline, or labor cost
-  // data - this was a real gap (everyone saw the same Owner-level
-  // dashboard regardless of role) found during the Custom Claims
-  // security review.
   const fullAccess = isOwnerOrAdmin();
-  const canCreateJobs = hasPermission('jobs') || hasPermission('jobs_sales') || fullAccess;
-  const canSeeCosting = hasPermission('costing') || hasPermission('invoicing') || fullAccess;
-  const canSeeCatalog = hasPermission('catalog') || hasPermission('catalog_read') || fullAccess;
 
   const toggle = (id, show) => { const el = document.getElementById(id); if (el) el.style.display = show ? '' : 'none'; };
   toggle('homeRestrictedNotice', !fullAccess);
@@ -4859,68 +4882,77 @@ function renderHomeDashboard() {
   toggle('statMarginWrap', fullAccess);
   toggle('homePipelineCard', fullAccess);
   toggle('homeInfoGrid', fullAccess);
-  toggle('homeLaborEfficiencyCard', fullAccess);
-  toggle('homeQaNewJob', canCreateJobs);
-  toggle('homeQaCosting', canSeeCosting);
-  toggle('homeQaCatalog', canSeeCatalog);
+  toggle('statLaborEffTile', fullAccess);
 
   const myJobIds = fullAccess ? null : getMyJobIds();
+  const closedStatuses = ['Closed Won','Closed Lost','Closed Hipshot Sent'];
 
-  // Active jobs table — all non-closed jobs (scoped to assigned jobs,
-  // with contract $ hidden, for restricted roles)
+  // ── Active Jobs table with attention flags ──
   const tbody = document.getElementById('homeActiveJobsBody');
   if (tbody) {
-    const closedStatuses = ['Closed Won','Closed Lost','Closed Hipshot Sent'];
     let active = conJobs.filter(j => !closedStatuses.includes(j.status));
     if (!fullAccess) active = active.filter(j => myJobIds.has(j.id));
     active = active.sort((a,b) => (a.statusDate||'').localeCompare(b.statusDate||''));
+
     if (!active.length) {
-      tbody.innerHTML = `<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:20px;font-style:italic">${fullAccess ? 'No active jobs yet' : 'No jobs assigned to you yet'}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:20px;font-style:italic">${fullAccess ? 'No active jobs yet' : 'No jobs assigned to you yet'}</td></tr>`;
     } else {
       tbody.innerHTML = active.map(job => {
         const s = KYTRAC_STATUSES.find(x => x.name === job.status) || {color:'var(--amber)'};
+        // Attention flags
+        const flags = [];
+        const daysSinceLog = job.lastLogDate
+          ? Math.floor((Date.now() - new Date(job.lastLogDate)) / 86400000)
+          : null;
+        if (daysSinceLog === null || daysSinceLog > 2) flags.push({icon:'🟡', tip:'No daily logs in 2+ days'});
+        const hasOverdueInvoice = (job.invoices||[]).some(inv =>
+          inv.status !== 'Paid' && inv.dueDate && inv.dueDate < new Date().toISOString().split('T')[0]
+        );
+        if (hasOverdueInvoice) flags.push({icon:'🔴', tip:'Overdue invoice'});
+
+        const flagHtml = flags.length
+          ? flags.map(f => `<span title="${f.tip}" style="cursor:help">${f.icon}</span>`).join(' ')
+          : '<span style="color:var(--muted);font-size:.7rem">✓</span>';
+
         return `<tr onclick="openJobDetail('${job.id}')" style="cursor:pointer">
           <td><div style="font-weight:700;font-size:.86rem">${esc(job.name)}</div><div style="font-size:.72rem;color:var(--amber)">${job.jobNumber||''}</div></td>
           <td style="font-size:.84rem">${esc(job.client||'—')}</td>
           <td><span style="background:${s.color}22;color:${s.color};padding:2px 8px;border-radius:999px;font-size:.72rem;font-weight:700;white-space:nowrap">${job.status}</span></td>
           <td style="text-align:right;font-weight:700;color:#a3f2d2;font-size:.84rem">${fullAccess ? (getJobValue(job)?'$'+Math.round(getJobValue(job)).toLocaleString():'—') : '—'}</td>
+          <td style="text-align:center">${flagHtml}</td>
         </tr>`;
       }).join('');
     }
   }
 
-  if (!fullAccess) return; // restricted roles skip everything below - money/company-wide data only
+  if (!fullAccess) return;
 
-  // Pipeline summary — group by stage group
+  // ── Pipeline — horizontal strip ──
   const pipeline = document.getElementById('homePipelineSummary');
   if (pipeline) {
     const groups = [
       { label: 'Sales', color: '#f97316', statuses: ['New Lead','Hipshot Needed','Appointment Set','Estimating','Submitted'] },
-      { label: 'Active', color: '#0d9488', statuses: ['Approved','Design Phase','Permitting','Scheduled','Work In Progress','Inspection Pending'] },
+      { label: 'Active', color: '#0d9488', statuses: ['Approved','Design Phase','Permitting','Scheduled','Work In Progress','Contracted','Inspection Pending'] },
       { label: 'Finance', color: '#7c3aed', statuses: ['Invoicing','Pending Payment','Delinquent'] },
       { label: 'Closed Won', color: '#db2777', statuses: ['Closed Won'] },
       { label: 'Closed Lost', color: '#dc2626', statuses: ['Closed Lost','Closed Hipshot Sent'] },
     ];
-    pipeline.innerHTML = groups.map(g => {
+    pipeline.innerHTML = groups.map((g, i) => {
       const jobs = conJobs.filter(j => g.statuses.includes(j.status));
       const val = jobs.reduce((s,j) => s + getJobValue(j), 0);
-      return `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid rgba(110,145,210,.07)">
-        <div style="display:flex;align-items:center;gap:8px">
-          <div style="width:8px;height:8px;border-radius:50%;background:${g.color};flex-shrink:0"></div>
-          <span style="font-size:.82rem;font-weight:600">${g.label}</span>
+      return `<div style="padding:14px 16px;border-right:${i < groups.length-1 ? '1px solid rgba(110,145,210,.1)' : 'none'};text-align:center">
+        <div style="display:flex;align-items:center;justify-content:center;gap:6px;margin-bottom:6px">
+          <div style="width:8px;height:8px;border-radius:50%;background:${g.color}"></div>
+          <span style="font-size:.78rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">${g.label}</span>
         </div>
-        <div style="text-align:right">
-          <div style="font-size:.82rem;font-weight:700;color:${g.color}">${jobs.length} job${jobs.length!==1?'s':''}</div>
-          ${val > 0 ? `<div style="font-size:.7rem;color:var(--muted)">$${Math.round(val).toLocaleString()}</div>` : ''}
-        </div>
+        <div style="font-size:1.4rem;font-weight:900;color:${g.color}">${jobs.length}</div>
+        ${val > 0 ? `<div style="font-size:.72rem;color:var(--muted);margin-top:2px">$${Math.round(val).toLocaleString()}</div>` : '<div style="font-size:.72rem;color:var(--muted);margin-top:2px">—</div>'}
       </div>`;
     }).join('');
   }
 
-  // Bottom panels
-  renderNeedsAttention();
+  // ── Bottom panels ──
   renderWhatsChanged();
-  renderRecentLogs();
   renderUpcomingPhases();
   renderCompanyLaborEfficiency();
 }
@@ -5132,10 +5164,16 @@ function renderUpcomingPhases() {
 // and KYTHROS aren't linked yet (KYTHROS is still local-only, pre-SaaS-rebuild).
 async function renderCompanyLaborEfficiency() {
   const el = document.getElementById('homeLaborEfficiency');
-  if (!el || !conDb) return;
+  const tileVal = document.getElementById('statLaborEffVal');
+  if (!conDb) return;
   const closedStatuses = ['Closed Won','Closed Lost','Closed Hipshot Sent'];
   const activeJobs = conJobs.filter(j => !closedStatuses.includes(j.status));
-  if (!activeJobs.length) { el.innerHTML = '<div class="small muted" style="font-style:italic">No active jobs yet</div>'; return; }
+
+  if (!activeJobs.length) {
+    if (tileVal) tileVal.textContent = '—';
+    if (el) el.innerHTML = '<div class="small muted" style="font-style:italic">No active jobs yet</div>';
+    return;
+  }
 
   try {
     const results = await Promise.all(activeJobs.map(j => computeJobLaborHours(j.id).then(r => ({ ...r, job: j }))));
@@ -5143,16 +5181,27 @@ async function renderCompanyLaborEfficiency() {
     const perJob = results.filter(r => r.estHours > 0);
     perJob.forEach(r => { totalEst += r.estHours; totalAct += r.actHours; });
 
-    if (!totalEst) { el.innerHTML = '<div class="small muted" style="font-style:italic">No labor hours estimated yet across active jobs</div>'; return; }
+    if (!totalEst) {
+      if (tileVal) tileVal.textContent = '—';
+      if (el) el.innerHTML = '<div class="small muted" style="font-style:italic">No labor hours estimated yet</div>';
+      return;
+    }
 
     const pctUsed = totalAct / totalEst * 100;
     const health = laborHoursHealth(totalEst, totalAct);
 
-    // Flag jobs individually running hot, so the "why" behind the number is visible, not just the number itself.
+    // Update KPI tile
+    if (tileVal) {
+      tileVal.textContent = pctUsed.toFixed(1) + '%';
+      tileVal.style.color = health.color;
+    }
+    const tileEl = document.getElementById('statLaborEffTile');
+    if (tileEl) tileEl.title = `${totalAct.toFixed(1)}h logged of ${totalEst.toFixed(1)}h estimated — ${health.label}`;
+
     const hot = perJob.filter(r => (r.actHours / r.estHours) > 1.15)
       .sort((a,b) => (b.actHours/b.estHours) - (a.actHours/a.estHours)).slice(0,3);
 
-    el.innerHTML = `
+    if (el) el.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
         <div style="font-size:1.6rem;font-weight:900;color:${health.color}">${pctUsed.toFixed(1)}%</div>
         <span style="background:${health.color}22;color:${health.color};padding:3px 12px;border-radius:999px;font-size:.76rem;font-weight:700">${health.label}</span>
@@ -5166,7 +5215,8 @@ async function renderCompanyLaborEfficiency() {
       ).join('') : ''}
     `;
   } catch (e) {
-    el.innerHTML = '<div class="small muted" style="font-style:italic">Could not compute labor efficiency</div>';
+    if (tileVal) tileVal.textContent = '—';
+    if (el) el.innerHTML = '<div class="small muted" style="font-style:italic">Could not compute labor efficiency</div>';
   }
 }
 

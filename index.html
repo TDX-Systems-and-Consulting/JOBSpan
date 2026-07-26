@@ -1156,108 +1156,72 @@
     <div style="flex:1;overflow:hidden;display:flex;flex-direction:column;min-height:0">
     <div class="kt-page active" id="ktPageDashboard">
 
-      <!-- Restricted view notice - shown only to non-full-access roles -->
+      <!-- Restricted view notice -->
       <div id="homeRestrictedNotice" style="display:none;background:rgba(96,165,250,.08);border:1px solid rgba(96,165,250,.25);border-radius:10px;padding:10px 14px;margin-bottom:16px;font-size:.8rem;color:#93c5fd">
-        Showing your assigned jobs only. Company-wide financials, pipeline, and labor cost data aren't shown for your role — open a job directly for its Daily Logs, Messages, and Schedule.
+        Showing your assigned jobs only. Company-wide financials, pipeline, and labor cost data aren't shown for your role.
       </div>
 
-      <!-- KPI Stats -->
-      <div class="kt-stats" id="conStats" style="margin-bottom:16px">
+      <!-- KPI Stats — 5 tiles -->
+      <div class="kt-stats" id="conStats" style="margin-bottom:16px;grid-template-columns:repeat(5,1fr)">
         <div class="kt-stat"><div class="kt-stat-val" id="statActiveJobs">0</div><div class="kt-stat-label">Active Jobs</div></div>
         <div class="kt-stat" id="statContractWrap"><div class="kt-stat-val" id="statContractTotal">$0</div><div class="kt-stat-label">Contract Value</div></div>
         <div class="kt-stat" id="statMarginWrap"><div class="kt-stat-val" id="statAvgMargin">0%</div><div class="kt-stat-label">Avg Margin</div></div>
-        <div class="kt-stat"><div class="kt-stat-val" id="statLogsToday">—</div><div class="kt-stat-label">Logs Today</div></div>
-      </div>
-
-      <!-- Two column: Active Jobs + Quick Actions/Pipeline -->
-      <div style="display:grid;grid-template-columns:1fr 280px;gap:16px;margin-bottom:16px">
-        <!-- Active Jobs -->
-        <div class="kt-card">
-          <div class="kt-card-head">
-            <h3>🔧 Active Jobs</h3>
-            <button class="btn" onclick="ktNav('jobs',null)" style="font-size:.78rem">View All →</button>
-          </div>
-          <div style="overflow:auto;max-height:300px">
-            <table class="kt-table">
-              <thead><tr><th>Job</th><th>Client</th><th>Status</th><th style="text-align:right">Contract</th></tr></thead>
-              <tbody id="homeActiveJobsBody"></tbody>
-            </table>
-          </div>
+        <div class="kt-stat" id="statLaborEffTile" style="cursor:default">
+          <div class="kt-stat-val" id="statLaborEffVal">—</div>
+          <div class="kt-stat-label">Labor Efficiency</div>
         </div>
-        <!-- Right column -->
-        <div style="display:flex;flex-direction:column;gap:12px">
-          <!-- Quick Actions -->
-          <div class="kt-card">
-            <div class="kt-card-head"><h3>⚡ Quick Actions</h3></div>
-            <div class="kt-card-body" style="display:flex;flex-direction:column;gap:8px;padding:14px 16px">
-              <button id="homeQaNewJob" class="btn-amber" onclick="openNewJobModal()" style="width:100%;justify-content:center">+ New Job</button>
-              <button class="btn" onclick="ktNav('jobs',null)" style="width:100%">📋 Job Board</button>
-              <button id="homeQaCosting" class="btn" onclick="ktNav('costing',null)" style="width:100%">💰 Job Costing</button>
-              <button id="homeQaCatalog" class="btn" onclick="ktNav('catalog',null)" style="width:100%">📦 Cost Catalog</button>
-            </div>
-          </div>
-          <!-- Pipeline Summary -->
-          <div class="kt-card" id="homePipelineCard">
-            <div class="kt-card-head"><h3>📊 Pipeline</h3></div>
-            <div class="kt-card-body" id="homePipelineSummary" style="display:flex;flex-direction:column;gap:4px;padding:12px 16px"></div>
-          </div>
+        <div class="kt-stat" id="statLogsTile">
+          <div class="kt-stat-val" id="statLogsToday" style="color:#1dbb87">—</div>
+          <div class="kt-stat-label">Logs Today</div>
         </div>
       </div>
 
-      <!-- Today's Activity -->
-      <div class="kt-dashboard-2col" id="homeInfoGrid" style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
-        <div class="kt-card">
-          <div class="kt-card-head" style="padding:14px 16px 10px">
-            <h3 style="font-size:.9rem">🚨 Needs Attention</h3>
-          </div>
-          <div style="padding:10px 14px;max-height:280px;overflow-y:auto" id="homeNeedsAttention">
-            <div class="small muted" style="font-style:italic;padding:10px 0">Loading...</div>
-          </div>
+      <!-- Active Jobs — full width with attention flags -->
+      <div class="kt-card" style="margin-bottom:16px">
+        <div class="kt-card-head">
+          <h3>🔧 Active Jobs</h3>
+          <button class="btn" onclick="ktNav('jobs',null)" style="font-size:.78rem">View All →</button>
         </div>
-
-        <!-- Activity Feed -->
-        <div class="kt-card">
-          <div class="kt-card-head" style="padding:14px 16px 10px">
-            <h3 style="font-size:.9rem">📢 Activity</h3>
-          </div>
-          <div style="padding:10px 14px;max-height:420px;overflow-y:auto" id="homeWhatsChanged">
-            <div class="small muted" style="font-style:italic;padding:10px 0">Loading...</div>
-          </div>
-          <div style="padding:10px 14px;border-top:1px solid rgba(110,145,210,.08)">
-            <button onclick="openActivityFeedModal()" style="width:100%;background:none;border:1px solid var(--amber-border);color:var(--amber);border-radius:10px;padding:9px;font-size:.82rem;font-weight:700;cursor:pointer">View Full Activity Feed →</button>
-          </div>
+        <div style="overflow:auto">
+          <table class="kt-table">
+            <thead><tr>
+              <th>Job</th>
+              <th>Client</th>
+              <th>Status</th>
+              <th style="text-align:right">Contract</th>
+              <th style="text-align:center;width:60px">Flags</th>
+            </tr></thead>
+            <tbody id="homeActiveJobsBody"></tbody>
+          </table>
         </div>
-
-        <!-- Recent Daily Logs -->
-        <div class="kt-card">
-          <div class="kt-card-head" style="padding:14px 16px 10px">
-            <h3 style="font-size:.9rem">📋 Recent Logs</h3>
-          </div>
-          <div style="padding:10px 14px;max-height:280px;overflow-y:auto" id="homeRecentLogs">
-            <div class="small muted" style="font-style:italic;padding:10px 0">Loading...</div>
-          </div>
-        </div>
-
-        <!-- Upcoming Phases -->
-        <div class="kt-card">
-          <div class="kt-card-head" style="padding:14px 16px 10px">
-            <h3 style="font-size:.9rem">📅 Upcoming Sprints</h3>
-          </div>
-          <div style="padding:10px 14px;max-height:280px;overflow-y:auto" id="homeUpcomingPhases">
-            <div class="small muted" style="font-style:italic;padding:10px 0">Loading...</div>
-          </div>
-        </div>
-
       </div>
 
-      <!-- Company-wide Labor Efficiency — feeds the Weekly Scorecard (EOS/Traction) -->
-      <div class="kt-card" style="margin-top:16px" id="homeLaborEfficiencyCard">
+      <!-- Pipeline — full width narrow strip -->
+      <div class="kt-card" id="homePipelineCard" style="margin-bottom:16px">
+        <div class="kt-card-head"><h3>📊 Pipeline</h3></div>
+        <div id="homePipelineSummary" style="display:grid;grid-template-columns:repeat(5,1fr);gap:0;padding:0"></div>
+      </div>
+
+      <!-- Activity — full width -->
+      <div class="kt-card" id="homeInfoGrid" style="margin-bottom:16px">
         <div class="kt-card-head" style="padding:14px 16px 10px">
-          <h3 style="font-size:.9rem">📊 Company Labor Efficiency</h3>
-          <p class="small muted" style="margin:2px 0 0">Estimated vs. actual hours across all active jobs — the number for your Weekly Scorecard.</p>
+          <h3 style="font-size:.9rem">📢 Activity</h3>
         </div>
-        <div style="padding:14px 16px" id="homeLaborEfficiency">
-          <div class="small muted" style="font-style:italic">Loading...</div>
+        <div style="padding:10px 14px;max-height:420px;overflow-y:auto" id="homeWhatsChanged">
+          <div class="small muted" style="font-style:italic;padding:10px 0">Loading...</div>
+        </div>
+        <div style="padding:10px 14px;border-top:1px solid rgba(110,145,210,.08)">
+          <button onclick="openActivityFeedModal()" style="width:100%;background:none;border:1px solid var(--amber-border);color:var(--amber);border-radius:10px;padding:9px;font-size:.82rem;font-weight:700;cursor:pointer">View Full Activity Feed →</button>
+        </div>
+      </div>
+
+      <!-- Upcoming Sprints -->
+      <div class="kt-card" style="margin-bottom:16px">
+        <div class="kt-card-head" style="padding:14px 16px 10px">
+          <h3 style="font-size:.9rem">📅 Upcoming Sprints</h3>
+        </div>
+        <div style="padding:10px 14px;max-height:220px;overflow-y:auto" id="homeUpcomingPhases">
+          <div class="small muted" style="font-style:italic;padding:10px 0">Loading...</div>
         </div>
       </div>
 
