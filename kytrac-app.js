@@ -527,6 +527,7 @@ const KYTRAC_STATUSES = [
   {name:'Estimating',         color:'#f97316', group:'sales'},
   {name:'Submitted',          color:'#d97706', group:'sales'},
   {name:'Approved',           color:'#16a34a', group:'active'},
+  {name:'Contracted',         color:'#0d9488', group:'active'},
   {name:'Design Phase',       color:'#16a34a', group:'active'},
   {name:'Permitting',         color:'#16a34a', group:'active'},
   {name:'Scheduled',          color:'#0d9488', group:'active'},
@@ -746,15 +747,15 @@ function conRenderBoard() {
       const card = document.createElement('div');
       card.className = 'job-card';
       card.style.borderLeftColor = s.color;
-      // Format: jobNumber — customer name (like JobTread shows address)
       const statusDate = job.statusDate || job.startDate || '';
-      const salesRep = job.superintendent || job.pm || '';
+      const teamLead = job.superintendent || job.teamLead || '';
+      const salesRep = job.pm || job.salesRep || '';
       card.innerHTML = `
         <div class="job-card-num" style="color:${s.color}">${job.jobNumber || ''}</div>
         <div class="job-card-name">${job.name}</div>
-        ${job.client ? `<div class="job-card-meta">Customer: ${job.client}</div>` : ''}
-        ${statusDate ? `<div class="job-card-meta">Status Date: ${statusDate}</div>` : ''}
-        ${salesRep ? `<div class="job-card-meta">Sales Rep: ${salesRep}</div>` : ''}
+        ${job.client ? `<div class="job-card-meta">👤 ${job.client}</div>` : ''}
+        ${teamLead ? `<div class="job-card-meta">👷 ${teamLead}</div>` : ''}
+        ${statusDate ? `<div class="job-card-meta">📅 ${statusDate}</div>` : ''}
         ${getJobValue(job) ? `<div class="job-card-value">$${Math.round(getJobValue(job)).toLocaleString()}</div>` : ''}
       `;
       card.onclick = () => openJobDetail(job.id);
@@ -5062,6 +5063,7 @@ function renderHomeDashboard() {
   renderWhatsChanged();
   renderUpcomingPhases();
   renderCompanyLaborEfficiency();
+  renderOffToday();
 }
 window.renderHomeDashboard = renderHomeDashboard;
 
@@ -5085,6 +5087,44 @@ function filterJobsToStage(key) {
   }, 200);
 }
 window.filterJobsToStage = filterJobsToStage;
+
+// ── Off Today — show approved time off on dashboard ──
+async function renderOffToday() {
+  const card = document.getElementById('homeOffTodayCard');
+  const el = document.getElementById('homeOffToday');
+  if (!card || !el || !conDb) return;
+
+  const today = new Date().toISOString().split('T')[0];
+
+  try {
+    const snap = await coll('timeOffRequests')
+      .where('status','==','approved').get();
+
+    const offToday = [];
+    snap.forEach(d => {
+      const r = d.data();
+      if (r.startDate <= today && r.endDate >= today) {
+        offToday.push(r);
+      }
+    });
+
+    if (!offToday.length) {
+      card.style.display = 'none';
+      return;
+    }
+
+    card.style.display = 'block';
+    el.innerHTML = offToday.map(r => `
+      <div style="background:rgba(139,92,246,.12);border:1px solid rgba(139,92,246,.3);border-radius:8px;padding:6px 12px;font-size:.82rem">
+        <span style="font-weight:700;color:#a78bfa">${esc(r.requestedByName || r.requestedBy)}</span>
+        <span style="color:var(--muted);margin-left:6px">${esc(r.type)}</span>
+        ${r.startDate !== r.endDate ? `<span style="color:var(--muted);font-size:.72rem;margin-left:6px">→ ${r.endDate}</span>` : ''}
+      </div>`).join('');
+  } catch(e) {
+    card.style.display = 'none';
+  }
+}
+window.renderOffToday = renderOffToday;
 
 // ── TODAY'S ACTIVITY ──
 function renderNeedsAttention() {

@@ -508,7 +508,7 @@
     .kt-job-name { font-weight: 700; font-size: .82rem; margin-bottom: 3px; line-height: 1.3; color: var(--text); }
     .kt-job-meta { font-size: .7rem; color: var(--muted); margin-top: 3px; line-height: 1.4; }
     .kt-job-value { font-size: .74rem; color: #a3f2d2; margin-top: 5px; font-weight: 800; }
-    .kt-col-empty { color: rgba(110,145,210,.25); font-size: .75rem; font-style: italic; padding: 8px 4px; text-align: center; }
+    .kt-col-empty { color: #9ca3af; font-size: .75rem; font-style: italic; padding: 8px 4px; text-align: center; }
 
     /* ══ MODAL ══ */
     .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,5,14,.8); z-index: 10000; align-items: flex-start; justify-content: center; padding: 20px; overflow-y: auto; -webkit-overflow-scrolling: touch; }
@@ -1241,6 +1241,14 @@
       <div class="kt-card" id="homePipelineCard" style="margin-bottom:16px">
         <div class="kt-card-head"><h3>📊 Pipeline</h3></div>
         <div id="homePipelineSummary" style="display:grid;grid-template-columns:repeat(5,1fr);gap:0;padding:0"></div>
+      </div>
+
+      <!-- Off Today — approved time off requests -->
+      <div class="kt-card" id="homeOffTodayCard" style="margin-bottom:16px;display:none">
+        <div class="kt-card-head" style="padding:14px 16px 10px">
+          <h3 style="font-size:.9rem">🏖 Off Today</h3>
+        </div>
+        <div id="homeOffToday" style="padding:10px 16px;display:flex;flex-wrap:wrap;gap:8px"></div>
       </div>
 
       <!-- Activity — full width -->
