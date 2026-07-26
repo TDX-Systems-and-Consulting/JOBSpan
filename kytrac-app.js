@@ -5061,7 +5061,6 @@ function renderHomeDashboard() {
 
   // ── Bottom panels ──
   renderWhatsChanged();
-  renderUpcomingPhases();
   renderCompanyLaborEfficiency();
   renderOffToday();
 }
