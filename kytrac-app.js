@@ -14204,7 +14204,21 @@ function markProposalStatus(proposalId, newStatus) {
   coll('jobs').doc(conCurrentJobId).collection('proposals').doc(proposalId).update({ status: newStatus, ...extra })
     .then(() => {
       loadProposals(jobIdForThisCall);
-      if (newStatus === 'approved') maybeAdvanceJobStatusForApproval(jobIdForThisCall);
+      if (newStatus === 'approved') {
+        maybeAdvanceJobStatusForApproval(jobIdForThisCall);
+        // Write contractValue from proposal snapshot so KPIs show correct value
+        const prop = conProposals.find(p => p.id === proposalId);
+        if (prop?.snapshot?.grandTotal) {
+          const patch = {
+            contractValue: prop.snapshot.grandTotal,
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+          };
+          coll('jobs').doc(jobIdForThisCall).update(patch).catch(() => {});
+          // Update in-memory so stats refresh immediately
+          const job = conJobs.find(j => j.id === jobIdForThisCall);
+          if (job) { job.contractValue = prop.snapshot.grandTotal; conRenderStats(); }
+        }
+      }
     })
     .catch(e => alert('Error updating proposal status: ' + e.message));
 }
