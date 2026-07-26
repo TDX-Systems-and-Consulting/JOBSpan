@@ -239,45 +239,73 @@ function initDragDrop(boardId) {
 window.initDragDrop = initDragDrop;
 
 // ── Jobs page kanban board (separate from Home board) ──
+let _showClosedLanes = false;
+
 function renderJobsBoard() {
   const board = document.getElementById('jobsBoard');
   if (!board) return;
   const statusFilter = document.getElementById('jobsStatusFilter')?.value || '';
   board.innerHTML = '';
-  const statusesToShow = statusFilter
-    ? KYTRAC_STATUSES.filter(s => s.name === statusFilter)
-    : KYTRAC_STATUSES;
-  statusesToShow.forEach(s => {
-    const jobs = conJobs.filter(j => j.status === s.name);
-    const col = document.createElement('div');
-    col.className = 'kt-col';
-    col.style.borderTopColor = s.color;
-    col.dataset.status = s.name;
-    col.innerHTML = `<div class="kt-col-head"><span class="kt-col-head-label" style="color:${s.color}">${s.name}</span><span class="kt-col-count" style="background:${s.color}22;color:${s.color};flex-shrink:0">${jobs.length}</span></div>`;
+
+  // Determine which columns to show
+  let colsToShow;
+  if (statusFilter) {
+    // Single-status filter: find the column that owns this status
+    colsToShow = KANBAN_COLUMNS.filter(c => c.statuses.includes(statusFilter));
+    if (!colsToShow.length) colsToShow = KANBAN_COLUMNS.filter(c => !c.hidden);
+  } else {
+    colsToShow = _showClosedLanes ? KANBAN_COLUMNS : KANBAN_COLUMNS.filter(c => !c.hidden);
+  }
+
+  colsToShow.forEach(col => {
+    const jobs = conJobs.filter(j => col.statuses.includes(j.status));
+    const el = document.createElement('div');
+    el.className = 'kt-col';
+    el.style.borderTopColor = col.color;
+    el.dataset.status = col.dropStatus; // what gets written to Firestore on drop
+    el.innerHTML = `<div class="kt-col-head"><span class="kt-col-head-label" style="color:${col.color}">${col.label}</span><span class="kt-col-count" style="background:${col.color}22;color:${col.color};flex-shrink:0">${jobs.length}</span></div>`;
     jobs.forEach(job => {
       const card = document.createElement('div');
       card.className = 'kt-job-card';
-      card.style.borderLeftColor = s.color;
+      card.style.borderLeftColor = col.color;
       card.dataset.jobId = job.id;
+      // Show the actual Firestore status on the card if it differs from column label
+      // (e.g. a Permitting card in the To Be Scheduled column)
+      const statusBadge = job.status !== col.dropStatus
+        ? `<div class="kt-job-meta" style="color:${col.color};font-weight:700;font-size:.7rem">${esc(job.status)}</div>`
+        : '';
       card.innerHTML = `
-        <div class="kt-job-num" style="color:${s.color}">${esc(job.jobNumber||'')}</div>
+        <div class="kt-job-num" style="color:${col.color}">${esc(job.jobNumber||'')}</div>
         <div class="kt-job-name">${esc(job.name)}</div>
+        ${statusBadge}
         ${job.client?`<div class="kt-job-meta">Customer: ${esc(job.client)}</div>`:''}
         ${job.statusDate||job.startDate?`<div class="kt-job-meta">Status Date: ${job.statusDate||job.startDate}</div>`:''}
-        ${job.superintendent||job.pm?`<div class="kt-job-meta">Sales Rep: ${esc(job.superintendent||job.pm)}</div>`:''}
+        ${job.superintendent||job.teamLead||job.pm?`<div class="kt-job-meta">Team Lead: ${esc(job.superintendent||job.teamLead||job.pm)}</div>`:''}
         ${getJobValue(job)?`<div class="kt-job-value">$${Math.round(getJobValue(job)).toLocaleString()}</div>`:''}
       `;
       card.onclick = () => openJobDetail(job.id);
-      col.appendChild(card);
+      el.appendChild(card);
     });
     if (!jobs.length) {
       const empty = document.createElement('div');
       empty.className = 'kt-col-empty';
       empty.textContent = 'No jobs';
-      col.appendChild(empty);
+      el.appendChild(empty);
     }
-    board.appendChild(col);
+    board.appendChild(el);
   });
+
+  // Toggle button for closed lanes
+  let toggleBtn = document.getElementById('toggleClosedLanesBtn');
+  if (!toggleBtn) {
+    toggleBtn = document.createElement('button');
+    toggleBtn.id = 'toggleClosedLanesBtn';
+    toggleBtn.style.cssText = 'margin:8px 0 0 4px;padding:4px 12px;font-size:.75rem;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer;white-space:nowrap;flex-shrink:0;align-self:flex-start';
+    toggleBtn.onclick = () => { _showClosedLanes = !_showClosedLanes; renderJobsBoard(); };
+    board.parentElement?.insertBefore(toggleBtn, board);
+  }
+  toggleBtn.textContent = _showClosedLanes ? '▲ Hide Closed' : '▼ Show Closed';
+
   // Init drag and drop after render
   setTimeout(() => initDragDrop('jobsBoard'), 50);
 }
@@ -520,27 +548,79 @@ let conEditingJobId = null;
 let conJobs = [];
 let conFirebaseReady = false;
 
+// ── Status migration map (old → new Firestore values) ──────────────────────
+const STATUS_MIGRATION_MAP = {
+  'Hipshot Needed':     'New Lead',
+  'Estimating':         'Building Estimate',
+  'Contracted':         'Approved',
+  'Design Phase':       'To Be Scheduled',
+  'Work In Progress':   'In Progress',
+  'Invoicing':          'Complete',
+  'Pending Payment':    'Complete',
+  'Delinquent':         'Complete',
+  'Closed Hipshot Sent':'Closed Lost',
+  'Closed Won':         'Closed Completed',
+};
+
+// ── Canonical status definitions (Firestore values) ────────────────────────
+// All valid status strings that may be written to Firestore.
 const KYTRAC_STATUSES = [
-  {name:'New Lead',           color:'#ef4444', group:'sales'},
-  {name:'Hipshot Needed',     color:'#f97316', group:'sales'},
-  {name:'Appointment Set',    color:'#f97316', group:'sales'},
-  {name:'Estimating',         color:'#f97316', group:'sales'},
-  {name:'Submitted',          color:'#d97706', group:'sales'},
+  {name:'New Lead',           color:'#f97316', group:'estimates'},
+  {name:'Appointment Set',    color:'#f97316', group:'estimates'},
+  {name:'Building Estimate',  color:'#d97706', group:'estimates'},
+  {name:'Submitted',          color:'#d97706', group:'estimates'},
   {name:'Approved',           color:'#16a34a', group:'active'},
-  {name:'Contracted',         color:'#0d9488', group:'active'},
-  {name:'Design Phase',       color:'#16a34a', group:'active'},
-  {name:'Permitting',         color:'#16a34a', group:'active'},
-  {name:'Scheduled',          color:'#0d9488', group:'active'},
-  {name:'Work In Progress',   color:'#0891b2', group:'active'},
-  {name:'Inspection Pending', color:'#2563eb', group:'active'},
-  {name:'Invoicing',          color:'#2563eb', group:'finance'},
-  {name:'Pending Payment',    color:'#7c3aed', group:'finance'},
-  {name:'Delinquent',         color:'#7c3aed', group:'finance'},
-  {name:'Closed Hipshot Sent',color:'#7c3aed', group:'closed'},
-  {name:'Closed Won',         color:'#db2777', group:'closed'},
-  {name:'Closed Lost',        color:'#dc2626', group:'closed'},
+  {name:'To Be Scheduled',    color:'#0d9488', group:'active'},
+  {name:'Permitting',         color:'#0d9488', group:'active'},
+  {name:'Scheduled',          color:'#3b82f6', group:'active'},
+  {name:'In Progress',        color:'#3b82f6', group:'active'},
+  {name:'Inspection Pending', color:'#ef4444', group:'active'},
+  {name:'Complete',           color:'#7c3aed', group:'finance'},
+  {name:'Closed Completed',   color:'#6b7280', group:'closed'},
+  {name:'Closed Lost',        color:'#6b7280', group:'closed'},
 ];
+
+// ── Kanban column definitions ───────────────────────────────────────────────
+// Columns are what renders on the board. One column can contain multiple
+// Firestore status values (e.g. "To Be Scheduled" column shows both
+// 'To Be Scheduled' and 'Permitting' jobs).
+// dropStatus: the value written to Firestore when a card is dropped here.
+// hidden: true means filtered out of the default board view.
+const KANBAN_COLUMNS = [
+  {label:'New Lead',          color:'#f97316', statuses:['New Lead'],           dropStatus:'New Lead',          group:'estimates', hidden:false},
+  {label:'Appointment Set',   color:'#f97316', statuses:['Appointment Set'],     dropStatus:'Appointment Set',   group:'estimates', hidden:false},
+  {label:'Building Estimate', color:'#d97706', statuses:['Building Estimate'],   dropStatus:'Building Estimate', group:'estimates', hidden:false},
+  {label:'Submitted',         color:'#d97706', statuses:['Submitted'],           dropStatus:'Submitted',         group:'estimates', hidden:false},
+  {label:'Approved',          color:'#16a34a', statuses:['Approved'],            dropStatus:'Approved',          group:'active',   hidden:false},
+  {label:'To Be Scheduled',   color:'#0d9488', statuses:['To Be Scheduled','Permitting'], dropStatus:'To Be Scheduled', group:'active', hidden:false},
+  {label:'Scheduled',         color:'#3b82f6', statuses:['Scheduled'],           dropStatus:'Scheduled',         group:'active',   hidden:false},
+  {label:'In Progress',       color:'#3b82f6', statuses:['In Progress'],         dropStatus:'In Progress',       group:'active',   hidden:false},
+  {label:'Inspection Pending',color:'#ef4444', statuses:['Inspection Pending'],  dropStatus:'Inspection Pending',group:'active',   hidden:false},
+  {label:'Complete',          color:'#7c3aed', statuses:['Complete'],            dropStatus:'Complete',          group:'finance',  hidden:false},
+  {label:'Closed Completed',  color:'#6b7280', statuses:['Closed Completed'],    dropStatus:'Closed Completed',  group:'closed',   hidden:true},
+  {label:'Closed Lost',       color:'#6b7280', statuses:['Closed Lost'],         dropStatus:'Closed Lost',       group:'closed',   hidden:true},
+];
+
+// Pipeline strip bucket → which Firestore statuses belong to each group
+const PIPELINE_BUCKETS = {
+  estimates: ['New Lead','Appointment Set','Building Estimate','Submitted'],
+  active:    ['Approved','To Be Scheduled','Permitting','Scheduled','In Progress','Inspection Pending'],
+  finance:   ['Complete'],
+};
+
 const CON_JOB_STATUSES = KYTRAC_STATUSES.map(s => s.name);
+
+// ── Run status migration on load ────────────────────────────────────────────
+// Rewrites any legacy status values in conJobs to new canonical values.
+// Does NOT write to Firestore — display-only remap. Firestore migration
+// happens lazily when a job is next saved/moved.
+function migrateJobStatuses(jobs) {
+  jobs.forEach(j => {
+    if (STATUS_MIGRATION_MAP[j.status]) {
+      j.status = STATUS_MIGRATION_MAP[j.status];
+    }
+  });
+}
 
 function conLoadFirebase() {
   if (conFirebaseReady) return;
@@ -607,7 +687,7 @@ function openNewJobModal() {
     const el = document.getElementById(id);
     if (el) el.value = '';
   });
-  document.getElementById('jobStatus').value = 'Contracted';
+  document.getElementById('jobStatus').value = 'New Lead';
   document.getElementById('jobType').value = 'Residential Remodel';
   document.getElementById('jobStartDate').value = '';
   document.getElementById('jobEndDate').value = '';
@@ -711,7 +791,7 @@ function prefillNewJobForCustomerData(customer) {
   document.getElementById('jobPhone').value = customer.phone || '';
   document.getElementById('jobEmail').value = customer.email || '';
   document.getElementById('jobAddress').value = customer.address || '';
-  document.getElementById('jobStatus').value = 'Contracted';
+  document.getElementById('jobStatus').value = 'New Lead';
   document.getElementById('jobType').value = 'Residential Remodel';
   document.getElementById('jobContractValue').value = '';
   document.getElementById('jobEstCost').value = '';
@@ -737,37 +817,41 @@ function conRenderBoard() {
   const board = document.getElementById('conBoard');
   if (!board) return;
   board.innerHTML = '';
-  KYTRAC_STATUSES.forEach(s => {
-    const jobs = conJobs.filter(j => j.status === s.name);
-    const col = document.createElement('div');
-    col.className = 'con-col';
-    col.style.borderTopColor = s.color;
-    col.innerHTML = `<div class="con-col-head" style="color:${s.color}">${s.name} <span class="con-col-count" style="background:${s.color}22;color:${s.color}">${jobs.length}</span></div>`;
+  // Home board: show active lanes only (no closed)
+  KANBAN_COLUMNS.filter(c => !c.hidden).forEach(col => {
+    const jobs = conJobs.filter(j => col.statuses.includes(j.status));
+    const el = document.createElement('div');
+    el.className = 'con-col';
+    el.style.borderTopColor = col.color;
+    el.innerHTML = `<div class="con-col-head" style="color:${col.color}">${col.label} <span class="con-col-count" style="background:${col.color}22;color:${col.color}">${jobs.length}</span></div>`;
     jobs.forEach(job => {
       const card = document.createElement('div');
       card.className = 'job-card';
-      card.style.borderLeftColor = s.color;
+      card.style.borderLeftColor = col.color;
       const statusDate = job.statusDate || job.startDate || '';
       const teamLead = job.superintendent || job.teamLead || '';
-      const salesRep = job.pm || job.salesRep || '';
+      const statusBadge = job.status !== col.dropStatus
+        ? `<div class="job-card-meta" style="color:${col.color};font-weight:700;font-size:.68rem">${job.status}</div>`
+        : '';
       card.innerHTML = `
-        <div class="job-card-num" style="color:${s.color}">${job.jobNumber || ''}</div>
+        <div class="job-card-num" style="color:${col.color}">${job.jobNumber || ''}</div>
         <div class="job-card-name">${job.name}</div>
+        ${statusBadge}
         ${job.client ? `<div class="job-card-meta">👤 ${job.client}</div>` : ''}
         ${teamLead ? `<div class="job-card-meta">👷 ${teamLead}</div>` : ''}
         ${statusDate ? `<div class="job-card-meta">📅 ${statusDate}</div>` : ''}
         ${getJobValue(job) ? `<div class="job-card-value">$${Math.round(getJobValue(job)).toLocaleString()}</div>` : ''}
       `;
       card.onclick = () => openJobDetail(job.id);
-      col.appendChild(card);
+      el.appendChild(card);
     });
     if (!jobs.length) {
       const empty = document.createElement('div');
       empty.className = 'kt-col-empty';
       empty.textContent = 'No jobs';
-      col.appendChild(empty);
+      el.appendChild(empty);
     }
-    board.appendChild(col);
+    board.appendChild(el);
   });
 }
 
@@ -862,7 +946,7 @@ function getJobValue(job) {
 }
 
 function conRenderStats() {
-  const closedStatuses = ['Closed Won','Closed Lost','Closed Hipshot Sent'];
+  const closedStatuses = ['Closed Completed','Closed Lost'];
   const active = conJobs.filter(j => !closedStatuses.includes(j.status));
 
   // ── Helper: set tile value and color ──
@@ -1020,7 +1104,7 @@ function conRenderStats() {
 function conRenderSchedule() {
   const el = document.getElementById('conScheduleList');
   if (!el) return;
-  const jobsWithDates = conJobs.filter(j => j.startDate && ['Work In Progress','Scheduled','Approved','Design Phase','Permitting'].includes(j.status));
+  const jobsWithDates = conJobs.filter(j => j.startDate && PIPELINE_BUCKETS.active.includes(j.status));
   if (!jobsWithDates.length) { el.innerHTML = '<p class="muted">No active jobs with scheduled dates.</p>'; return; }
   el.innerHTML = jobsWithDates.sort((a,b) => a.startDate.localeCompare(b.startDate)).map(j => `
     <div class="fin-row">
@@ -2319,7 +2403,7 @@ function editCurrentJob() {
   document.getElementById('jobPhone').value = job.phone || '';
   document.getElementById('jobEmail').value = job.email || '';
   document.getElementById('jobAddress').value = job.address || '';
-  document.getElementById('jobStatus').value = job.status || 'Contracted';
+  document.getElementById('jobStatus').value = job.status || 'New Lead';
   document.getElementById('jobType').value = job.type || 'Residential Remodel';
   document.getElementById('jobContractValue').value = job.contractValue || '';
   document.getElementById('jobEstCost').value = job.estCost || '';
@@ -2820,7 +2904,7 @@ function renderJCDKpis() {
   if (!el) return;
 
   const jobs = conJobs;
-  const active = jobs.filter(j => ['In Progress','Contracted'].includes(j.status));
+  const active = jobs.filter(j => ['In Progress','Approved'].includes(j.status));
   const totalContract = jobs.reduce((s,j) => s + getJobValue(j), 0);
   const totalEst = jobs.reduce((s,j) => s + (j.estCost||0), 0);
   const totalActual = jobs.reduce((s,j) => s + getJobTotalActual(j.id), 0);
@@ -2835,7 +2919,7 @@ function renderJCDKpis() {
   const atRisk = jobs.filter(j => {
     if (!getJobValue(j) || !j.estCost || j.estCost >= getJobValue(j)) return false;
     const m = (getJobValue(j) - j.estCost) / getJobValue(j) * 100;
-    return m < 15 && ['Work In Progress','Scheduled','Inspection Pending'].includes(j.status);
+    return m < 15 && ['In Progress','Scheduled','Inspection Pending'].includes(j.status);
   }).length;
 
   // Approved CO total
@@ -2843,7 +2927,7 @@ function renderJCDKpis() {
 
   const kpis = [
     { label:'Total Pipeline', val:'$'+Math.round(totalContract).toLocaleString(), sub: jobs.length+' job'+(jobs.length!==1?'s':''), accent:'var(--amber)' },
-    { label:'Active Jobs', val: active.length, sub: 'In Progress + Contracted', accent:'#4d8dff' },
+    { label:'Active Jobs', val: active.length, sub: 'In Progress + Approved', accent:'#4d8dff' },
     { label:'Avg Est. Margin', val: avgEstMargin.toFixed(1)+'%', sub:'Target ≥ 20%', accent: avgEstMargin >= 20 ? '#1dbb87' : avgEstMargin >= 15 ? '#f3b33d' : '#ef5350', valColor: avgEstMargin >= 20 ? '#a3f2d2' : avgEstMargin >= 15 ? '#ffe09d' : '#ffc0be' },
     { label:'Est. vs Actual', val: totalActual > 0 ? '$'+Math.round(totalActual).toLocaleString() : '—', sub: totalEst > 0 ? 'of $'+Math.round(totalEst).toLocaleString()+' est.' : 'No actuals yet', accent:'#f3b33d' },
     { label:'⚠ At-Risk Jobs', val: atRisk, sub: 'Margin < 15%', accent: atRisk > 0 ? '#ef5350' : '#1dbb87', valColor: atRisk > 0 ? '#ffc0be' : '#a3f2d2' },
@@ -2865,16 +2949,15 @@ function renderJCDPipeline() {
   const totalEl = document.getElementById('jcdPipelineTotal');
   if (!strip) return;
 
-  const stages = KYTRAC_STATUSES.map(s => s.name);
   let grandTotal = 0;
 
-  strip.innerHTML = KYTRAC_STATUSES.map(s => {
-    const jobs = conJobs.filter(j => j.status === s.name);
+  strip.innerHTML = KANBAN_COLUMNS.filter(c => !c.hidden).map(col => {
+    const jobs = conJobs.filter(j => col.statuses.includes(j.status));
     const val = jobs.reduce((t,j) => t + getJobValue(j), 0);
     grandTotal += val;
-    return `<div class="pipeline-stage" onclick="filterJCDByStatus('${s.name}')" style="cursor:pointer;border-top:3px solid ${s.color}" title="Filter to ${s.name}">
-      <div class="pipeline-stage-label" style="color:${s.color}">${s.name}</div>
-      <div class="pipeline-stage-val" style="color:${s.color}">${val > 0 ? '$'+Math.round(val/1000)+'K' : '—'}</div>
+    return `<div class="pipeline-stage" onclick="filterJCDByStatus('${col.dropStatus}')" style="cursor:pointer;border-top:3px solid ${col.color}" title="Filter to ${col.label}">
+      <div class="pipeline-stage-label" style="color:${col.color}">${col.label}</div>
+      <div class="pipeline-stage-val" style="color:${col.color}">${val > 0 ? '$'+Math.round(val/1000)+'K' : '—'}</div>
       <div class="pipeline-stage-count">${jobs.length} job${jobs.length!==1?'s':''}</div>
     </div>`;
   }).join('');
@@ -2895,7 +2978,7 @@ function renderJCDAlerts(containerId) {
   const alerts = [];
 
   conJobs.forEach(j => {
-    if (!['Work In Progress','Scheduled','Inspection Pending','Approved','Design Phase','Permitting'].includes(j.status)) return;
+    if (!PIPELINE_BUCKETS.active.includes(j.status)) return;
     const cv = getJobValue(j);
     const ec = j.estCost || 0;
     const ac = getJobTotalActual(j.id);
@@ -3236,7 +3319,7 @@ function commitJobStatusChange(newStatus) {
   if (job.status === newStatus) return;
 
   // Confirm on closing statuses — this is a meaningful, hard-to-undo action.
-  if ((newStatus === 'Closed Won' || newStatus === 'Closed Lost') &&
+  if ((newStatus === 'Closed Completed' || newStatus === 'Closed Lost') &&
       !confirm('Mark this job as "' + newStatus + '"? This updates the job\'s status for everyone.')) {
     document.getElementById('detailStatusBadge').value = job.status || 'New Lead';
     return;
@@ -4989,7 +5072,7 @@ function renderHomeDashboard() {
   toggle('statLaborEffTile', fullAccess);
 
   const myJobIds = fullAccess ? null : getMyJobIds();
-  const closedStatuses = ['Closed Won','Closed Lost','Closed Hipshot Sent'];
+  const closedStatuses = ['Closed Completed','Closed Lost'];
 
   // ── Active Jobs table with attention flags ──
   const tbody = document.getElementById('homeActiveJobsBody');
@@ -5036,12 +5119,9 @@ function renderHomeDashboard() {
   const pipeline = document.getElementById('homePipelineSummary');
   if (pipeline) {
     const groups = [
-      { label: 'Estimates', color: '#f97316', key: 'estimates',
-        statuses: ['New Lead','Hipshot Needed','Appointment Set','Estimating','Submitted'] },
-      { label: 'Active', color: '#0d9488', key: 'active',
-        statuses: ['Approved','Design Phase','Permitting','Scheduled','Work In Progress','Contracted','Inspection Pending'] },
-      { label: 'Finance', color: '#7c3aed', key: 'finance',
-        statuses: ['Invoicing','Pending Payment','Delinquent'] },
+      { label: 'Estimates', color: '#f97316', key: 'estimates', statuses: PIPELINE_BUCKETS.estimates },
+      { label: 'Active',    color: '#0d9488', key: 'active',    statuses: PIPELINE_BUCKETS.active },
+      { label: 'Finance',   color: '#7c3aed', key: 'finance',   statuses: PIPELINE_BUCKETS.finance },
     ];
     pipeline.innerHTML = groups.map((g, i) => {
       const jobs = conJobs.filter(j => g.statuses.includes(j.status));
@@ -5069,11 +5149,7 @@ window.renderHomeDashboard = renderHomeDashboard;
 
 // Pipeline click — filter Jobs page to selected stage group
 function filterJobsToStage(key) {
-  const statusMap = {
-    estimates: ['New Lead','Hipshot Needed','Appointment Set','Estimating','Submitted'],
-    active: ['Approved','Design Phase','Permitting','Scheduled','Work In Progress','Contracted','Inspection Pending'],
-    finance: ['Invoicing','Pending Payment','Delinquent'],
-  };
+  const statusMap = PIPELINE_BUCKETS;
   const statuses = statusMap[key] || [];
   // Navigate to Jobs page and filter
   ktNav('jobs', document.querySelector('.kt-nav-item:nth-child(5)'));
@@ -5140,18 +5216,12 @@ function renderNeedsAttention() {
   const items = [];
 
   conJobs.forEach(job => {
-    // Delinquent or Pending Payment
-    if (job.status === 'Delinquent') {
-      items.push({ color:'#ef5350', icon:'🔴', text: job.name, sub: 'Delinquent — needs follow-up', jobId: job.id });
-    }
-    if (job.status === 'Pending Payment') {
-      items.push({ color:'#f3b33d', icon:'💰', text: job.name, sub: 'Pending payment', jobId: job.id });
-    }
+    // Complete jobs needing attention (invoice follow-up handled by SLA triggers)
     if (job.status === 'Inspection Pending') {
       items.push({ color:'#2563eb', icon:'🔍', text: job.name, sub: 'Inspection pending', jobId: job.id });
     }
     // Jobs with no logs in 3+ days (active jobs only)
-    const activeStatuses = ['Work In Progress','Scheduled','Approved','Design Phase','Permitting'];
+    const activeStatuses = PIPELINE_BUCKETS.active;
     if (activeStatuses.includes(job.status)) {
       const lastLog = job.lastLogDate || '';
       if (!lastLog) {
@@ -5340,7 +5410,7 @@ async function renderCompanyLaborEfficiency() {
   const el = document.getElementById('homeLaborEfficiency');
   const tileVal = document.getElementById('statLaborEffVal');
   if (!conDb) return;
-  const closedStatuses = ['Closed Won','Closed Lost','Closed Hipshot Sent'];
+  const closedStatuses = ['Closed Completed','Closed Lost'];
   const activeJobs = conJobs.filter(j => !closedStatuses.includes(j.status));
 
   if (!activeJobs.length) {
@@ -6800,6 +6870,7 @@ function conLoadJobs() {
       const tb = b.createdAt?.toMillis ? b.createdAt.toMillis() : 0;
       return tb - ta;
     });
+    migrateJobStatuses(conJobs); // remap any legacy status values in-memory
     conRenderBoard();
     conRenderList();
     conRenderStats();
@@ -8397,7 +8468,7 @@ function renderCustomers() {
 
   grid.innerHTML = customers.map(c => {
     const customerJobs = conJobs.filter(j => j.client === c.name || j.customerId === c.id);
-    const openJobs = customerJobs.filter(j => !['Closed Won','Closed Lost'].includes(j.status));
+    const openJobs = customerJobs.filter(j => !['Closed Completed','Closed Lost'].includes(j.status));
     const jobCount = customerJobs.length;
     const initials = (c.name||'?').split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
     const jobsHtml = openJobs.slice(0,3).map(j =>
@@ -8808,7 +8879,7 @@ function renderTodaySummary() {
 }
 
 function populateTimeFilters() {
-  const activeStatuses = ['Work In Progress','Scheduled','Approved','Design Phase','Permitting','In Progress','Contracted'];
+  const activeStatuses = PIPELINE_BUCKETS.active;
   const activeJobs = conJobs.filter(j => activeStatuses.includes(j.status));
 
   const jobSel = document.getElementById('clockJobSelect');
@@ -9228,7 +9299,7 @@ function renderVendors() {
   const insExpired = allVendors.filter(v => v.insExp && v.insExp < today).length;
   const setEl = (id,v) => { const el=document.getElementById(id); if(el) el.textContent=v; };
   setEl('vendorStatTotal', allVendors.length);
-  setEl('vendorStatActive', conJobs.filter(j=>['Work In Progress','Scheduled'].includes(j.status)).length + ' jobs active');
+  setEl('vendorStatActive', conJobs.filter(j=>PIPELINE_BUCKETS.active.includes(j.status)).length + ' jobs active');
   setEl('vendorStatInsWarn', insWarn + (insExpired > 0 ? ` (+${insExpired} expired)` : ''));
 
   if (countEl) countEl.textContent = `${allVendors.length} vendor${allVendors.length!==1?'s':''} total`;
@@ -10079,7 +10150,7 @@ function showJobPickerForLog() {
   if (existing) existing.remove();
 
   const activeJobs = conJobs.filter(j =>
-    ['Work In Progress','Scheduled','Approved','Design Phase','Permitting','Estimating'].includes(j.status)
+    PIPELINE_BUCKETS.active.includes(j.status) || j.status === 'Building Estimate'
   );
   const jobList = activeJobs.length ? activeJobs : conJobs;
 
@@ -10558,13 +10629,11 @@ function renderPortalJob(job) {
   // Build visual status track
   // Show simplified customer-facing stages
   const customerStages = [
-    { label: 'Estimate', statuses: ['New Lead','Hipshot Needed','Appointment Set','Estimating','Submitted'] },
+    { label: 'Estimate', statuses: ['New Lead','Appointment Set','Building Estimate','Submitted'] },
     { label: 'Approved', statuses: ['Approved'] },
-    { label: 'Design', statuses: ['Design Phase','Permitting'] },
-    { label: 'Scheduled', statuses: ['Scheduled'] },
-    { label: 'In Progress', statuses: ['Work In Progress','Inspection Pending'] },
-    { label: 'Invoicing', statuses: ['Invoicing','Pending Payment','Delinquent'] },
-    { label: 'Complete', statuses: ['Closed Won'] },
+    { label: 'Scheduled', statuses: ['To Be Scheduled','Permitting','Scheduled'] },
+    { label: 'In Progress', statuses: ['In Progress','Inspection Pending'] },
+    { label: 'Complete', statuses: ['Complete','Closed Completed'] },
   ];
 
   const currentIdx = customerStages.findIndex(st => st.statuses.includes(job.status));
@@ -11713,8 +11782,8 @@ function renderOverviewReport(el, jobs, f) {
   const estMarginPct = totalContract ? Math.round(estMargin/totalContract*100) : 0;
   const actMarginPct = totalContract ? Math.round(actMargin/totalContract*100) : 0;
 
-  const activeJobs = jobs.filter(j => ['Work In Progress','Scheduled','Approved','Design Phase','Permitting'].includes(j.status));
-  const wonJobs = jobs.filter(j => j.status === 'Closed Won');
+  const activeJobs = jobs.filter(j => PIPELINE_BUCKETS.active.includes(j.status));
+  const wonJobs = jobs.filter(j => j.status === 'Closed Completed');
   const lostJobs = jobs.filter(j => j.status === 'Closed Lost');
   const winRate = (wonJobs.length + lostJobs.length) > 0
     ? Math.round(wonJobs.length / (wonJobs.length + lostJobs.length) * 100) : 0;
@@ -12545,7 +12614,7 @@ function openPOModal(id) {
 
   // Pre-fill ship to from job address
   if (!po) {
-    const firstActiveJob = conJobs.find(j => ['Work In Progress','Scheduled','Approved'].includes(j.status));
+    const firstActiveJob = conJobs.find(j => PIPELINE_BUCKETS.active.includes(j.status));
     if (firstActiveJob?.address) setVal('poShipTo', firstActiveJob.address);
   }
 
@@ -18578,7 +18647,7 @@ async function renderTradeAccuracy() {
     const tradeStats = {}; // { trade: { totalEst, totalAct, count } }
 
     // We already have conJobs - fetch phases for completed ones
-    const completedJobs = conJobs.filter(j => j.status === 'Complete' || j.status === 'Closed Won').slice(0, 20);
+    const completedJobs = conJobs.filter(j => j.status === 'Complete' || j.status === 'Closed Completed').slice(0, 20);
     if (!completedJobs.length) {
       el.innerHTML = '<div class="small muted">Complete some jobs to see trade accuracy trends.</div>';
       return;

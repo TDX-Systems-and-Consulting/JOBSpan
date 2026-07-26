@@ -1325,12 +1325,11 @@
           <select id="jobsStatusFilter" onchange="conRenderBoard();conRenderList()"
             style="font-size:.8rem;padding:6px 12px;background:var(--input-bg);border:1px solid var(--amber-border);color:var(--text);border-radius:8px">
             <option value="">All Statuses</option>
-            <option>New Lead</option><option>Hipshot Needed</option><option>Appointment Set</option>
-            <option>Estimating</option><option>Submitted</option><option>Approved</option>
-            <option>Design Phase</option><option>Permitting</option><option>Scheduled</option>
-            <option>Work In Progress</option><option>Inspection Pending</option><option>Invoicing</option>
-            <option>Pending Payment</option><option>Delinquent</option><option>Closed Hipshot Sent</option>
-            <option>Closed Won</option><option>Closed Lost</option>
+            <option>New Lead</option><option>Appointment Set</option><option>Building Estimate</option>
+            <option>Submitted</option><option>Approved</option><option>To Be Scheduled</option>
+            <option>Permitting</option><option>Scheduled</option><option>In Progress</option>
+            <option>Inspection Pending</option><option>Complete</option>
+            <option>Closed Completed</option><option>Closed Lost</option>
           </select>
           <span class="small muted" id="ktJobCount"></span>
         </div>
@@ -1670,12 +1669,11 @@
           <div style="display:flex;gap:8px;align-items:center">
             <select id="jcdStatusFilter" onchange="renderJCDTable()" style="font-size:.78rem;padding:5px 10px;background:var(--input-bg);border:1px solid var(--amber-border);color:var(--text);border-radius:8px">
               <option value="">All Statuses</option>
-              <option>New Lead</option><option>Hipshot Needed</option><option>Appointment Set</option>
-              <option>Estimating</option><option>Submitted</option><option>Approved</option>
-              <option>Design Phase</option><option>Permitting</option><option>Scheduled</option>
-              <option>Work In Progress</option><option>Inspection Pending</option><option>Invoicing</option>
-              <option>Pending Payment</option><option>Delinquent</option><option>Closed Hipshot Sent</option>
-              <option>Closed Won</option><option>Closed Lost</option>
+              <option>New Lead</option><option>Appointment Set</option><option>Building Estimate</option>
+              <option>Submitted</option><option>Approved</option><option>To Be Scheduled</option>
+              <option>Permitting</option><option>Scheduled</option><option>In Progress</option>
+              <option>Inspection Pending</option><option>Complete</option>
+              <option>Closed Completed</option><option>Closed Lost</option>
             </select>
             <span class="small muted" id="jcdTableSummary"></span>
           </div>
@@ -3288,12 +3286,19 @@
           <div><label class="small muted">Job Address</label><input id="jobAddress" placeholder="123 Main St, St. Peters, MO" /></div>
           <div><label class="small muted">Status</label>
             <select id="jobStatus">
-              <option value="Lead">Lead</option>
-              <option value="Estimating">Estimating</option>
-              <option value="Contracted" selected>Contracted</option>
+              <option value="New Lead" selected>New Lead</option>
+              <option value="Appointment Set">Appointment Set</option>
+              <option value="Building Estimate">Building Estimate</option>
+              <option value="Submitted">Submitted</option>
+              <option value="Approved">Approved</option>
+              <option value="To Be Scheduled">To Be Scheduled</option>
+              <option value="Permitting">Permitting</option>
+              <option value="Scheduled">Scheduled</option>
               <option value="In Progress">In Progress</option>
+              <option value="Inspection Pending">Inspection Pending</option>
               <option value="Complete">Complete</option>
-              <option value="Warranty">Warranty</option>
+              <option value="Closed Completed">Closed Completed</option>
+              <option value="Closed Lost">Closed Lost</option>
             </select>
           </div>
           <div><label class="small muted">Job Type</label>
@@ -3558,7 +3563,7 @@
           <div><label class="small muted">Status</label>
             <select id="subStatus">
               <option value="Bidding">Bidding</option>
-              <option value="Contracted">Contracted</option>
+              <option value="New Lead">New Lead</option>
               <option value="Scheduled">Scheduled</option>
               <option value="On Site">On Site</option>
               <option value="Complete">Complete</option>
@@ -3598,12 +3603,11 @@
           <div id="detailJobNum" style="font-size:.78rem;color:var(--amber);font-weight:800;background:rgba(217,119,6,.12);border:1px solid rgba(217,119,6,.3);border-radius:6px;padding:2px 8px"></div>
           <select id="detailStatusBadge" onchange="commitJobStatusChange(this.value)"
             style="font-size:.74rem;font-weight:700;padding:3px 10px;border-radius:999px;background:rgba(217,119,6,.15);color:var(--amber);border:1px solid rgba(217,119,6,.3);cursor:pointer">
-            <option>New Lead</option><option>Hipshot Needed</option><option>Appointment Set</option>
-            <option>Estimating</option><option>Submitted</option><option>Approved</option>
-            <option>Design Phase</option><option>Permitting</option><option>Scheduled</option>
-            <option>Work In Progress</option><option>Inspection Pending</option><option>Invoicing</option>
-            <option>Pending Payment</option><option>Delinquent</option><option>Closed Hipshot Sent</option>
-            <option>Closed Won</option><option>Closed Lost</option>
+            <option>New Lead</option><option>Appointment Set</option><option>Building Estimate</option>
+            <option>Submitted</option><option>Approved</option><option>To Be Scheduled</option>
+            <option>Permitting</option><option>Scheduled</option><option>In Progress</option>
+            <option>Inspection Pending</option><option>Complete</option>
+            <option>Closed Completed</option><option>Closed Lost</option>
           </select>
         </div>
         <h3 id="detailJobName" style="margin:5px 0 3px;font-size:1.15rem"></h3>
