@@ -3135,6 +3135,7 @@ function switchDetailTab(tab, btn) {
   if (tab === 'logs') renderLogList();
   if (tab === 'invoices') loadJobInvoices(conCurrentJobId);
   if (tab === 'activity') loadJobActivity(conCurrentJobId, 'full');
+  if (tab === 'jobnotes') loadJobNotes(conCurrentJobId);
   if (tab === 'retrospective') loadRetrospective(conCurrentJobId);
   if (tab === 'financials') renderFinancialsHub(conCurrentJobId);
   if (tab === 'todos') renderJobTodos(conCurrentJobId);
@@ -3343,6 +3344,155 @@ window.saveLog = saveLog;
 window.deleteLog = deleteLog;
 window.switchConTab = switchConTab;
 window.switchDetailTab = switchDetailTab;
+
+// ════════════════════════════════════════════════════
+// ── JOB NOTES LOG ──
+// Timestamped, authored notes on a job — separate from daily logs
+// (which are crew field reports) and activity feed (which is automated).
+// This is the PM paper trail: customer conversations, verbal instructions,
+// accountability records, field observations, anything that needs a
+// permanent dated record tied to this job.
+// ════════════════════════════════════════════════════
+
+function loadJobNotes(jobId) {
+  if (!jobId || !conDb) return;
+  const el = document.getElementById('jobNotesList');
+  if (!el) return;
+  el.innerHTML = '<div class="small muted" style="text-align:center;padding:20px">Loading notes…</div>';
+
+  coll('jobs').doc(jobId).collection('jobNotes')
+    .orderBy('createdAt', 'desc')
+    .get()
+    .then(snap => {
+      if (snap.empty) {
+        el.innerHTML = '<div style="text-align:center;padding:32px;color:var(--muted);font-style:italic">No notes yet.<br><br>Use notes to log customer conversations, verbal instructions, site observations — anything that needs a permanent dated record.</div>';
+        return;
+      }
+      const notes = [];
+      snap.forEach(d => notes.push({ id: d.id, ...d.data() }));
+      renderJobNotes(notes);
+    })
+    .catch(() => {
+      // Fall back without orderBy if index missing
+      coll('jobs').doc(jobId).collection('jobNotes').get()
+        .then(snap => {
+          const notes = [];
+          snap.forEach(d => notes.push({ id: d.id, ...d.data() }));
+          notes.sort((a, b) => (b.createdMs || 0) - (a.createdMs || 0));
+          renderJobNotes(notes);
+        });
+    });
+}
+window.loadJobNotes = loadJobNotes;
+
+function renderJobNotes(notes) {
+  const el = document.getElementById('jobNotesList');
+  if (!el) return;
+  if (!notes.length) {
+    el.innerHTML = '<div style="text-align:center;padding:32px;color:var(--muted);font-style:italic">No notes yet.</div>';
+    return;
+  }
+  el.innerHTML = notes.map(n => {
+    const ts = n.createdMs ? new Date(n.createdMs) : null;
+    const dateStr = ts ? ts.toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric', year:'numeric' }) : '';
+    const timeStr = ts ? ts.toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit' }) : '';
+    const author = n.authorName || n.authorEmail || 'Unknown';
+    const isMe = n.authorEmail === conCurrentUser?.email;
+
+    return `<div style="background:rgba(8,18,36,.6);border:1px solid var(--line);border-radius:12px;padding:16px;position:relative">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;flex-wrap:wrap;gap:6px">
+        <div style="display:flex;align-items:center;gap:8px">
+          <div style="width:32px;height:32px;border-radius:50%;background:${isMe ? 'rgba(217,119,6,.3)' : 'rgba(110,145,210,.2)'};display:flex;align-items:center;justify-content:center;font-weight:800;font-size:.85rem;color:${isMe ? '#f59e0b' : '#94a3b8'}">${esc(author[0]?.toUpperCase()||'?')}</div>
+          <div>
+            <div style="font-weight:700;color:#eaf0fb;font-size:.88rem">${esc(author)}</div>
+            <div style="font-size:.72rem;color:var(--muted)">${dateStr} · ${timeStr}</div>
+          </div>
+        </div>
+        ${isMe ? `<button onclick="deleteJobNote('${n.id}')" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:.8rem;padding:4px" title="Delete note">✕</button>` : ''}
+      </div>
+      <div style="font-size:.9rem;color:#eaf0fb;line-height:1.6;white-space:pre-wrap;word-break:break-word">${esc(n.text || '')}</div>
+      ${n.category ? `<div style="margin-top:8px"><span style="background:rgba(217,119,6,.15);color:#f59e0b;padding:2px 8px;border-radius:6px;font-size:.72rem;font-weight:700">${esc(n.category)}</span></div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+function openAddJobNote() {
+  const existing = document.getElementById('addJobNoteModal');
+  if (existing) existing.remove();
+
+  const modal = document.createElement('div');
+  modal.id = 'addJobNoteModal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px';
+  modal.innerHTML = `
+    <div style="background:#0d1f35;border:1px solid var(--line);border-radius:16px;padding:28px;max-width:520px;width:100%">
+      <div style="font-size:1.1rem;font-weight:800;color:#eaf0fb;margin-bottom:4px">📋 Add Note</div>
+      <div style="font-size:.78rem;color:var(--muted);margin-bottom:16px">Timestamped and attributed to you. Cannot be edited after saving.</div>
+
+      <div style="margin-bottom:12px">
+        <label style="font-size:.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-weight:700;display:block;margin-bottom:6px">Category (optional)</label>
+        <select id="jobNoteCategory" style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid var(--line);background:rgba(8,18,36,.6);color:#eaf0fb;font-size:.88rem">
+          <option value="">— General Note —</option>
+          <option value="Customer Call">📞 Customer Call</option>
+          <option value="Customer Request">🔄 Customer Request</option>
+          <option value="Crew Instruction">👷 Crew Instruction</option>
+          <option value="Site Observation">🔍 Site Observation</option>
+          <option value="Change Order Note">📋 Change Order Note</option>
+          <option value="Issue / Concern">⚠️ Issue / Concern</option>
+          <option value="Material Note">📦 Material Note</option>
+          <option value="Vendor / Sub Note">🤝 Vendor / Sub Note</option>
+        </select>
+      </div>
+
+      <div style="margin-bottom:20px">
+        <label style="font-size:.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-weight:700;display:block;margin-bottom:6px">Note *</label>
+        <textarea id="jobNoteText" rows="6" placeholder="Document what happened, what was said, who was involved, and any relevant details..."
+          style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--line);background:rgba(8,18,36,.6);color:#eaf0fb;font-size:.88rem;box-sizing:border-box;resize:vertical;line-height:1.55"></textarea>
+      </div>
+
+      <div style="display:flex;gap:10px;justify-content:flex-end">
+        <button class="btn" onclick="document.getElementById('addJobNoteModal').remove()">Cancel</button>
+        <button class="btn-amber" onclick="saveJobNote()" style="padding:10px 24px;font-weight:700">Save Note</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  setTimeout(() => document.getElementById('jobNoteText')?.focus(), 100);
+}
+window.openAddJobNote = openAddJobNote;
+
+async function saveJobNote() {
+  const text = document.getElementById('jobNoteText')?.value.trim();
+  const category = document.getElementById('jobNoteCategory')?.value || '';
+  if (!text) { alert('Please enter a note.'); return; }
+  if (!conCurrentJobId || !conDb) return;
+
+  const now = Date.now();
+  try {
+    await coll('jobs').doc(conCurrentJobId).collection('jobNotes').add({
+      text,
+      category,
+      authorEmail: conCurrentUser?.email || '',
+      authorName: conCurrentUser?.displayName || conCurrentUser?.email || '',
+      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      createdMs: now,
+    });
+    document.getElementById('addJobNoteModal')?.remove();
+    loadJobNotes(conCurrentJobId);
+  } catch(e) {
+    alert('Error saving note: ' + e.message);
+  }
+}
+window.saveJobNote = saveJobNote;
+
+async function deleteJobNote(noteId) {
+  if (!confirm('Delete this note permanently? This cannot be undone.')) return;
+  try {
+    await coll('jobs').doc(conCurrentJobId).collection('jobNotes').doc(noteId).delete();
+    loadJobNotes(conCurrentJobId);
+  } catch(e) {
+    alert('Error deleting note: ' + e.message);
+  }
+}
+window.deleteJobNote = deleteJobNote;
 window.renderJobMap = renderJobMap;
 window.loadTeamCache = loadTeamCache;
 window.getTeamMemberOpts = getTeamMemberOpts;

@@ -3562,7 +3562,7 @@
         </div>
       </div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;width:100%">
-        <button class="btn" onclick="addJobActivity('note')" style="font-size:.78rem;padding:6px 12px">📝 Log Note</button>
+        <button class="btn" onclick="switchDetailTab('jobnotes', null); openAddJobNote();" style="font-size:.78rem;padding:6px 12px">📋 Log Note</button>
         <button class="btn" onclick="openJobPhotos()" style="font-size:.78rem;padding:6px 12px">📷 Photos</button>
         <button class="btn" onclick="editCurrentJob()" style="font-size:.78rem;padding:6px 12px">✏️ Edit</button>
         <button class="btn btn-danger" onclick="openArchiveJobModal()" style="font-size:.78rem;padding:6px 12px">🗑️ Delete</button>
@@ -3609,6 +3609,7 @@
         <button class="con-subtab" onclick="switchDetailTab('changeorders',this)">🔄 Change Orders</button>
         <button class="con-subtab" onclick="switchDetailTab('phases',this)">📅 Schedule</button>
         <button class="con-subtab" onclick="switchDetailTab('todos',this)">✅ To-Dos</button>
+        <button class="con-subtab" onclick="switchDetailTab('jobnotes',this)">📋 Notes</button>
         <button class="con-subtab" onclick="switchDetailTab('logs',this)">📝 Daily Logs</button>
         <button class="con-subtab" onclick="switchDetailTab('selections',this)">🎨 Selections</button>
         <button class="con-subtab" onclick="switchDetailTab('specifications',this)">📐 Specifications</button>
@@ -3713,6 +3714,17 @@
       </div>
 
       <!-- ACTIVITY TAB -->
+      <!-- Job Notes Tab -->
+      <div id="detailJobnotes" style="display:none">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+          <div style="font-size:.95rem;font-weight:700;color:#eaf0fb">📋 Job Notes</div>
+          <button class="btn-amber" onclick="openAddJobNote()" style="padding:8px 16px;font-size:.84rem">+ Add Note</button>
+        </div>
+        <div id="jobNotesList" style="display:flex;flex-direction:column;gap:10px">
+          <div class="small muted" style="text-align:center;padding:20px">Loading notes…</div>
+        </div>
+      </div>
+
       <div id="detailActivity" style="display:none">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
           <div style="font-weight:800;font-size:1rem">Activity Feed</div>
