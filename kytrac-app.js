@@ -13349,13 +13349,16 @@ function computeProposalData(job, itemized) {
     const catBlocks = (group.subgroups || []).map(sub => {
       if (sub.visibleToCustomer === false) return null;
       const st = calcGroupTotals(sub.items || []);
-      if (st.price <= 0) return null;
+      // Include subgroups that have scope notes even if they have no items/price
+      // — these are description-only room sections for the proposal and punch list
+      if (st.price <= 0 && !sub.scopeNotes) return null;
       return {
         label: customerSafeLabel(sub),
         price: st.price,
         scopeNotes: sub.scopeNotes || '',
         pendingBid: !!sub.pendingBid,
-        pendingBidNote: sub.pendingBidNote || ''
+        pendingBidNote: sub.pendingBidNote || '',
+        descriptionOnly: st.price <= 0
       };
     }).filter(Boolean);
 
@@ -13369,6 +13372,9 @@ function computeProposalData(job, itemized) {
     }).filter(Boolean);
 
     if (!catBlocks.length && !directBlocks.length) return;
+    // Only skip the group if it has no pricing AND no scope notes at all
+    const hasContent = catBlocks.some(c => c.price > 0 || c.scopeNotes) || directBlocks.length;
+    if (!hasContent) return;
     rooms.push({ name: group.name, catBlocks, directBlocks });
   });
 
@@ -13389,7 +13395,7 @@ function renderProposalDocumentHtml(data, job, co) {
 
   const roomSections = data.rooms.map(room => {
     const catHtml = room.catBlocks.map(c => {
-      const priceHtml = itemized ? `<span style="float:right;font-weight:700;color:#1f2937">$${c.price.toFixed(2)}</span>` : '';
+      const priceHtml = (itemized && !c.descriptionOnly) ? `<span style="float:right;font-weight:700;color:#1f2937">$${c.price.toFixed(2)}</span>` : '';
       const bidCaveat = c.pendingBid
         ? `<div class="cat-bid-caveat">⚠ ${esc(c.pendingBidNote || 'Pricing for this item is preliminary and may be adjusted once final vendor bids are in.')}</div>`
         : '';
