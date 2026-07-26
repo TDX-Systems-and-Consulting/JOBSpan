@@ -278,6 +278,11 @@ service cloud.firestore {
       }
     }
 
+
+    // ── User Read State (notification tracking) ──
+    match /userReadState/{userEmail}/{type}/{docId} {
+      allow read, write: if signedIn() && myEmail().lower().replace('.','_') == userEmail;
+    }
     // ── Customer Portal (anonymous, bearer-token model) ─────────────
     // Portal visitors are NOT signed in - access is by knowing the
     // random token in their link, not by auth. This is inherently a

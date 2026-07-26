@@ -1056,6 +1056,18 @@
       <button class="kt-nav-item active" onclick="ktNav('dashboard',this)">
         <span class="kt-nav-icon">🏠</span> Home
       </button>
+      <button class="kt-nav-item" onclick="ktNav('globalNotes',this)">
+        <span class="kt-nav-icon">📋</span> Notes
+        <span class="kt-nav-badge" id="navNotesBadge" style="display:none">0</span>
+      </button>
+      <button class="kt-nav-item" onclick="ktNav('globalMessages',this)">
+        <span class="kt-nav-icon">💬</span> Messages
+        <span class="kt-nav-badge" id="navMessagesBadge" style="display:none">0</span>
+      </button>
+      <button class="kt-nav-item" onclick="ktNav('globalChangeOrders',this)">
+        <span class="kt-nav-icon">🔄</span> Change Orders
+        <span class="kt-nav-badge" id="navCOBadge" style="display:none;background:#ef5350">0</span>
+      </button>
       <button class="kt-nav-item" onclick="ktNav('jobs',this)">
         <span class="kt-nav-icon">🔧</span> Jobs
       </button>
@@ -1064,10 +1076,7 @@
         <span class="kt-nav-badge" id="navTodoBadge" style="display:none">0</span>
       </button>
       <button class="kt-nav-item" onclick="ktNav('logs',this)">
-        <span class="kt-nav-icon">📋</span> Daily Logs
-      </button>
-      <button class="kt-nav-item" onclick="ktNav('documents',this)">
-        <span class="kt-nav-icon">📁</span> Documents
+        <span class="kt-nav-icon">📝</span> Daily Logs
       </button>
       <button class="kt-nav-item" onclick="ktNav('calendar',this)">
         <span class="kt-nav-icon">📅</span> Calendar
@@ -1075,6 +1084,9 @@
       <button class="kt-nav-item" onclick="ktNav('time',this)">
         <span class="kt-nav-icon">⏱</span> Time
         <span class="kt-nav-badge" id="navTimeBadge" style="display:none;background:#1dbb87">●</span>
+      </button>
+      <button class="kt-nav-item" onclick="ktNav('documents',this)">
+        <span class="kt-nav-icon">📁</span> Documents
       </button>
       <button class="kt-nav-item" onclick="ktNav('customers',this)">
         <span class="kt-nav-icon">👥</span> Customers
@@ -1256,6 +1268,41 @@
     </div>
 
     <!-- ── PAGE: JOBS ── -->
+    <!-- Global Notes Page -->
+    <div class="kt-page" id="ktPageGlobalNotes">
+      <div class="kt-page-title">📋 Notes</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <div style="font-size:.85rem;color:var(--muted)">Notes added across all jobs — unread notes from crew members highlighted</div>
+        <button class="btn" onclick="markAllNotesRead()" style="font-size:.78rem;padding:6px 12px">Mark All Read</button>
+      </div>
+      <div id="globalNotesList" style="display:flex;flex-direction:column;gap:10px">
+        <div class="small muted" style="text-align:center;padding:32px">Loading notes…</div>
+      </div>
+    </div>
+
+    <!-- Global Messages Page -->
+    <div class="kt-page" id="ktPageGlobalMessages">
+      <div class="kt-page-title">💬 Messages</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <div style="font-size:.85rem;color:var(--muted)">Customer and team messages across all jobs</div>
+        <button class="btn" onclick="markAllMessagesRead()" style="font-size:.78rem;padding:6px 12px">Mark All Read</button>
+      </div>
+      <div id="globalMessagesList" style="display:flex;flex-direction:column;gap:10px">
+        <div class="small muted" style="text-align:center;padding:32px">Loading messages…</div>
+      </div>
+    </div>
+
+    <!-- Global Change Orders Page -->
+    <div class="kt-page" id="ktPageGlobalChangeOrders">
+      <div class="kt-page-title">🔄 Change Orders</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <div style="font-size:.85rem;color:var(--muted)">All change orders across all jobs — unprocessed flagged in red</div>
+      </div>
+      <div id="globalCOList" style="display:flex;flex-direction:column;gap:10px">
+        <div class="small muted" style="text-align:center;padding:32px">Loading change orders…</div>
+      </div>
+    </div>
+
     <div class="kt-page board-page" id="ktPageJobs">
 
       <!-- Toolbar — fixed, doesn't scroll -->

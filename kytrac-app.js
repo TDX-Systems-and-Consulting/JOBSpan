@@ -15,22 +15,24 @@ window.kClose = kClose;
 
 // ── NAVIGATION ──
 const KT_PAGES = {
-  dashboard: { el:'ktPageDashboard', title:'🏠 Home' },
-  jobs:      { el:'ktPageJobs',      title:'🔧 Jobs' },
-  logs:      { el:'ktPageLogs',      title:'📋 Daily Logs' },
-  costing:   { el:'ktPageCosting',   title:'💰 Job Costing' },
-  catalog:   { el:'ktPageCatalog',   title:'📦 Cost Catalog' },
-  invoicing: { el:'ktPageInvoicing', title:'🧾 Invoicing' },
-  reports:        { el:'ktPageReports',       title:'📊 Reports & Analytics' },
-  purchaseorders: { el:'ktPagePurchaseOrders', title:'📋 Purchase Orders' },
-  calendar:  { el:'ktPageCalendar',  title:'📅 Calendar' },
-  time:      { el:'ktPageTime',      title:'⏱ Time Tracking' },
-  documents: { el:'ktPageDocuments', title:'📁 Documents' },
-  todos:     { el:'ktPageTodos',     title:'✅ To-Dos' },
-  customers: { el:'ktPageCustomers', title:'👥 Customers' },
-  vendors:   { el:'ktPageVendors',   title:'🏭 Vendors' },
-  settings:  { el:'ktPageSettings',  title:'⚙️ Company Settings' },
-
+  dashboard:          { el:'ktPageDashboard',          title:'🏠 Home' },
+  globalNotes:        { el:'ktPageGlobalNotes',        title:'📋 Notes' },
+  globalMessages:     { el:'ktPageGlobalMessages',     title:'💬 Messages' },
+  globalChangeOrders: { el:'ktPageGlobalChangeOrders', title:'🔄 Change Orders' },
+  jobs:               { el:'ktPageJobs',               title:'🔧 Jobs' },
+  logs:               { el:'ktPageLogs',               title:'📝 Daily Logs' },
+  costing:            { el:'ktPageCosting',            title:'💰 Job Costing' },
+  catalog:            { el:'ktPageCatalog',            title:'📦 Cost Catalog' },
+  invoicing:          { el:'ktPageInvoicing',          title:'🧾 Invoicing' },
+  reports:            { el:'ktPageReports',            title:'📊 Reports & Analytics' },
+  purchaseorders:     { el:'ktPagePurchaseOrders',     title:'📋 Purchase Orders' },
+  calendar:           { el:'ktPageCalendar',           title:'📅 Calendar' },
+  time:               { el:'ktPageTime',               title:'⏱ Time Tracking' },
+  documents:          { el:'ktPageDocuments',          title:'📁 Documents' },
+  todos:              { el:'ktPageTodos',              title:'✅ To-Dos' },
+  customers:          { el:'ktPageCustomers',          title:'👥 Customers' },
+  vendors:            { el:'ktPageVendors',            title:'🏭 Vendors' },
+  settings:           { el:'ktPageSettings',           title:'⚙️ Company Settings' },
 };
 
 // ── Jobs page view toggle ──
@@ -297,6 +299,9 @@ function ktNav(key, btn) {
   // Close mobile sidebar
   document.getElementById('ktSidebar')?.classList.remove('open');
   // Trigger renders
+  if(key==='globalNotes') loadGlobalNotes();
+  if(key==='globalMessages') loadGlobalMessages();
+  if(key==='globalChangeOrders') loadGlobalChangeOrders();
   if(key==='costing') renderJobCostDashboard();
 
   if(key==='jobs') {
@@ -3346,6 +3351,386 @@ window.switchConTab = switchConTab;
 window.switchDetailTab = switchDetailTab;
 
 // ════════════════════════════════════════════════════
+// ── NOTIFICATION SYSTEM ──
+// Independent read tracking per user for Notes, Messages, Change Orders.
+// Badge on sidebar nav shows unread count. Clears only when that user
+// opens and views the relevant page. Travis and Jason track independently.
+// ════════════════════════════════════════════════════
+
+// ── Read state stored in Firestore under user's profile ──
+// Path: companies/{companyId}/userReadState/{userEmail}/readNotes/{noteId}
+// Path: companies/{companyId}/userReadState/{userEmail}/readMessages/{msgId}
+// Path: companies/{companyId}/userReadState/{userEmail}/readCOs/{coId}
+
+function getReadStateRef(type) {
+  const email = (conCurrentUser?.email || '').replace(/\./g, '_');
+  if (!email || !currentCompanyId) return null;
+  return coll('userReadState').doc(email).collection(type);
+}
+
+// ── Update a sidebar badge ──
+function setNavBadge(badgeId, count) {
+  const el = document.getElementById(badgeId);
+  if (!el) return;
+  if (count > 0) {
+    el.textContent = count > 99 ? '99+' : count;
+    el.style.display = 'inline-block';
+  } else {
+    el.style.display = 'none';
+  }
+}
+
+// ── NOTES: load all job notes across all jobs, track unread ──
+async function loadGlobalNotes() {
+  const el = document.getElementById('globalNotesList');
+  if (!el || !conDb || !currentCompanyId) return;
+  el.innerHTML = '<div class="small muted" style="text-align:center;padding:32px">Loading…</div>';
+
+  const myEmail = (conCurrentUser?.email || '').toLowerCase();
+  const isOwnerOrFullAccess = conUserRole === 'Owner' || window._hasFullAccess;
+
+  // Get all jobs then all notes for each
+  const allNotes = [];
+  try {
+    // Query notes across all jobs using collection group query
+    const snap = await conDb.collectionGroup('jobNotes')
+      .orderBy('createdMs', 'desc').limit(100).get();
+    snap.forEach(d => {
+      const n = { id: d.id, ...d.data() };
+      // Extract jobId from path: companies/{co}/jobs/{jobId}/jobNotes/{noteId}
+      const pathParts = d.ref.path.split('/');
+      n.jobId = pathParts[pathParts.indexOf('jobs') + 1];
+      n.jobName = conJobs.find(j => j.id === n.jobId)?.name || 'Unknown Job';
+      allNotes.push(n);
+    });
+  } catch(e) {
+    // Collection group may need index — fall back to per-job query
+    for (const job of conJobs.slice(0, 20)) {
+      try {
+        const snap = await coll('jobs').doc(job.id).collection('jobNotes')
+          .orderBy('createdMs', 'desc').limit(20).get();
+        snap.forEach(d => allNotes.push({ id: d.id, ...d.data(), jobId: job.id, jobName: job.name }));
+      } catch(e2) {}
+    }
+    allNotes.sort((a, b) => (b.createdMs || 0) - (a.createdMs || 0));
+  }
+
+  // Get read state for current user
+  const readRef = getReadStateRef('readNotes');
+  const readSnap = readRef ? await readRef.get().catch(() => null) : null;
+  const readIds = new Set();
+  if (readSnap) readSnap.forEach(d => readIds.add(d.id));
+
+  // Count unread — notes NOT by me that I haven't read
+  const unread = allNotes.filter(n =>
+    (n.authorEmail || '').toLowerCase() !== myEmail && !readIds.has(n.id)
+  );
+  setNavBadge('navNotesBadge', unread.length);
+
+  if (!allNotes.length) {
+    el.innerHTML = '<div style="text-align:center;padding:32px;color:var(--muted);font-style:italic">No notes yet across any jobs.</div>';
+    return;
+  }
+
+  el.innerHTML = allNotes.map(n => {
+    const isUnread = (n.authorEmail || '').toLowerCase() !== myEmail && !readIds.has(n.id);
+    const ts = n.createdMs ? new Date(n.createdMs) : null;
+    const dateStr = ts ? ts.toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric' }) : '';
+    const timeStr = ts ? ts.toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit' }) : '';
+    return `<div onclick="markNoteRead('${n.id}','${n.jobId}',this)" style="background:${isUnread ? 'rgba(217,119,6,.08)' : 'rgba(8,18,36,.6)'};border:1px solid ${isUnread ? 'rgba(217,119,6,.4)' : 'var(--line)'};border-radius:12px;padding:14px;cursor:pointer;transition:background .2s">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;flex-wrap:wrap;gap:6px">
+        <div>
+          ${isUnread ? '<span style="background:#d97706;color:#fff;font-size:.65rem;font-weight:800;padding:2px 7px;border-radius:6px;margin-right:6px">NEW</span>' : ''}
+          <span style="font-weight:700;color:#eaf0fb">${esc(n.authorName || n.authorEmail || 'Unknown')}</span>
+          <span style="color:var(--muted);font-size:.8rem"> on </span>
+          <span style="color:var(--amber);font-size:.82rem;font-weight:700;cursor:pointer" onclick="event.stopPropagation();openJobDetail('${n.jobId}')">${esc(n.jobName)}</span>
+        </div>
+        <div style="font-size:.72rem;color:var(--muted)">${dateStr} · ${timeStr}</div>
+      </div>
+      ${n.category ? `<div style="margin-bottom:6px"><span style="background:rgba(217,119,6,.15);color:#f59e0b;padding:2px 8px;border-radius:6px;font-size:.72rem;font-weight:700">${esc(n.category)}</span></div>` : ''}
+      <div style="font-size:.88rem;color:#eaf0fb;line-height:1.55;white-space:pre-wrap">${esc(n.text || '')}</div>
+    </div>`;
+  }).join('');
+
+  // Mark all as read when page is viewed
+  if (readRef && unread.length) {
+    const batch = conDb.batch();
+    unread.forEach(n => batch.set(readRef.doc(n.id), { readAt: Date.now() }));
+    batch.commit().catch(() => {});
+    setTimeout(() => setNavBadge('navNotesBadge', 0), 1000);
+  }
+}
+window.loadGlobalNotes = loadGlobalNotes;
+
+async function markNoteRead(noteId, jobId, el) {
+  const readRef = getReadStateRef('readNotes');
+  if (readRef) readRef.doc(noteId).set({ readAt: Date.now() }).catch(() => {});
+  if (el) {
+    el.style.background = 'rgba(8,18,36,.6)';
+    el.style.borderColor = 'var(--line)';
+    const badge = el.querySelector('span[style*="NEW"]');
+    if (badge) badge.remove();
+  }
+  refreshNotificationBadges();
+}
+window.markNoteRead = markNoteRead;
+
+async function markAllNotesRead() {
+  await loadGlobalNotes();
+}
+window.markAllNotesRead = markAllNotesRead;
+
+// ── MESSAGES: load all job messages, track unread ──
+async function loadGlobalMessages() {
+  const el = document.getElementById('globalMessagesList');
+  if (!el || !conDb) return;
+  el.innerHTML = '<div class="small muted" style="text-align:center;padding:32px">Loading…</div>';
+
+  const myEmail = (conCurrentUser?.email || '').toLowerCase();
+  const allMsgs = [];
+
+  for (const job of conJobs.slice(0, 20)) {
+    try {
+      const snap = await coll('jobs').doc(job.id).collection('messages')
+        .orderBy('createdMs', 'desc').limit(10).get();
+      snap.forEach(d => allMsgs.push({ id: d.id, ...d.data(), jobId: job.id, jobName: job.name }));
+    } catch(e) {}
+  }
+  allMsgs.sort((a, b) => (b.createdMs || 0) - (a.createdMs || 0));
+
+  const readRef = getReadStateRef('readMessages');
+  const readSnap = readRef ? await readRef.get().catch(() => null) : null;
+  const readIds = new Set();
+  if (readSnap) readSnap.forEach(d => readIds.add(d.id));
+
+  const unread = allMsgs.filter(m =>
+    (m.authorEmail || '').toLowerCase() !== myEmail && !readIds.has(m.id)
+  );
+  setNavBadge('navMessagesBadge', unread.length);
+
+  if (!allMsgs.length) {
+    el.innerHTML = '<div style="text-align:center;padding:32px;color:var(--muted);font-style:italic">No messages yet.</div>';
+    return;
+  }
+
+  el.innerHTML = allMsgs.map(m => {
+    const isUnread = (m.authorEmail || '').toLowerCase() !== myEmail && !readIds.has(m.id);
+    const ts = m.createdMs ? new Date(m.createdMs) : null;
+    const dateStr = ts ? ts.toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric' }) : '';
+    const timeStr = ts ? ts.toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit' }) : '';
+    const sender = m.fromCustomer ? `${esc(m.authorName || 'Customer')} (Customer)` : esc(m.authorName || m.authorEmail || 'Team');
+    return `<div style="background:${isUnread ? 'rgba(99,179,237,.08)' : 'rgba(8,18,36,.6)'};border:1px solid ${isUnread ? 'rgba(99,179,237,.4)' : 'var(--line)'};border-radius:12px;padding:14px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;flex-wrap:wrap;gap:6px">
+        <div>
+          ${isUnread ? '<span style="background:#3b82f6;color:#fff;font-size:.65rem;font-weight:800;padding:2px 7px;border-radius:6px;margin-right:6px">NEW</span>' : ''}
+          <span style="font-weight:700;color:#eaf0fb">${sender}</span>
+          <span style="color:var(--muted);font-size:.8rem"> on </span>
+          <span style="color:var(--amber);font-size:.82rem;font-weight:700;cursor:pointer" onclick="openJobDetail('${m.jobId}');switchDetailTab('messages',null)">${esc(m.jobName)}</span>
+        </div>
+        <div style="font-size:.72rem;color:var(--muted)">${dateStr} · ${timeStr}</div>
+      </div>
+      <div style="font-size:.88rem;color:#eaf0fb;line-height:1.55">${esc(m.text || '')}</div>
+    </div>`;
+  }).join('');
+
+  // Mark all read on view
+  if (readRef && unread.length) {
+    const batch = conDb.batch();
+    unread.forEach(m => batch.set(readRef.doc(m.id), { readAt: Date.now() }));
+    batch.commit().catch(() => {});
+    setTimeout(() => setNavBadge('navMessagesBadge', 0), 1000);
+  }
+}
+window.loadGlobalMessages = loadGlobalMessages;
+
+async function markAllMessagesRead() {
+  await loadGlobalMessages();
+}
+window.markAllMessagesRead = markAllMessagesRead;
+
+// ── CHANGE ORDERS: load all COs, flag unprocessed, auto-create To-Do ──
+async function loadGlobalChangeOrders() {
+  const el = document.getElementById('globalCOList');
+  if (!el || !conDb) return;
+  el.innerHTML = '<div class="small muted" style="text-align:center;padding:32px">Loading…</div>';
+
+  const allCOs = [];
+  for (const job of conJobs.slice(0, 20)) {
+    try {
+      const snap = await coll('jobs').doc(job.id).collection('changeOrders')
+        .orderBy('createdAt', 'desc').limit(20).get();
+      snap.forEach(d => allCOs.push({ id: d.id, ...d.data(), jobId: job.id, jobName: job.name }));
+    } catch(e) {
+      try {
+        const snap2 = await coll('jobs').doc(job.id).collection('changeOrders').limit(20).get();
+        snap2.forEach(d => allCOs.push({ id: d.id, ...d.data(), jobId: job.id, jobName: job.name }));
+      } catch(e2) {}
+    }
+  }
+
+  const unprocessed = allCOs.filter(co =>
+    !['approved','declined','rejected'].includes((co.status || '').toLowerCase())
+  );
+  setNavBadge('navCOBadge', unprocessed.length);
+
+  if (!allCOs.length) {
+    el.innerHTML = '<div style="text-align:center;padding:32px;color:var(--muted);font-style:italic">No change orders yet.</div>';
+    return;
+  }
+
+  const statusColor = { approved:'#1dbb87', declined:'#ef5350', rejected:'#ef5350', pending:'#f59e0b', draft:'#94a3b8' };
+
+  el.innerHTML = allCOs.map(co => {
+    const status = (co.status || 'pending').toLowerCase();
+    const isUnprocessed = !['approved','declined','rejected'].includes(status);
+    const sc = statusColor[status] || '#f59e0b';
+    const amount = co.amount || co.total || 0;
+    return `<div style="background:${isUnprocessed ? 'rgba(239,83,80,.07)' : 'rgba(8,18,36,.6)'};border:1px solid ${isUnprocessed ? 'rgba(239,83,80,.4)' : 'var(--line)'};border-radius:12px;padding:16px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">
+        <div>
+          ${isUnprocessed ? '<span style="background:#ef5350;color:#fff;font-size:.65rem;font-weight:800;padding:2px 7px;border-radius:6px;margin-right:6px">ACTION NEEDED</span>' : ''}
+          <span style="font-weight:700;color:#eaf0fb">${esc(co.title || co.description || 'Change Order')}</span>
+          <span style="color:var(--muted);font-size:.8rem"> · </span>
+          <span style="color:var(--amber);font-size:.82rem;font-weight:700;cursor:pointer" onclick="openJobDetail('${co.jobId}');switchDetailTab('changeorders',null)">${esc(co.jobName)}</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px">
+          ${amount ? `<span style="font-weight:700;color:#eaf0fb">$${Number(amount).toLocaleString(undefined,{minimumFractionDigits:2})}</span>` : ''}
+          <span style="font-size:.75rem;font-weight:700;color:${sc};text-transform:uppercase">${co.status || 'Pending'}</span>
+        </div>
+      </div>
+      ${co.description ? `<div style="margin-top:8px;font-size:.85rem;color:var(--muted)">${esc(co.description)}</div>` : ''}
+      ${isUnprocessed ? `<div style="margin-top:12px;display:flex;gap:8px">
+        <button class="btn" style="padding:5px 14px;font-size:.78rem;background:rgba(29,187,135,.12);color:#1dbb87;border-color:rgba(29,187,135,.35)"
+          onclick="approveCOFromGlobal('${co.jobId}','${co.id}',this)">✓ Approve</button>
+        <button class="btn" style="padding:5px 14px;font-size:.78rem;background:rgba(239,83,80,.1);color:#ef5350;border-color:rgba(239,83,80,.3)"
+          onclick="declineCOFromGlobal('${co.jobId}','${co.id}',this)">✕ Decline</button>
+        <button class="btn" style="padding:5px 14px;font-size:.78rem"
+          onclick="openJobDetail('${co.jobId}');switchDetailTab('changeorders',null)">View Job →</button>
+      </div>` : ''}
+    </div>`;
+  }).join('');
+}
+window.loadGlobalChangeOrders = loadGlobalChangeOrders;
+
+async function approveCOFromGlobal(jobId, coId, btn) {
+  try {
+    await coll('jobs').doc(jobId).collection('changeOrders').doc(coId).update({ status: 'Approved' });
+    if (btn) btn.closest('[style]').style.borderColor = 'var(--line)';
+    loadGlobalChangeOrders();
+  } catch(e) { alert('Error: ' + e.message); }
+}
+window.approveCOFromGlobal = approveCOFromGlobal;
+
+async function declineCOFromGlobal(jobId, coId, btn) {
+  if (!confirm('Decline this change order?')) return;
+  try {
+    await coll('jobs').doc(jobId).collection('changeOrders').doc(coId).update({ status: 'Declined' });
+    loadGlobalChangeOrders();
+  } catch(e) { alert('Error: ' + e.message); }
+}
+window.declineCOFromGlobal = declineCOFromGlobal;
+
+// ── Auto-create To-Do when a Change Order is added ──
+// Called from saveChangeOrder after writing the CO to Firestore
+async function autoCreateCOTodo(jobId, coId, coTitle, coAmount) {
+  if (!conDb || !jobId || !currentCompanyId) return;
+  const job = conJobs.find(j => j.id === jobId);
+
+  // Find Team Lead assigned to this job
+  const teamMembers = await fetchTeamMembersFlat(conDb, currentCompanyId);
+  const teamLead = teamMembers.find(m => m.role === 'Team Lead' || m.role === 'Superintendent');
+  const owner = teamMembers.find(m => m.role === 'Owner');
+
+  const todoText = `Process Change Order: ${coTitle || 'Change Order'}${coAmount ? ' — $' + Number(coAmount).toLocaleString() : ''} on ${job?.name || 'job'}`;
+
+  // Create To-Do assigned to Owner
+  const todoData = {
+    text: todoText,
+    jobId,
+    jobName: job?.name || '',
+    priority: 'high',
+    status: 'open',
+    assignee: owner?.email || conCurrentUser?.email || '',
+    assigneeName: owner?.name || '',
+    createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+    createdBy: conCurrentUser?.email || '',
+    coId,
+    category: 'Change Order',
+  };
+
+  await coll('todos').add(todoData).catch(() => {});
+
+  // If team lead exists, create a second To-Do for them
+  if (teamLead && teamLead.email !== owner?.email) {
+    await coll('todos').add({
+      ...todoData,
+      assignee: teamLead.email,
+      assigneeName: teamLead.name || '',
+    }).catch(() => {});
+  }
+
+  // Refresh CO badge
+  refreshNotificationBadges();
+}
+window.autoCreateCOTodo = autoCreateCOTodo;
+
+// ── Refresh all notification badges ──
+async function refreshNotificationBadges() {
+  if (!conDb || !currentCompanyId || !conCurrentUser) return;
+  const myEmail = (conCurrentUser.email || '').toLowerCase();
+
+  // Notes badge — unread notes not by me
+  try {
+    const readRef = getReadStateRef('readNotes');
+    const readSnap = readRef ? await readRef.get() : null;
+    const readIds = new Set();
+    if (readSnap) readSnap.forEach(d => readIds.add(d.id));
+
+    let unreadNotes = 0;
+    for (const job of conJobs.slice(0, 20)) {
+      const snap = await coll('jobs').doc(job.id).collection('jobNotes').get().catch(() => null);
+      if (snap) snap.forEach(d => {
+        const n = d.data();
+        if ((n.authorEmail || '').toLowerCase() !== myEmail && !readIds.has(d.id)) unreadNotes++;
+      });
+    }
+    setNavBadge('navNotesBadge', unreadNotes);
+  } catch(e) {}
+
+  // Messages badge
+  try {
+    const readRef = getReadStateRef('readMessages');
+    const readSnap = readRef ? await readRef.get() : null;
+    const readIds = new Set();
+    if (readSnap) readSnap.forEach(d => readIds.add(d.id));
+
+    let unreadMsgs = 0;
+    for (const job of conJobs.slice(0, 20)) {
+      const snap = await coll('jobs').doc(job.id).collection('messages').limit(50).get().catch(() => null);
+      if (snap) snap.forEach(d => {
+        const m = d.data();
+        if ((m.authorEmail || '').toLowerCase() !== myEmail && !readIds.has(d.id)) unreadMsgs++;
+      });
+    }
+    setNavBadge('navMessagesBadge', unreadMsgs);
+  } catch(e) {}
+
+  // Change Orders badge — count unprocessed
+  try {
+    let unprocessedCOs = 0;
+    for (const job of conJobs.slice(0, 20)) {
+      const snap = await coll('jobs').doc(job.id).collection('changeOrders').get().catch(() => null);
+      if (snap) snap.forEach(d => {
+        const co = d.data();
+        if (!['approved','declined','rejected'].includes((co.status || '').toLowerCase())) unprocessedCOs++;
+      });
+    }
+    setNavBadge('navCOBadge', unprocessedCOs);
+  } catch(e) {}
+}
+window.refreshNotificationBadges = refreshNotificationBadges;
+
+// ════════════════════════════════════════════════════
 // ── JOB NOTES LOG ──
 // Timestamped, authored notes on a job — separate from daily logs
 // (which are crew field reports) and activity feed (which is automated).
@@ -3866,7 +4251,13 @@ function saveCO() {
     data.createdAt = firebase.firestore.FieldValue.serverTimestamp();
     data.createdBy = conCurrentUser ? conCurrentUser.email : 'unknown';
     col.add({...data, companyId: currentCompanyId})
-      .then(() => { kClose('addCOModal'); switchDetailTab('changeorders', null); })
+      .then(ref => {
+        kClose('addCOModal');
+        switchDetailTab('changeorders', null);
+        // Auto-create To-Do for Owner and Team Lead, refresh CO badge
+        autoCreateCOTodo(conCurrentJobId, ref.id, title, total);
+        refreshNotificationBadges();
+      })
       .catch(e => alert('Error: ' + e.message));
   }
 }
@@ -4296,6 +4687,7 @@ function conInitFirebase() {
                 conShowMain(user);
                 conLoadJobs();
                 loadCompanyProfile();
+                setTimeout(() => refreshNotificationBadges(), 3000);
               });
             });
           };
