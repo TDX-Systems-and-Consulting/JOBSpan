@@ -2681,7 +2681,7 @@ function renderGanttLeft(jobId, job) {
   const container = document.getElementById('ganttLeftRows');
   if (!container) return;
 
-  const isOwner = ['Owner', 'Full Access'].includes(conCurrentUserRole);
+  const isOwner = ['Owner', 'Full Access'].includes(currentUserRole);
   let html = '';
 
   // Job-level summary row
