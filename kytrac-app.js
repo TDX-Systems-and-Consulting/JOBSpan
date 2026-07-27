@@ -8128,6 +8128,10 @@ function renderTeamMemberList() {
           style="font-size:.72rem;padding:3px 8px;width:220px;background:rgba(8,19,37,.6);border:1px solid var(--line);border-radius:6px;color:var(--muted)" />
         <button class="btn" style="padding:2px 8px;font-size:.7rem" onclick="saveTeamMemberPhone('${key}')">Save</button>
       </div>
+      <div style="font-size:.66rem;color:var(--muted);margin-top:3px;max-width:340px;line-height:1.4">
+        By saving your number you consent to receive SMS job notifications from JOBSMETRIX. Msg &amp; data rates may apply. Reply STOP to opt out.
+        <a href="https://jobsmetrix.com/privacy" target="_blank" style="color:var(--amber);text-decoration:none">Privacy Policy</a>
+      </div>
       ${hasSavedInfo ? `<button class="btn" style="padding:2px 8px;font-size:.7rem;margin-top:5px" onclick="toggleTeamMemberEdit('${key}')">✕ Close</button>` : ''}
     `;
 
