@@ -3089,13 +3089,19 @@ window.initGanttResize = initGanttResize;
 
 async function updatePhaseDate(phaseId, field, value) {
   if (!_ganttJobId || !conDb) return;
-  await coll('jobs').doc(_ganttJobId)
-    .collection('estimateGroups').doc(phaseId)
-    .update({ [field]: value, updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
-  // Update local cache
-  const entry = _ganttData.find(p => p.phase.id === phaseId);
-  if (entry) entry.phase[field] = value;
-  renderJobGantt(_ganttJobId);
+  try {
+    // Update local cache immediately
+    const entry = _ganttData.find(p => p.phase.id === phaseId);
+    if (entry) entry.phase[field] = value;
+    // Write to Firestore
+    await coll('jobs').doc(_ganttJobId)
+      .collection('estimateGroups').doc(phaseId)
+      .update({ [field]: value, updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
+    renderJobGantt(_ganttJobId);
+  } catch(e) {
+    console.error('updatePhaseDate failed:', e);
+    alert('Could not save date: ' + e.message);
+  }
 }
 window.updatePhaseDate = updatePhaseDate;
 
