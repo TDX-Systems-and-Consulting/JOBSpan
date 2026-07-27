@@ -2785,6 +2785,10 @@ function renderGanttLeft(jobId, job) {
           <div class="gantt-pct-cell"></div>
         </div>`;
       }
+  });
+
+  container.innerHTML = html;
+}
 
 function renderGanttRight(minDate, maxDate, today) {
   const totalDays = Math.ceil((maxDate - minDate) / 86400000);
@@ -2888,6 +2892,8 @@ function renderGanttRight(minDate, maxDate, today) {
     if (!phaseCollapsed) {
       barsHtml += `<div class="gantt-bar-row" style="height:${rowH}px;background:rgba(8,19,37,.15)"></div>`;
     }
+  });
+
   const barsContainer = document.getElementById('ganttBars');
   const rightInner = document.getElementById('ganttRightInner');
   if (barsContainer) barsContainer.innerHTML = barsHtml;
