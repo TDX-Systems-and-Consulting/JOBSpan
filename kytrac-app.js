@@ -14818,45 +14818,49 @@ function printPunchList() {
   // shown per room or per item on the printed sheet itself).
   let totalLaborHours = 0;
 
-  const groupSections = estGroups.map((group, idx) => {
+  const punchPages = [];
+
+  estGroups.forEach(group => {
     const allItems = getAllItemsInGroup(group);
     const hasSubgroupScope = (group.subgroups || []).some(sub => punchListScopeTasks(sub).length);
-    if (!allItems.length && !hasSubgroupScope) return '';
+    if (!allItems.length && !hasSubgroupScope) return;
 
     allItems.forEach(item => {
       const isLabor = item.costType === 'Labor' || (item.unit||'').toLowerCase() === 'hr';
       if (isLabor) totalLaborHours += (item.qty || 0);
     });
 
-    // Each subgroup is a work category. Its room/scope instructions become
-    // individual checkbox rows so the crew can complete the list room by
-    // room instead of receiving one checkbox for the whole category.
-    const subRows = (group.subgroups||[]).map(sub => {
+    // A subgroup is a room. Build one complete printable page for every
+    // subgroup instead of combining all rooms beneath the parent group.
+    (group.subgroups || []).forEach(sub => {
       const materialItems = (sub.items||[]).filter(i => i.costType !== 'Labor' && (i.unit||'').toLowerCase() !== 'hr');
       const scopeTasks = punchListScopeTasks(sub);
-      if (!(sub.items||[]).length && !scopeTasks.length) return '';
+      if (!(sub.items||[]).length && !scopeTasks.length) return;
       const qtyDisplay = materialItems.length === 1 ? `${materialItems[0].qty||1} ${materialItems[0].unit||''}`.trim() : '';
 
+      let rows;
       if (!scopeTasks.length) {
-        return `<tr>
+        rows = `<tr>
           <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;width:24px"><div style="width:18px;height:18px;border:2px solid #374151;border-radius:3px;display:inline-block"></div></td>
           <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;font-weight:600">${esc(customerSafeLabel(sub))}</td>
           <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;white-space:nowrap;color:#6b7280">${esc(qtyDisplay)}</td>
           <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;width:220px;color:#9ca3af;font-style:italic;font-size:.82rem">Notes: ________________</td>
         </tr>`;
+      } else {
+        rows = scopeTasks.map((task, taskIndex) => `<tr>
+          <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;width:24px"><div style="width:18px;height:18px;border:2px solid #374151;border-radius:3px;display:inline-block"></div></td>
+          <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;font-weight:600">${esc(task)}</td>
+          <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;white-space:nowrap;color:#6b7280">${taskIndex === 0 ? esc(qtyDisplay) : ''}</td>
+          <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;width:220px;color:#9ca3af;font-style:italic;font-size:.82rem">Notes: ________________</td>
+        </tr>`).join('');
       }
 
-      const taskRows = scopeTasks.map((task, taskIndex) => `<tr>
-        <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;width:24px"><div style="width:18px;height:18px;border:2px solid #374151;border-radius:3px;display:inline-block"></div></td>
-        <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;font-weight:600">${esc(task)}</td>
-        <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;white-space:nowrap;color:#6b7280">${taskIndex === 0 ? esc(qtyDisplay) : ''}</td>
-        <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;width:220px;color:#9ca3af;font-style:italic;font-size:.82rem">Notes: ________________</td>
-      </tr>`).join('');
-
-      return `<tr style="background:#fff7ed">
-        <td colspan="4" style="padding:8px 10px;border-bottom:1px solid #fed7aa;color:#9a3412;font-size:.82rem;font-weight:800;text-transform:uppercase;letter-spacing:.03em">${esc(customerSafeLabel(sub))}</td>
-      </tr>${taskRows}`;
-    }).join('');
+      punchPages.push({
+        title: customerSafeLabel(sub),
+        parent: group.name || '',
+        rows
+      });
+    });
 
     const directRows = (group.directItems||[]).filter(i => i.costType !== 'Labor' && (i.unit||'').toLowerCase() !== 'hr').map(item => {
       const gradeWord = item.bundleTier ? ({ low: 'Low Grade', med: 'Medium Grade', high: 'High Grade' }[item.bundleTier] || '') : '';
@@ -14870,10 +14874,34 @@ function printPunchList() {
     }
     ).join('');
 
-    const isLast = idx === estGroups.length - 1;
+    // Legacy estimates can have items directly on a group with no subgroup.
+    // Preserve those on their own page rather than dropping them.
+    if (directRows) punchPages.push({ title: group.name || 'General', parent: '', rows: directRows });
+  });
 
-    return `<div style="${isLast ? '' : 'page-break-after:always;'}margin-bottom:28px;border:2px solid #d97706;border-radius:8px;overflow:hidden">
-      <div style="background:#d97706;color:#fff;padding:10px 14px;font-size:1.1rem;font-weight:900">${esc(group.name)}</div>
+  const punchPageHeader = `
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;padding-bottom:14px;border-bottom:3px solid #d97706">
+      <div>
+        ${co.logo?`<img src="${co.logo}" style="height:44px;object-fit:contain;margin-bottom:4px"><br>`:''}
+        <strong style="font-size:1rem">${esc(co.companyName||'')}</strong>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:1.3rem;font-weight:900">PUNCH LIST / WORK ORDER</div>
+        <div style="font-size:1rem;font-weight:700">${esc(job?.name||'')}</div>
+        <div style="color:#6b7280">${esc(job?.address||'')}</div>
+        <div style="color:#6b7280;font-size:.85rem">Date: ${new Date().toLocaleDateString()} &nbsp;|&nbsp; Crew: ___________________</div>
+      </div>
+    </div>`;
+
+  const groupSections = punchPages.map((page, idx) => {
+    const isLast = idx === punchPages.length - 1;
+    return `<section style="${isLast ? '' : 'page-break-after:always;'}">
+      ${punchPageHeader}
+      <div style="margin-bottom:28px;border:2px solid #d97706;border-radius:8px;overflow:hidden">
+      <div style="background:#d97706;color:#fff;padding:10px 14px">
+        <div style="font-size:1.1rem;font-weight:900">${esc(page.title)}</div>
+        ${page.parent ? `<div style="font-size:.75rem;font-weight:700;opacity:.85;margin-top:2px">${esc(page.parent)}</div>` : ''}
+      </div>
       <table style="width:100%;border-collapse:collapse">
         <thead><tr style="background:#f3f4f6">
           <th style="padding:7px 8px;text-align:left;font-size:.75rem;color:#6b7280;font-weight:700">✓</th>
@@ -14881,14 +14909,15 @@ function printPunchList() {
           <th style="padding:7px 8px;text-align:left;font-size:.75rem;color:#6b7280;font-weight:700">QTY</th>
           <th style="padding:7px 8px;text-align:left;font-size:.75rem;color:#6b7280;font-weight:700">NOTES</th>
         </tr></thead>
-        <tbody>${subRows}${directRows}</tbody>
+        <tbody>${page.rows}</tbody>
       </table>
       <div style="padding:10px 14px;background:#fffbeb;border-top:1px solid #fde68a">
         <div style="font-size:.78rem;color:#92400e;font-weight:700">Field Notes:</div>
         <div style="height:48px;border-bottom:1px solid #d1d5db;margin-top:4px"></div>
         <div style="height:48px;border-bottom:1px solid #d1d5db;margin-top:8px"></div>
       </div>
-    </div>`;
+      </div>
+    </section>`;
   }).join('');
 
   // Job-wide crew day estimate — the ONLY place labor time appears on this
@@ -14906,21 +14935,8 @@ function printPunchList() {
   win.document.write(`<!DOCTYPE html><html><head><title>Punch List — ${esc(job?.name||'')}</title>
   <style>
     body{font-family:Arial,sans-serif;max-width:900px;margin:20px auto;padding:0 16px;color:#111}
-    @media print{body{margin:10px} .no-print{display:none} div{page-break-inside:avoid}}
+    @media print{body{margin:10px} .no-print{display:none} section{break-inside:avoid;page-break-inside:avoid} div{page-break-inside:avoid}}
   </style></head><body>
-  <!-- Header -->
-  <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;padding-bottom:14px;border-bottom:3px solid #d97706">
-    <div>
-      ${co.logo?`<img src="${co.logo}" style="height:44px;object-fit:contain;margin-bottom:4px"><br>`:''}
-      <strong style="font-size:1rem">${esc(co.companyName||'')}</strong>
-    </div>
-    <div style="text-align:right">
-      <div style="font-size:1.3rem;font-weight:900">PUNCH LIST / WORK ORDER</div>
-      <div style="font-size:1rem;font-weight:700">${esc(job?.name||'')}</div>
-      <div style="color:#6b7280">${esc(job?.address||'')}</div>
-      <div style="color:#6b7280;font-size:.85rem">Date: ${new Date().toLocaleDateString()} &nbsp;|&nbsp; Crew: ___________________</div>
-    </div>
-  </div>
   ${groupSections}
   ${dayEstimateBlock}
   <div style="margin-top:20px;padding:14px;border:1px solid #e5e7eb;border-radius:8px">
