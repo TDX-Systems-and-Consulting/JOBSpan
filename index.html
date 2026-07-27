@@ -437,15 +437,32 @@
 
     /* Gantt Chart */
     .gantt-wrap { overflow-x: auto; }
-    .gantt-row { display: flex; align-items: center; gap: 0; min-height: 44px; border-bottom: 1px solid rgba(110,145,210,.07); }
-    .gantt-label { width: 160px; flex-shrink: 0; font-size: .82rem; font-weight: 600; padding: 8px 10px; color: var(--text); border-right: 1px solid rgba(110,145,210,.1); }
-    .gantt-bar-area { flex: 1; position: relative; min-height: 44px; }
-    .gantt-bar { position: absolute; height: 28px; top: 8px; border-radius: 6px; display: flex; align-items: center; padding: 0 8px; font-size: .72rem; font-weight: 700; color: #fff; white-space: nowrap; overflow: hidden; cursor: pointer; transition: opacity .15s; }
-    .gantt-bar:hover { opacity: .85; }
-    .gantt-bar.behind { background-image: repeating-linear-gradient(45deg, transparent, transparent 4px, rgba(0,0,0,.15) 4px, rgba(0,0,0,.15) 8px); }
-    .gantt-today-line { position: absolute; top: 0; bottom: 0; width: 2px; background: rgba(239,68,68,.7); z-index: 10; }
-    .gantt-header { display: flex; min-height: 32px; border-bottom: 2px solid rgba(110,145,210,.2); }
-    .gantt-week-label { font-size: .7rem; font-weight: 700; color: var(--muted); text-align: center; border-right: 1px solid rgba(110,145,210,.08); flex-shrink: 0; padding: 6px 0; }
+    /* MS Project style Gantt */
+    #ganttContainer { height: calc(100vh - 320px); min-height: 400px; }
+    #ganttLeft { overflow-y: auto; overflow-x: hidden; }
+    #ganttRight { overflow: auto; }
+    .gantt-left-row { display:flex; align-items:center; border-bottom:1px solid rgba(110,145,210,.07); min-height:36px; cursor:pointer; transition:background .1s; }
+    .gantt-left-row:hover { background:rgba(245,158,11,.05); }
+    .gantt-left-row.phase-row { background:rgba(8,19,37,.6); font-weight:800; }
+    .gantt-left-row.room-row { background:rgba(8,19,37,.3); }
+    .gantt-left-row.task-row { background:transparent; }
+    .gantt-left-row.task-row:hover { background:rgba(245,158,11,.05); }
+    .gantt-name-cell { width:220px; flex-shrink:0; padding:6px 10px; font-size:.8rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; border-right:1px solid rgba(110,145,210,.1); display:flex; align-items:center; gap:6px; }
+    .gantt-days-cell { width:60px; flex-shrink:0; padding:4px; font-size:.75rem; color:var(--muted); text-align:center; border-right:1px solid rgba(110,145,210,.1); }
+    .gantt-date-cell { width:90px; flex-shrink:0; padding:3px 6px; font-size:.72rem; color:var(--muted); border-right:1px solid rgba(110,145,210,.1); }
+    .gantt-date-cell input { background:transparent; border:none; color:var(--text); font-size:.72rem; width:82px; padding:2px; cursor:pointer; }
+    .gantt-date-cell input:focus { outline:1px solid var(--amber); border-radius:3px; background:rgba(245,158,11,.08); }
+    .gantt-pct-cell { width:60px; flex-shrink:0; padding:4px; font-size:.75rem; text-align:center; }
+    .gantt-bar-row { border-bottom:1px solid rgba(110,145,210,.07); min-height:36px; position:relative; display:flex; align-items:center; }
+    .gantt-bar-phase { height:20px; background:linear-gradient(90deg,#1d4ed8,#3b82f6); border-radius:3px; position:absolute; display:flex; align-items:center; overflow:hidden; }
+    .gantt-bar-room { height:16px; background:linear-gradient(90deg,#0d9488,#14b8a6); border-radius:3px; position:absolute; display:flex; align-items:center; overflow:hidden; }
+    .gantt-bar-task { height:10px; background:#475569; border-radius:2px; position:absolute; }
+    .gantt-bar-task.done { background:#10b981; }
+    .gantt-bar-fill { height:100%; background:rgba(255,255,255,.25); border-radius:inherit; transition:width .3s; }
+    .gantt-month-cell { font-size:.72rem; font-weight:800; color:var(--muted); text-align:center; border-right:1px solid rgba(110,145,210,.15); padding:4px 0; flex-shrink:0; }
+    .gantt-week-cell { font-size:.66rem; color:rgba(110,145,210,.6); text-align:center; border-right:1px solid rgba(110,145,210,.08); padding:3px 0; flex-shrink:0; }
+    .gantt-today-line { position:absolute; top:0; bottom:0; width:2px; background:rgba(239,68,68,.8); z-index:20; pointer-events:none; }
+    .gantt-collapse-btn { font-size:.65rem; width:14px; height:14px; display:inline-flex; align-items:center; justify-content:center; background:rgba(110,145,210,.2); border-radius:2px; flex-shrink:0; color:var(--muted); }
     .kt-board-wrap::-webkit-scrollbar-track { background: rgba(255,255,255,.04); border-radius: 4px; }
     .kt-board-wrap::-webkit-scrollbar-thumb { background: var(--amber-border); border-radius: 4px; }
     .kt-board {
@@ -4000,59 +4017,50 @@
       <!-- PHASES / SCHEDULE TAB -->
       <div id="detailPhases" style="display:none">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px">
-          <div style="display:flex;gap:0;background:rgba(var(--surface-subtle-rgb),.8);border:1px solid rgba(110,145,210,.15);border-radius:10px;overflow:hidden">
-            <button id="phaseViewBoard" onclick="switchPhaseView('board')"
-              style="padding:7px 16px;border:none;cursor:pointer;font-size:.8rem;font-weight:700;background:linear-gradient(135deg,var(--amber),var(--amber2));color:#fff">
-              📋 Kanban Board
-            </button>
-            <button id="phaseViewGantt" onclick="switchPhaseView('gantt')"
-              style="padding:7px 16px;border:none;cursor:pointer;font-size:.8rem;font-weight:600;background:transparent;color:var(--muted)">
-              🕒 Timeline
-            </button>
-            <button id="phaseViewList" onclick="switchPhaseView('list')"
-              style="padding:7px 16px;border:none;cursor:pointer;font-size:.8rem;font-weight:600;background:transparent;color:var(--muted)">
-              📃 List
-            </button>
+          <div style="display:flex;gap:8px;align-items:center">
+            <span style="font-size:1rem;font-weight:800">📅 Project Schedule</span>
+            <span id="ganttCompletePct" style="font-size:.8rem;color:var(--muted)"></span>
           </div>
           <div style="display:flex;gap:8px;align-items:center">
-            <div id="phaseHoursSummary" style="font-size:.8rem;color:var(--muted)"></div>
+            <button class="btn" onclick="ganttExpandAll()" style="font-size:.75rem;padding:4px 10px">Expand All</button>
+            <button class="btn" onclick="ganttCollapseAll()" style="font-size:.75rem;padding:4px 10px">Collapse All</button>
             <button class="btn-amber" onclick="openAddPhaseModal()" style="padding:7px 16px;font-size:.82rem">+ Add Phase</button>
           </div>
         </div>
 
-        <!-- Board View — Epics/Features/Tasks (new schedule model) -->
-        <div id="phaseBoardView">
-          <div id="boardEpicFilter" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px"></div>
-          <div class="phase-kanban" id="epicBoard">
-            <div class="phase-lane">
-              <div class="phase-lane-header" style="color:#94a3b8">⬜ NOT STARTED <span id="boardCount0" style="background:rgba(148,163,184,.15);padding:1px 7px;border-radius:999px;font-size:.7rem">0</span></div>
-              <div id="boardLane0" class="phase-lane-drop"></div>
-            </div>
-            <div class="phase-lane">
-              <div class="phase-lane-header" style="color:#60a5fa">🔵 IN PROGRESS <span id="boardCount1" style="background:rgba(96,165,250,.15);padding:1px 7px;border-radius:999px;font-size:.7rem">0</span></div>
-              <div id="boardLane1" class="phase-lane-drop"></div>
-            </div>
-            <div class="phase-lane">
-              <div class="phase-lane-header" style="color:#34d399">✅ COMPLETE <span id="boardCount2" style="background:rgba(52,211,153,.15);padding:1px 7px;border-radius:999px;font-size:.7rem">0</span></div>
-              <div id="boardLane2" class="phase-lane-drop"></div>
-            </div>
-            <div class="phase-lane">
-              <div class="phase-lane-header" style="color:#f87171">🚫 BLOCKED <span id="boardCount3" style="background:rgba(248,113,113,.15);padding:1px 7px;border-radius:999px;font-size:.7rem">0</span></div>
-              <div id="boardLane3" class="phase-lane-drop"></div>
-            </div>
-          </div>
-        </div>
+        <!-- Gantt container -->
+        <div class="kt-card" style="padding:0;overflow:hidden">
+          <div id="ganttContainer" style="display:flex;overflow:hidden">
 
-        <!-- Gantt View -->
-        <div id="phaseGanttView" style="display:none">
-          <div class="kt-card" style="padding:16px">
-            <div class="gantt-wrap" id="ganttWrap"></div>
-          </div>
-        </div>
+            <!-- LEFT PANEL: hierarchical task list -->
+            <div id="ganttLeft" style="width:520px;flex-shrink:0;overflow-y:auto;border-right:2px solid rgba(110,145,210,.2)">
+              <!-- Column headers -->
+              <div style="display:flex;align-items:center;background:rgba(8,19,37,.8);border-bottom:2px solid rgba(110,145,210,.2);position:sticky;top:0;z-index:10">
+                <div style="width:220px;flex-shrink:0;padding:8px 10px;font-size:.72rem;font-weight:800;color:var(--muted);border-right:1px solid rgba(110,145,210,.1)">TASK NAME</div>
+                <div style="width:60px;flex-shrink:0;padding:8px 4px;font-size:.72rem;font-weight:800;color:var(--muted);text-align:center;border-right:1px solid rgba(110,145,210,.1)">DAYS</div>
+                <div style="width:90px;flex-shrink:0;padding:8px 6px;font-size:.72rem;font-weight:800;color:var(--muted);border-right:1px solid rgba(110,145,210,.1)">START</div>
+                <div style="width:90px;flex-shrink:0;padding:8px 6px;font-size:.72rem;font-weight:800;color:var(--muted);border-right:1px solid rgba(110,145,210,.1)">FINISH</div>
+                <div style="width:60px;flex-shrink:0;padding:8px 4px;font-size:.72rem;font-weight:800;color:var(--muted);text-align:center">% DONE</div>
+              </div>
+              <div id="ganttLeftRows"></div>
+            </div>
 
-        <!-- List View -->
-        <div id="phaseListView" style="display:none">
-          <div id="phaseList"></div>
+            <!-- RIGHT PANEL: timeline bars -->
+            <div id="ganttRight" style="flex:1;overflow:auto">
+              <div id="ganttRightInner" style="position:relative;min-width:600px">
+                <!-- Month/week headers -->
+                <div id="ganttTimeHeader" style="position:sticky;top:0;z-index:10;background:rgba(8,19,37,.95);border-bottom:2px solid rgba(110,145,210,.2)">
+                  <div id="ganttMonthRow" style="display:flex;border-bottom:1px solid rgba(110,145,210,.1)"></div>
+                  <div id="ganttWeekRow" style="display:flex"></div>
+                </div>
+                <!-- Bar rows -->
+                <div id="ganttBars" style="position:relative"></div>
+                <!-- Today line — absolute, drawn after bars render -->
+                <div id="ganttTodayLine" style="position:absolute;top:0;bottom:0;width:2px;background:rgba(239,68,68,.8);z-index:20;pointer-events:none;display:none"></div>
+              </div>
+            </div>
+
+          </div>
         </div>
       </div>
 

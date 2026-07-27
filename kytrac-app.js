@@ -2608,7 +2608,459 @@ function switchPhaseView(view) {
   if(view==='board') renderEpicBoard();
 }
 
-// ── EPIC/FEATURE/TASK TIMELINE (dependency-aware Gantt) ──────────────────
+// ── JOBSMETRIX GANTT ENGINE ───────────────────────────────────────────────
+// MS Project-style two-panel Gantt: left = task list, right = timeline bars
+// Structure: Job → Phase (estimateGroup) → Room (subgroup) → Task (item)
+// Completion % = task-based rollup. Dates: Owner sets phase dates,
+// room dates auto-divide from phase, tasks inherit room dates.
+// ─────────────────────────────────────────────────────────────────────────
+
+const DAY_WIDTH = 28; // pixels per day on timeline
+let _ganttData = [];  // [{phase, rooms:[{room, tasks:[]}]}]
+let _ganttCollapsed = {}; // phaseId → bool, roomId → bool
+let _ganttJobId = null;
+
+async function renderJobGantt(jobId) {
+  _ganttJobId = jobId;
+  const job = conJobs.find(j => j.id === jobId);
+
+  // Load phase tree
+  const tree = await loadEpicTree(jobId);
+  _ganttData = tree.map(phase => ({
+    phase,
+    rooms: phase.features.map(room => ({
+      room,
+      tasks: room.tasks || [],
+    })),
+  }));
+
+  // Determine overall date range
+  const allDates = [];
+  _ganttData.forEach(({ phase, rooms }) => {
+    if (phase.startDate) allDates.push(new Date(phase.startDate));
+    if (phase.endDate) allDates.push(new Date(phase.endDate));
+    rooms.forEach(({ room }) => {
+      if (room.startDate) allDates.push(new Date(room.startDate));
+      if (room.endDate) allDates.push(new Date(room.endDate));
+    });
+  });
+
+  // Also use job start/end dates from the job record
+  if (job?.startDate) allDates.push(new Date(job.startDate));
+  if (job?.endDate) allDates.push(new Date(job.endDate));
+
+  const today = new Date();
+  today.setHours(0,0,0,0);
+
+  let minDate = allDates.length ? new Date(Math.min(...allDates)) : new Date(today);
+  let maxDate = allDates.length ? new Date(Math.max(...allDates)) : new Date(today);
+
+  // Pad edges
+  minDate.setDate(minDate.getDate() - 7);
+  maxDate.setDate(maxDate.getDate() + 14);
+
+  // Calculate overall % complete
+  let totalTasks = 0, doneTasks = 0;
+  _ganttData.forEach(({ rooms }) => {
+    rooms.forEach(({ tasks }) => {
+      totalTasks += tasks.length;
+      doneTasks += tasks.filter(t => t.taskStatus === 'done').length;
+    });
+  });
+  const overallPct = totalTasks ? Math.round(doneTasks / totalTasks * 100) : 0;
+  const pctEl = document.getElementById('ganttCompletePct');
+  if (pctEl) pctEl.textContent = totalTasks ? `${overallPct}% complete (${doneTasks}/${totalTasks} tasks)` : 'No tasks yet';
+
+  renderGanttLeft(jobId, job);
+  renderGanttRight(minDate, maxDate, today);
+  syncGanttScroll();
+}
+window.renderJobGantt = renderJobGantt;
+
+function renderGanttLeft(jobId, job) {
+  const container = document.getElementById('ganttLeftRows');
+  if (!container) return;
+
+  const isOwner = ['Owner', 'Full Access'].includes(conCurrentUserRole);
+  let html = '';
+
+  // Job-level summary row
+  const jobPct = calcJobPct();
+  html += `<div class="gantt-left-row phase-row" style="background:rgba(245,158,11,.08);border-bottom:2px solid rgba(245,158,11,.2)">
+    <div class="gantt-name-cell" style="color:var(--amber);font-size:.85rem">
+      🏠 ${esc(job?.name || 'This Job')}
+    </div>
+    <div class="gantt-days-cell">—</div>
+    <div class="gantt-date-cell" style="color:var(--amber)">${job?.startDate || '—'}</div>
+    <div class="gantt-date-cell" style="color:var(--amber)">${job?.endDate || '—'}</div>
+    <div class="gantt-pct-cell" style="color:${pctColor(jobPct)};font-weight:800">${jobPct}%</div>
+  </div>`;
+
+  _ganttData.forEach(({ phase, rooms }) => {
+    const phaseCollapsed = _ganttCollapsed[phase.id];
+    const phasePct = calcPhasePct(rooms);
+    const phaseDays = dateDiff(phase.startDate, phase.endDate);
+
+    html += `<div class="gantt-left-row phase-row" onclick="ganttTogglePhase('${phase.id}')">
+      <div class="gantt-name-cell" style="color:#93c5fd">
+        <span class="gantt-collapse-btn">${phaseCollapsed ? '▶' : '▼'}</span>
+        ${esc(phase.name)}
+      </div>
+      <div class="gantt-days-cell">${phaseDays !== null ? phaseDays+'d' : '—'}</div>
+      <div class="gantt-date-cell">${isOwner
+        ? `<input type="date" value="${phase.startDate||''}" onchange="updatePhaseDate('${phase.id}','startDate',this.value)" onclick="event.stopPropagation()">`
+        : (phase.startDate||'—')}
+      </div>
+      <div class="gantt-date-cell">${isOwner
+        ? `<input type="date" value="${phase.endDate||''}" onchange="updatePhaseDate('${phase.id}','endDate',this.value)" onclick="event.stopPropagation()">`
+        : (phase.endDate||'—')}
+      </div>
+      <div class="gantt-pct-cell" style="color:${pctColor(phasePct)};font-weight:700">${phasePct}%</div>
+    </div>`;
+
+    if (!phaseCollapsed) {
+      rooms.forEach(({ room, tasks }) => {
+        const roomCollapsed = _ganttCollapsed[room.id];
+        const roomPct = calcRoomPct(tasks);
+        const { start: roomStart, end: roomEnd } = getRoomDates(room, phase);
+        const roomDays = dateDiff(roomStart, roomEnd);
+
+        html += `<div class="gantt-left-row room-row" onclick="ganttToggleRoom('${room.id}')">
+          <div class="gantt-name-cell" style="padding-left:24px;color:#e2e8f0">
+            <span class="gantt-collapse-btn">${roomCollapsed ? '▶' : '▼'}</span>
+            ${esc(room.name)}
+          </div>
+          <div class="gantt-days-cell">${roomDays !== null ? roomDays+'d' : '—'}</div>
+          <div class="gantt-date-cell" style="color:var(--muted)">${roomStart||'—'}</div>
+          <div class="gantt-date-cell" style="color:var(--muted)">${roomEnd||'—'}</div>
+          <div class="gantt-pct-cell" style="color:${pctColor(roomPct)}">${roomPct}%</div>
+        </div>`;
+
+        if (!roomCollapsed) {
+          tasks.forEach(task => {
+            const isDone = task.taskStatus === 'done';
+            html += `<div class="gantt-left-row task-row">
+              <div class="gantt-name-cell" style="padding-left:44px;color:${isDone?'var(--muted)':'#cbd5e1'}">
+                <input type="checkbox" ${isDone?'checked':''} 
+                  onchange="toggleGanttTask('${phase.id}','${room.id}','${task.id}',this.checked)"
+                  style="margin-right:6px;cursor:pointer;accent-color:var(--amber)"
+                  onclick="event.stopPropagation()">
+                <span style="${isDone?'text-decoration:line-through;opacity:.5':''}">${esc(task.name)}</span>
+              </div>
+              <div class="gantt-days-cell">1d</div>
+              <div class="gantt-date-cell" style="color:rgba(110,145,210,.4)">${roomStart||'—'}</div>
+              <div class="gantt-date-cell" style="color:rgba(110,145,210,.4)">${roomEnd||'—'}</div>
+              <div class="gantt-pct-cell" style="color:${isDone?'#10b981':'var(--muted)'}">${isDone?'100':'0'}%</div>
+            </div>`;
+          });
+
+          // Add task button
+          html += `<div class="gantt-left-row task-row" style="opacity:.6">
+            <div class="gantt-name-cell" style="padding-left:44px">
+              <button onclick="addGanttTask('${phase.id}','${room.id}')" 
+                style="background:none;border:1px dashed rgba(110,145,210,.3);border-radius:4px;color:var(--muted);font-size:.7rem;padding:2px 8px;cursor:pointer">
+                + Add task
+              </button>
+            </div>
+            <div class="gantt-days-cell"></div>
+            <div class="gantt-date-cell"></div>
+            <div class="gantt-date-cell"></div>
+            <div class="gantt-pct-cell"></div>
+          </div>`;
+        }
+      });
+    }
+  });
+
+  container.innerHTML = html;
+}
+
+function renderGanttRight(minDate, maxDate, today) {
+  const totalDays = Math.ceil((maxDate - minDate) / 86400000);
+  const totalWidth = totalDays * DAY_WIDTH;
+
+  // Build month headers
+  let monthHtml = '';
+  let d = new Date(minDate);
+  while (d < maxDate) {
+    const monthStart = new Date(d.getFullYear(), d.getMonth(), 1);
+    const monthEnd = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+    const visStart = d > monthStart ? d : monthStart;
+    const visEnd = monthEnd < maxDate ? monthEnd : maxDate;
+    const days = Math.ceil((visEnd - visStart) / 86400000) + 1;
+    const width = days * DAY_WIDTH;
+    monthHtml += `<div class="gantt-month-cell" style="width:${width}px">${d.toLocaleDateString('en-US',{month:'short',year:'numeric'})}</div>`;
+    d = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+  }
+
+  // Build week headers
+  let weekHtml = '';
+  d = new Date(minDate);
+  // Align to Monday
+  const dow = d.getDay();
+  d.setDate(d.getDate() - (dow === 0 ? 6 : dow - 1));
+  while (d < maxDate) {
+    const label = d.toLocaleDateString('en-US', { month:'numeric', day:'numeric' });
+    weekHtml += `<div class="gantt-week-cell" style="width:${DAY_WIDTH*7}px">${label}</div>`;
+    d.setDate(d.getDate() + 7);
+  }
+
+  document.getElementById('ganttMonthRow').innerHTML = monthHtml;
+  document.getElementById('ganttWeekRow').innerHTML = weekHtml;
+
+  // Today line
+  const todayOffset = Math.floor((today - minDate) / 86400000) * DAY_WIDTH;
+  const todayLine = document.getElementById('ganttTodayLine');
+  if (todayLine) {
+    todayLine.style.left = todayOffset + 'px';
+    todayLine.style.display = today >= minDate && today <= maxDate ? 'block' : 'none';
+  }
+
+  // Build bar rows — must match left panel row order exactly
+  let barsHtml = '';
+  const rowH = 36;
+
+  const barRow = (extraStyle='') =>
+    `<div class="gantt-bar-row" style="height:${rowH}px;${extraStyle}">`;
+
+  const bar = (startStr, endStr, color, pct, label, extraClass='') => {
+    if (!startStr || !endStr) return '<div style="height:36px"></div>';
+    const s = new Date(startStr), e = new Date(endStr);
+    if (isNaN(s) || isNaN(e)) return '<div style="height:36px"></div>';
+    const left = Math.floor((s - minDate) / 86400000) * DAY_WIDTH;
+    const width = Math.max(DAY_WIDTH, Math.ceil((e - s) / 86400000) * DAY_WIDTH);
+    const fillWidth = Math.round(pct * width / 100);
+    return `<div class="${extraClass}" style="left:${left}px;width:${width}px;${color}">
+      <div class="gantt-bar-fill" style="width:${fillWidth}px"></div>
+      ${width > 60 ? `<span style="position:absolute;left:6px;font-size:.65rem;font-weight:700;color:#fff;white-space:nowrap;overflow:hidden;max-width:${width-12}px">${esc(label)}</span>` : ''}
+    </div>`;
+  };
+
+  // Job summary bar
+  const job = conJobs.find(j => j.id === _ganttJobId);
+  const jobPct = calcJobPct();
+  barsHtml += barRow('background:rgba(245,158,11,.05);border-bottom:2px solid rgba(245,158,11,.2)') +
+    bar(job?.startDate, job?.endDate, 'background:linear-gradient(90deg,#b45309,#d97706);border-radius:4px;position:absolute;height:22px;top:7px', jobPct, job?.name||'Job', '') +
+    '</div>';
+
+  _ganttData.forEach(({ phase, rooms }) => {
+    const phaseCollapsed = _ganttCollapsed[phase.id];
+    const phasePct = calcPhasePct(rooms);
+
+    barsHtml += barRow('background:rgba(8,19,37,.4)') +
+      bar(phase.startDate, phase.endDate, 'background:linear-gradient(90deg,#1d4ed8,#3b82f6);border-radius:3px;position:absolute;height:20px;top:8px', phasePct, phase.name, '') +
+      '</div>';
+
+    if (!phaseCollapsed) {
+      rooms.forEach(({ room, tasks }) => {
+        const roomCollapsed = _ganttCollapsed[room.id];
+        const roomPct = calcRoomPct(tasks);
+        const { start: roomStart, end: roomEnd } = getRoomDates(room, phase);
+
+        barsHtml += barRow('background:rgba(8,19,37,.2)') +
+          bar(roomStart, roomEnd, 'background:linear-gradient(90deg,#0d9488,#14b8a6);border-radius:3px;position:absolute;height:16px;top:10px', roomPct, room.name, '') +
+          '</div>';
+
+        if (!roomCollapsed) {
+          tasks.forEach(task => {
+            const isDone = task.taskStatus === 'done';
+            barsHtml += barRow() +
+              bar(roomStart, roomEnd, `background:${isDone?'#10b981':'#334155'};border-radius:2px;position:absolute;height:8px;top:14px`, isDone?100:0, '', '') +
+              '</div>';
+          });
+          // Add task button row
+          barsHtml += `<div class="gantt-bar-row" style="height:${rowH}px"></div>`;
+        }
+      });
+    }
+  });
+
+  // Set total width and render bars
+  const barsContainer = document.getElementById('ganttBars');
+  const rightInner = document.getElementById('ganttRightInner');
+  if (barsContainer) barsContainer.innerHTML = barsHtml;
+  if (rightInner) rightInner.style.minWidth = totalWidth + 'px';
+}
+
+// Sync scroll between left and right panels vertically
+function syncGanttScroll() {
+  const left = document.getElementById('ganttLeft');
+  const right = document.getElementById('ganttRight');
+  if (!left || !right) return;
+  let syncing = false;
+  left.addEventListener('scroll', () => {
+    if (syncing) return; syncing = true;
+    right.scrollTop = left.scrollTop;
+    syncing = false;
+  });
+  right.addEventListener('scroll', () => {
+    if (syncing) return; syncing = true;
+    left.scrollTop = right.scrollTop;
+    syncing = false;
+  });
+}
+
+// ── Gantt helper functions ────────────────────────────────────────────────
+
+function dateDiff(startStr, endStr) {
+  if (!startStr || !endStr) return null;
+  const s = new Date(startStr), e = new Date(endStr);
+  if (isNaN(s) || isNaN(e)) return null;
+  return Math.ceil((e - s) / 86400000);
+}
+
+function pctColor(pct) {
+  if (pct >= 100) return '#10b981';
+  if (pct >= 50) return '#f59e0b';
+  if (pct > 0) return '#3b82f6';
+  return 'var(--muted)';
+}
+
+function calcJobPct() {
+  let total = 0, done = 0;
+  _ganttData.forEach(({ rooms }) => {
+    rooms.forEach(({ tasks }) => {
+      total += tasks.length;
+      done += tasks.filter(t => t.taskStatus === 'done').length;
+    });
+  });
+  return total ? Math.round(done / total * 100) : 0;
+}
+
+function calcPhasePct(rooms) {
+  let total = 0, done = 0;
+  rooms.forEach(({ tasks }) => {
+    total += tasks.length;
+    done += tasks.filter(t => t.taskStatus === 'done').length;
+  });
+  return total ? Math.round(done / total * 100) : 0;
+}
+
+function calcRoomPct(tasks) {
+  if (!tasks.length) return 0;
+  return Math.round(tasks.filter(t => t.taskStatus === 'done').length / tasks.length * 100);
+}
+
+// Room dates: use room's own dates if set, otherwise auto-divide phase dates equally
+function getRoomDates(room, phase) {
+  if (room.startDate && room.endDate) return { start: room.startDate, end: room.endDate };
+  if (!phase.startDate || !phase.endDate) return { start: null, end: null };
+
+  // Find phase's rooms to auto-divide
+  const phaseEntry = _ganttData.find(p => p.phase.id === phase.id);
+  if (!phaseEntry) return { start: phase.startDate, end: phase.endDate };
+
+  const rooms = phaseEntry.rooms;
+  const idx = rooms.findIndex(r => r.room.id === room.id);
+  const total = rooms.length;
+  if (total === 0) return { start: phase.startDate, end: phase.endDate };
+
+  const phaseStart = new Date(phase.startDate);
+  const phaseEnd = new Date(phase.endDate);
+  const totalMs = phaseEnd - phaseStart;
+  const chunkMs = totalMs / total;
+
+  const roomStart = new Date(phaseStart.getTime() + idx * chunkMs);
+  const roomEnd = new Date(phaseStart.getTime() + (idx + 1) * chunkMs);
+
+  return {
+    start: roomStart.toISOString().split('T')[0],
+    end: roomEnd.toISOString().split('T')[0],
+  };
+}
+
+function ganttTogglePhase(phaseId) {
+  _ganttCollapsed[phaseId] = !_ganttCollapsed[phaseId];
+  const job = conJobs.find(j => j.id === _ganttJobId);
+  renderGanttLeft(_ganttJobId, job);
+  // Re-render bars with same date range
+  const allDates = [];
+  _ganttData.forEach(({ phase, rooms }) => {
+    if (phase.startDate) allDates.push(new Date(phase.startDate));
+    if (phase.endDate) allDates.push(new Date(phase.endDate));
+  });
+  if (job?.startDate) allDates.push(new Date(job.startDate));
+  if (job?.endDate) allDates.push(new Date(job.endDate));
+  const today = new Date(); today.setHours(0,0,0,0);
+  const minDate = allDates.length ? new Date(Math.min(...allDates)) : new Date(today);
+  const maxDate = allDates.length ? new Date(Math.max(...allDates)) : new Date(today);
+  minDate.setDate(minDate.getDate() - 7);
+  maxDate.setDate(maxDate.getDate() + 14);
+  renderGanttRight(minDate, maxDate, today);
+}
+window.ganttTogglePhase = ganttTogglePhase;
+
+function ganttToggleRoom(roomId) {
+  _ganttCollapsed[roomId] = !_ganttCollapsed[roomId];
+  renderJobGantt(_ganttJobId);
+}
+window.ganttToggleRoom = ganttToggleRoom;
+
+function ganttExpandAll() {
+  _ganttCollapsed = {};
+  renderJobGantt(_ganttJobId);
+}
+window.ganttExpandAll = ganttExpandAll;
+
+function ganttCollapseAll() {
+  _ganttData.forEach(({ phase, rooms }) => {
+    _ganttCollapsed[phase.id] = true;
+    rooms.forEach(({ room }) => { _ganttCollapsed[room.id] = true; });
+  });
+  const job = conJobs.find(j => j.id === _ganttJobId);
+  renderGanttLeft(_ganttJobId, job);
+}
+window.ganttCollapseAll = ganttCollapseAll;
+
+async function updatePhaseDate(phaseId, field, value) {
+  if (!_ganttJobId || !conDb) return;
+  await coll('jobs').doc(_ganttJobId)
+    .collection('estimateGroups').doc(phaseId)
+    .update({ [field]: value, updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
+  // Update local cache
+  const entry = _ganttData.find(p => p.phase.id === phaseId);
+  if (entry) entry.phase[field] = value;
+  renderJobGantt(_ganttJobId);
+}
+window.updatePhaseDate = updatePhaseDate;
+
+async function toggleGanttTask(phaseId, roomId, taskId, checked) {
+  if (!_ganttJobId || !conDb) return;
+  await coll('jobs').doc(_ganttJobId)
+    .collection('estimateGroups').doc(phaseId)
+    .collection('subgroups').doc(roomId)
+    .collection('items').doc(taskId)
+    .update({ taskStatus: checked ? 'done' : 'todo' });
+  // Update local cache
+  const entry = _ganttData.find(p => p.phase.id === phaseId);
+  if (entry) {
+    const room = entry.rooms.find(r => r.room.id === roomId);
+    if (room) {
+      const task = room.tasks.find(t => t.id === taskId);
+      if (task) task.taskStatus = checked ? 'done' : 'todo';
+    }
+  }
+  renderJobGantt(_ganttJobId);
+}
+window.toggleGanttTask = toggleGanttTask;
+
+async function addGanttTask(phaseId, roomId) {
+  const name = prompt('Task name:');
+  if (!name?.trim()) return;
+  await coll('jobs').doc(_ganttJobId)
+    .collection('estimateGroups').doc(phaseId)
+    .collection('subgroups').doc(roomId)
+    .collection('items').add({
+      desc: name.trim(),
+      taskStatus: 'todo',
+      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      companyId: currentCompanyId,
+    });
+  renderJobGantt(_ganttJobId);
+}
+window.addGanttTask = addGanttTask;
+
+function renderEpicGantt() { if (_ganttJobId) renderJobGantt(_ganttJobId); }
 // The piece from the locked Schedule redesign spec that was never built:
 // a real visual Gantt for the Epic/Feature/Task tree, with dependency arrows
 // instead of just text warnings. Bars are positioned by each Feature's
@@ -3462,7 +3914,7 @@ function switchDetailTab(tab, btn) {
   if (tab === 'changeorders') renderCOList();
   if (tab === 'subs') { loadJobBidRequests(conCurrentJobId); renderSubList(); }
   if (tab === 'documents') { loadJobDocs(conCurrentJobId); loadJobPhotos(conCurrentJobId); }
-  if (tab === 'phases') { renderEpicBoard(); renderPhaseList(); }
+  if (tab === 'phases') { renderJobGantt(conCurrentJobId); }
   if (tab === 'logs') renderLogList();
   if (tab === 'invoices') loadJobInvoices(conCurrentJobId);
   if (tab === 'activity') loadJobActivity(conCurrentJobId, 'full');
