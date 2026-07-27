@@ -1212,9 +1212,144 @@ exports.dailyKpiRefresh = functions.pubsub
           });
 
         console.log(`KPI refresh complete for ${companyId}: collected=$${collectedMTD} spent=$${spentMTD}`);
+
+        // ── SLA Trigger System ──────────────────────────────────────────
+        try {
+          await runSLATriggers(db, companyId);
+        } catch(e) {
+          console.error(`SLA triggers failed for ${companyId}:`, e.message);
+        }
+
       } catch(e) {
         console.error(`KPI refresh failed for ${companyId}:`, e.message);
       }
     }
     return null;
   });
+
+// ── SLA Trigger Helper ──────────────────────────────────────────────────
+async function runSLATriggers(db, companyId) {
+  const today = new Date();
+  const todayStr = today.toISOString().split('T')[0];
+
+  const jobsSnap = await db.collection('companies').doc(companyId)
+    .collection('jobs').get();
+
+  const teamSnap = await db.collection('companies').doc(companyId)
+    .collection('team').get();
+  const owners = teamSnap.docs
+    .filter(d => ['Owner', 'Full Access'].includes(d.data().role))
+    .map(d => ({ email: d.data().email, name: d.data().name || d.data().email }));
+
+  const todosRef = db.collection('companies').doc(companyId).collection('todos');
+
+  const daysSince = (val) => {
+    if (!val) return null;
+    let d;
+    if (typeof val === 'string') d = new Date(val);
+    else if (val && val.toDate) d = val.toDate();
+    else return null;
+    if (isNaN(d)) return null;
+    return Math.floor((today - d) / (1000 * 60 * 60 * 24));
+  };
+
+  const slaExists = async (slaKey) => {
+    const existing = await todosRef
+      .where('slaKey', '==', slaKey)
+      .where('slaDate', '==', todayStr)
+      .limit(1).get();
+    return !existing.empty;
+  };
+
+  const createTodo = async (jobId, jobName, text, priority, assignees, slaKey) => {
+    if (await slaExists(slaKey)) return;
+    await todosRef.add({
+      text,
+      jobId,
+      jobName,
+      priority,
+      assignees,
+      slaKey,
+      slaDate: todayStr,
+      source: 'sla',
+      done: false,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    console.log(`SLA todo: [${priority}] ${text}`);
+  };
+
+  for (const jobDoc of jobsSnap.docs) {
+    const job = jobDoc.data();
+    const jobId = jobDoc.id;
+    const jobName = job.name || jobId;
+    const status = job.status || '';
+
+    if (['Closed Completed', 'Closed Lost'].includes(status)) continue;
+
+    // Estimate SLA
+    if (status === 'Submitted') {
+      const days = daysSince(job.statusDate || job.submittedAt);
+      if (days === null) continue;
+      if (days >= 7) {
+        await createTodo(jobId, jobName,
+          `Estimate at risk of going cold — ${jobName} (${days} days)`,
+          'high', owners, `${jobId}_estimate_cold`);
+      } else if (days >= 3) {
+        await createTodo(jobId, jobName,
+          `Follow up on ${jobName} estimate — sent ${days} days ago`,
+          'med', owners, `${jobId}_estimate_followup`);
+      }
+    }
+
+    // Scheduling SLA
+    if (['To Be Scheduled', 'Permitting', 'Approved'].includes(status)) {
+      const days = daysSince(job.statusDate || job.approvedAt);
+      if (days === null) continue;
+      if (days >= 10) {
+        await createTodo(jobId, jobName,
+          `URGENT: ${jobName} still unscheduled after ${days} days`,
+          'high', owners, `${jobId}_schedule_escalation`);
+      } else if (days >= 5) {
+        await createTodo(jobId, jobName,
+          `Schedule crew for ${jobName} — ${days} days since approval`,
+          'med', owners, `${jobId}_schedule_crew`);
+      }
+    }
+
+    // Inspection SLA
+    if (status === 'Inspection Pending') {
+      const days = daysSince(job.statusDate || job.inspectionDate);
+      if (days === null) continue;
+      if (days >= 5) {
+        await createTodo(jobId, jobName,
+          `URGENT: Inspection pending ${days} days on ${jobName}`,
+          'high', owners, `${jobId}_inspection_escalation`);
+      } else if (days >= 2) {
+        await createTodo(jobId, jobName,
+          `Follow up on inspection for ${jobName} — ${days} days pending`,
+          'med', owners, `${jobId}_inspection_followup`);
+      }
+    }
+
+    // Invoice SLA
+    if (status === 'Complete') {
+      const days = daysSince(job.completedAt || job.statusDate);
+      if (days === null) continue;
+      if (days >= 45) {
+        await createTodo(jobId, jobName,
+          `Invoice 15 days past due — ${jobName} (${days} days since completion)`,
+          'high', owners, `${jobId}_invoice_pastdue15`);
+      } else if (days >= 30) {
+        await createTodo(jobId, jobName,
+          `Invoice overdue — ${jobName} (${days} days since completion)`,
+          'high', owners, `${jobId}_invoice_overdue`);
+      } else if (days >= 25) {
+        await createTodo(jobId, jobName,
+          `Invoice due in 5 days — ${jobName}`,
+          'med', owners, `${jobId}_invoice_due5`);
+      }
+    }
+  }
+
+  console.log(`SLA triggers complete for ${companyId}`);
+}

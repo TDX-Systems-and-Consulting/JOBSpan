@@ -8457,6 +8457,7 @@ function renderTodos() {
           <span style="font-size:.88rem;font-weight:${todo.done?'400':'600'};color:${todo.done?'var(--muted)':'#eaf0fb'};${todo.done?'text-decoration:line-through':''};flex:1">${esc(todo.text||'')}</span>
           ${todo.priority==='high'?`<span style="font-size:.68rem;background:#ef535022;color:#fca5a5;border:1px solid #ef535044;border-radius:999px;padding:1px 6px;font-weight:700;flex-shrink:0">HIGH</span>`:''}
           ${todo.priority==='med'?`<span style="font-size:.68rem;background:#f9731622;color:#fed7aa;border:1px solid #f9731644;border-radius:999px;padding:1px 6px;font-weight:700;flex-shrink:0">MED</span>`:''}
+          ${todo.source==='sla'?`<span style="font-size:.68rem;background:rgba(59,130,246,.15);color:#93c5fd;border:1px solid rgba(59,130,246,.3);border-radius:999px;padding:1px 6px;font-weight:700;flex-shrink:0">SLA</span>`:''}
         </div>
         <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:4px">
           ${linkedJob?`<span style="font-size:.72rem;color:var(--amber)">🔧 ${esc(linkedJob.name)}</span>`:''}
