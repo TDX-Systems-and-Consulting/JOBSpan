@@ -14787,6 +14787,23 @@ function customerSafeLabel(sub) {
   return grade ? generic + ' — ' + grade : generic;
 }
 
+// Turns the crew-facing scope stored on a subgroup into individual punch-list
+// tasks. Scope is commonly entered one room/instruction per line, but older
+// imported estimates often stored several room instructions as sentences in
+// one paragraph, so support both shapes.
+function punchListScopeTasks(sub) {
+  const scopeParts = [sub.scopeNotes, ...(sub.items || []).map(item => item.notes)]
+    .filter(Boolean)
+    .flatMap(note => String(note)
+      .split(/\r?\n+|(?<=[.!?])\s+(?=[A-Z0-9])/)
+      .map(part => part.trim())
+      .filter(Boolean));
+
+  // Keep the printed checklist concise when the same note was copied onto
+  // multiple estimate items during an import.
+  return [...new Set(scopeParts)];
+}
+
 function printPunchList() {
   const job = conJobs.find(j => j.id === conCurrentJobId);
   const co = companyProfile;
@@ -14803,32 +14820,42 @@ function printPunchList() {
 
   const groupSections = estGroups.map((group, idx) => {
     const allItems = getAllItemsInGroup(group);
-    if (!allItems.length) return '';
+    const hasSubgroupScope = (group.subgroups || []).some(sub => punchListScopeTasks(sub).length);
+    if (!allItems.length && !hasSubgroupScope) return '';
 
     allItems.forEach(item => {
       const isLabor = item.costType === 'Labor' || (item.unit||'').toLowerCase() === 'hr';
       if (isLabor) totalLaborHours += (item.qty || 0);
     });
 
-    // One row per subgroup (Feature) — generic label only, materials qty
-    // if there's a clean single quantity, no labor rows, no cost/price.
+    // Each subgroup is a work category. Its room/scope instructions become
+    // individual checkbox rows so the crew can complete the list room by
+    // room instead of receiving one checkbox for the whole category.
     const subRows = (group.subgroups||[]).map(sub => {
       const materialItems = (sub.items||[]).filter(i => i.costType !== 'Labor' && (i.unit||'').toLowerCase() !== 'hr');
-      if (!(sub.items||[]).length) return '';
+      const scopeTasks = punchListScopeTasks(sub);
+      if (!(sub.items||[]).length && !scopeTasks.length) return '';
       const qtyDisplay = materialItems.length === 1 ? `${materialItems[0].qty||1} ${materialItems[0].unit||''}`.trim() : '';
-      // Combine the subgroup's Scope Notes with any item-level notes —
-      // both are internal, crew-facing context that shouldn't get lost.
-      const itemNotes = (sub.items||[]).map(i => i.notes).filter(Boolean);
-      const allNotes = [sub.scopeNotes, ...itemNotes].filter(Boolean);
-      const notesCell = allNotes.length
-        ? `<span style="color:#374151;font-style:normal;font-weight:600">${esc(allNotes.join(' — '))}</span>`
-        : 'Notes: ________________';
-      return `<tr>
+
+      if (!scopeTasks.length) {
+        return `<tr>
+          <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;width:24px"><div style="width:18px;height:18px;border:2px solid #374151;border-radius:3px;display:inline-block"></div></td>
+          <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;font-weight:600">${esc(customerSafeLabel(sub))}</td>
+          <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;white-space:nowrap;color:#6b7280">${esc(qtyDisplay)}</td>
+          <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;width:220px;color:#9ca3af;font-style:italic;font-size:.82rem">Notes: ________________</td>
+        </tr>`;
+      }
+
+      const taskRows = scopeTasks.map((task, taskIndex) => `<tr>
         <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;width:24px"><div style="width:18px;height:18px;border:2px solid #374151;border-radius:3px;display:inline-block"></div></td>
-        <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;font-weight:600">${esc(customerSafeLabel(sub))}</td>
-        <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;white-space:nowrap;color:#6b7280">${esc(qtyDisplay)}</td>
-        <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;width:220px;color:#9ca3af;font-style:italic;font-size:.82rem">${notesCell}</td>
-      </tr>`;
+        <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;font-weight:600">${esc(task)}</td>
+        <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;white-space:nowrap;color:#6b7280">${taskIndex === 0 ? esc(qtyDisplay) : ''}</td>
+        <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;width:220px;color:#9ca3af;font-style:italic;font-size:.82rem">Notes: ________________</td>
+      </tr>`).join('');
+
+      return `<tr style="background:#fff7ed">
+        <td colspan="4" style="padding:8px 10px;border-bottom:1px solid #fed7aa;color:#9a3412;font-size:.82rem;font-weight:800;text-transform:uppercase;letter-spacing:.03em">${esc(customerSafeLabel(sub))}</td>
+      </tr>${taskRows}`;
     }).join('');
 
     const directRows = (group.directItems||[]).filter(i => i.costType !== 'Labor' && (i.unit||'').toLowerCase() !== 'hr').map(item => {
