@@ -1,4 +1,4 @@
-// JOBSpan Application JavaScript v2.71.1 · 23/Jul/2026
+// JOBSMETRIX Application JavaScript v2.72.0 · 26/Jul/2026
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -363,7 +363,7 @@ function ktFilterJobs(q) {
   });
 }
 
-// ── OVERRIDE conShowMain to use new JOBSpan UI ──
+// ── OVERRIDE conShowMain to use new JOBSMETRIX UI ──
 function conShowMain(user) {
   document.getElementById('ktAuthWall').style.display = 'none';
   document.getElementById('ktApp').style.display = 'flex';
@@ -659,14 +659,14 @@ function conLoadFirebase() {
       console.error('Failed to load Firebase script:', scripts[i]);
       // Show error to user
       const loader = document.getElementById('conSignInLoading');
-      if (loader) loader.innerHTML = '<div style="color:#ef5350;font-size:.9rem">⚠️ Could not connect to JOBSpan.<br>Check your internet connection and reload.</div>';
+      if (loader) loader.innerHTML = '<div style="color:#ef5350;font-size:.9rem">⚠️ Could not connect to JOBSMETRIX.<br>Check your internet connection and reload.</div>';
     };
     document.head.appendChild(s);
   }
   loadNext(0);
 }
 
-// conShowAuthWall and conShowMain overridden by JOBSpan UI versions below
+// conShowAuthWall and conShowMain overridden by JOBSMETRIX UI versions below
 
 function conSignIn() {
   if (!conFirebaseReady) {
@@ -1369,7 +1369,7 @@ async function handleImportFiles(fileList, resultId) {
     html += '<div style="margin-top:12px"><button class="btn-amber" onclick="commitImport()" style="padding:9px 18px;font-weight:700">✓ Apply to ' + updates.length + ' job(s)</button>'
           + '<button class="btn" onclick="document.getElementById(_importResultId).innerHTML=\'\';_pendingImport=null" style="margin-left:8px;padding:9px 18px">Cancel</button></div>';
   } else {
-    html += '<div class="small" style="color:#fca5a5">No matching jobs. Confirm job numbers in JOBSpan match your estimates.</div>';
+    html += '<div class="small" style="color:#fca5a5">No matching jobs. Confirm job numbers in JOBSMETRIX match your estimates.</div>';
   }
   html += '</div>';
   out.innerHTML = html;
@@ -5425,7 +5425,7 @@ function renderUpcomingPhases() {
 // the company-wide version of the per-job Labor Hours section in Reports —
 // if this trends consistently under 100%, estimates may be padded too high;
 // consistently over 100% means bids may need to go up. Feed the resulting
-// percentage into your KYTHROS Weekly Metrics manually each week — JOBSpan
+// percentage into your KYTHROS Weekly Metrics manually each week — JOBSMETRIX
 // and KYTHROS aren't linked yet (KYTHROS is still local-only, pre-SaaS-rebuild).
 async function renderCompanyLaborEfficiency() {
   const el = document.getElementById('homeLaborEfficiency');
@@ -7020,7 +7020,7 @@ async function doSendInvoiceEmail(jobId, invId) {
   if (btn) { btn.textContent = 'Sending…'; btn.disabled = true; }
 
   try {
-    const sendEmail = conFunctions.httpsCallable('sendJobspanEmail');
+    const sendEmail = conFunctions.httpsCallable('sendJobsmetrixEmail');
     await sendEmail({
       to,
       toName: modal?.dataset.customerName || '',
@@ -7294,7 +7294,7 @@ async function emailLienWaiver(waiverId, jobId, portalUrl, typeLabel, customerNa
 
   try {
     if (!conFunctions) throw new Error('Functions not available');
-    const sendEmail = conFunctions.httpsCallable('sendJobspanEmail');
+    const sendEmail = conFunctions.httpsCallable('sendJobsmetrixEmail');
     const btn = document.querySelector('#lienSendModal .btn-amber');
     if (btn) { btn.textContent = 'Sending…'; btn.disabled = true; }
 
@@ -7385,7 +7385,7 @@ function loadCompanyProfile() {
 }
 
 // Opens the QuickBooks OAuth flow for THIS company specifically — each
-// JOBSpan company connects its own QuickBooks account independently.
+// JOBSMETRIX company connects its own QuickBooks account independently.
 // Passes a verified Firebase ID token (same security shape as
 // connectGoogleCalendar below) since this connects ONE shared,
 // company-wide financial account rather than an individual calendar —
@@ -7407,7 +7407,7 @@ function connectQuickBooks() {
 window.connectQuickBooks = connectQuickBooks;
 
 function disconnectQuickBooks() {
-  if (!confirm('Disconnect QuickBooks? JOBSpan will stop being able to push invoices, estimates, and payments until you reconnect.')) return;
+  if (!confirm('Disconnect QuickBooks? JOBSMETRIX will stop being able to push invoices, estimates, and payments until you reconnect.')) return;
   if (!conFunctions) { alert('Not available yet.'); return; }
   conFunctions.httpsCallable('qbDisconnect')({ companyId: currentCompanyId })
     .then(() => checkQBConnectionStatus())
@@ -7688,7 +7688,7 @@ function printInvoiceData(inv, job, otherInvoices) {
 
     '<div style="margin-top:32px;padding-top:16px;border-top:1px solid #e5e7eb;text-align:center;color:#9ca3af;font-size:.75rem">' +
     (co.companyName||'') + (co.phone?' · '+co.phone:'') + (co.email?' · '+co.email:'') +
-    '<br>Powered by JOBSpan Construction Tracking' +
+    '<br>Powered by JOBSMETRIX Construction Management' +
     '</div>' +
     '<script>window.print();<\/script></body></html>');
   win.document.close();
@@ -7747,7 +7747,7 @@ function showAccessDenied(user) {
       <div style="font-size:2.2rem;margin-bottom:10px">🔒</div>
       <div style="font-size:1.4rem;font-weight:900;color:#eaf0fb;margin-bottom:8px">Access Restricted</div>
       <div style="color:#94a3b8;font-size:.9rem;line-height:1.55;margin-bottom:24px">
-        This JOBSpan workspace is invite-only.<br>
+        This JOBSMETRIX workspace is invite-only.<br>
         <span style="color:#eaf0fb;font-weight:600">${email.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</span> isn't on a team roster yet.<br>
         Ask your administrator to add you, then sign in again.
       </div>
@@ -7769,7 +7769,7 @@ function resolveCompany(user, callback) {
         // Found their company — they are the ownerEmail, so definitionally Owner
         currentCompanyId = snap.docs[0].id;
         isCompanyOwnerByEmail = true;
-        console.log('JOBSpan: Loaded company', currentCompanyId);
+        console.log('JOBSMETRIX: Loaded company', currentCompanyId);
         if (callback) callback();
         return;
       }
@@ -7779,7 +7779,7 @@ function resolveCompany(user, callback) {
         .then(snap2 => {
           if (!snap2.empty) {
             currentCompanyId = snap2.docs[0].id;
-            console.log('JOBSpan: Joined company as member', currentCompanyId);
+            console.log('JOBSMETRIX: Joined company as member', currentCompanyId);
             if (callback) callback();
             return;
           }
@@ -7817,7 +7817,7 @@ function showCompanyOnboarding(user, callback) {
     onboarding.style.cssText = 'position:fixed;inset:0;background:#060e1e;display:flex;align-items:center;justify-content:center;z-index:99999;padding:20px';
     onboarding.innerHTML = `
       <div style="background:rgba(8,18,36,.95);border:1px solid rgba(217,119,6,.4);border-radius:20px;padding:36px;max-width:480px;width:100%">
-        <div style="font-size:1.8rem;font-weight:900;color:#f59e0b;margin-bottom:6px">Welcome to JOBSpan</div>
+        <div style="font-size:1.8rem;font-weight:900;color:#f59e0b;margin-bottom:6px">Welcome to JOBSMETRIX</div>
         <div style="color:#94a3b8;font-size:.88rem;margin-bottom:28px">Let's set up your company to get started.</div>
         <label style="display:block;font-size:.78rem;color:#94a3b8;margin-bottom:5px">Company Name *</label>
         <input id="onboardCompanyName" placeholder="Jason Hudson Construction" style="width:100%;padding:12px 14px;background:rgba(8,19,37,.8);border:1px solid rgba(217,119,6,.3);border-radius:10px;color:#eaf0fb;font-size:.95rem;margin-bottom:16px;box-sizing:border-box" />
@@ -7864,7 +7864,7 @@ function createCompany(ownerEmail) {
   conDb.collection('companies').add(companyData)
     .then(ref => {
       currentCompanyId = ref.id;
-      console.log('JOBSpan: Created company', currentCompanyId);
+      console.log('JOBSMETRIX: Created company', currentCompanyId);
 
       // Also set up the settings/company doc with company profile
       return coll('settings').doc('company').set({
@@ -9873,7 +9873,7 @@ async function handleDocUpload(input, context) {
         }
       } else if (!isImage && file.size > DOC_SIZE_LIMIT) {
         // Non-image (PDF, docx, etc.) too large — metadata only with prompt
-        if (!confirm(`"${file.name}" is ${formatFileSize(file.size)}. Files over 500KB cannot be stored in JOBSpan yet. Store metadata only (no download)?`)) continue;
+        if (!confirm(`"${file.name}" is ${formatFileSize(file.size)}. Files over 500KB cannot be stored in JOBSMETRIX yet. Store metadata only (no download)?`)) continue;
         dataUrl = null;
       } else {
         dataUrl = await fileToBase64(file);
@@ -10746,7 +10746,7 @@ function renderPortalInvoices(invs, jobId) {
 
   // Same honest view-tracking as proposals: records the moment the customer
   // actually looks at a non-Draft invoice in the portal. Not email-open
-  // tracking (JOBSpan doesn't send email itself), but a real "they saw it" signal.
+  // tracking (JOBSMETRIX doesn't send email itself), but a real "they saw it" signal.
   if (jobId) {
     invs.forEach(inv => {
       if (inv.status !== 'Draft' && !inv.viewedAt) {
@@ -11078,7 +11078,7 @@ function renderPortalProposal(prop, jobId) {
   section.style.display = 'block';
 
   // Real "viewed" tracking — the one honest piece of the sent/opened/viewed
-  // audit trail JOBSpan can actually deliver right now, since it doesn't
+  // audit trail JOBSMETRIX can actually deliver right now, since it doesn't
   // send email itself (every "email" action is a mailto: link opening the
   // user's own client — no way to embed an open-tracking pixel on top of
   // that without switching to a real transactional email API). This
@@ -11337,7 +11337,7 @@ function loadCalendarEvents() {
 }
 
 // ── Google Calendar connect/disconnect (client side) ──────────────────
-// One-way sync: JOBSpan pushes personal events + job phases out to each
+// One-way sync: JOBSMETRIX pushes personal events + job phases out to each
 // person's own connected Google Calendar. The actual push happens
 // server-side (Cloud Functions: pushPersonalEventToGCal, pushPhaseToGCal)
 // triggered automatically whenever those docs are written - nothing to
@@ -11358,7 +11358,7 @@ function loadGCalStatus() {
       btnEl.textContent = 'Disconnect';
       btnEl.onclick = disconnectGoogleCalendar;
     } else {
-      textEl.textContent = 'Connect your Google Calendar to automatically get job phases and your JOBSpan events on your calendar.';
+      textEl.textContent = 'Connect your Google Calendar to automatically get job phases and your JOBSMETRIX events on your calendar.';
       btnEl.textContent = '🔗 Connect Google Calendar';
       btnEl.onclick = connectGoogleCalendar;
     }
@@ -11381,7 +11381,7 @@ function connectGoogleCalendar() {
 window.connectGoogleCalendar = connectGoogleCalendar;
 
 function disconnectGoogleCalendar() {
-  if (!confirm('Disconnect your Google Calendar? JOBSpan will stop syncing new events and phases to it.')) return;
+  if (!confirm('Disconnect your Google Calendar? JOBSMETRIX will stop syncing new events and phases to it.')) return;
   if (!conFunctions) { alert('Not available yet.'); return; }
   conFunctions.httpsCallable('gcalDisconnect')({ companyId: currentCompanyId })
     .then(() => loadGCalStatus())
@@ -14544,7 +14544,7 @@ function renderProposalHistory() {
 
     // Real email audit trail (Postmark) — only shows once an email has
     // actually been sent through the "Send via Email" button. The mailto:
-    // links elsewhere in the app never populate these, since JOBSpan has
+    // links elsewhere in the app never populate these, since JOBSMETRIX has
     // no way to track an email it didn't itself send.
     const emailBits = [];
     if (p.emailBounced) {
@@ -18276,7 +18276,7 @@ function uploadJobFiles(input) {
           });
           dataUrl = await compressImage(raw, 1600, 0.8).catch(() => raw);
         } else if (file.size > 900000) {
-          if (!confirm(`"${file.name}" is ${(file.size/1024/1024).toFixed(1)}MB. Non-image files over 900KB can't be stored in JOBSpan yet. Skip this file?`)) continue;
+          if (!confirm(`"${file.name}" is ${(file.size/1024/1024).toFixed(1)}MB. Non-image files over 900KB can't be stored in JOBSMETRIX yet. Skip this file?`)) continue;
           continue;
         } else {
           dataUrl = await new Promise((res, rej) => {
@@ -18764,7 +18764,7 @@ checkPortalMode();
 
 
 // ═══════════════════════════════════════════════════════════════════════
-// JOBSpan Schedule Redesign — Epic/Feature/Task/Sprint data-model layer
+// JOBSMETRIX Schedule Redesign — Epic/Feature/Task/Sprint data-model layer
 // Added: 06/Jul/2026 · v1.9.17-prep
 //
 // STATUS: Additive only. Nothing in this file is called by existing UI yet.
@@ -19001,7 +19001,7 @@ function flattenFeaturesById(epics) {
 window.flattenFeaturesById = flattenFeaturesById;
 
 // ═══════════════════════════════════════════════════════════════════════
-// JOBSpan Board View — Epic/Feature/Task Kanban
+// JOBSMETRIX Board View — Epic/Feature/Task Kanban
 // Added: 06/Jul/2026 · v1.9.19
 //
 // Renders the estimateGroups→subgroups tree as Epic/Feature cards in the
