@@ -2674,6 +2674,7 @@ async function renderJobGantt(jobId) {
   renderGanttLeft(jobId, job);
   renderGanttRight(minDate, maxDate, today);
   syncGanttScroll();
+  initGanttResize();
 }
 window.renderJobGantt = renderJobGantt;
 
@@ -2684,15 +2685,21 @@ function renderGanttLeft(jobId, job) {
   const isOwner = ['Owner', 'Full Access'].includes(currentUserRole);
   let html = '';
 
-  // Job-level summary row
+  // Job-level summary row — with date pickers
   const jobPct = calcJobPct();
   html += `<div class="gantt-left-row phase-row" style="background:rgba(245,158,11,.08);border-bottom:2px solid rgba(245,158,11,.2)">
     <div class="gantt-name-cell" style="color:var(--amber);font-size:.85rem">
       🏠 ${esc(job?.name || 'This Job')}
     </div>
-    <div class="gantt-days-cell">—</div>
-    <div class="gantt-date-cell" style="color:var(--amber)">${job?.startDate || '—'}</div>
-    <div class="gantt-date-cell" style="color:var(--amber)">${job?.endDate || '—'}</div>
+    <div class="gantt-days-cell" style="color:var(--amber)">${dateDiff(job?.startDate, job?.endDate) !== null ? dateDiff(job?.startDate, job?.endDate)+'d' : '—'}</div>
+    <div class="gantt-date-cell">${isOwner
+      ? `<input type="date" value="${job?.startDate||''}" onchange="updateJobDate('startDate',this.value)" onclick="event.stopPropagation()">`
+      : (job?.startDate||'—')}
+    </div>
+    <div class="gantt-date-cell">${isOwner
+      ? `<input type="date" value="${job?.endDate||''}" onchange="updateJobDate('endDate',this.value)" onclick="event.stopPropagation()">`
+      : (job?.endDate||'—')}
+    </div>
     <div class="gantt-pct-cell" style="color:${pctColor(jobPct)};font-weight:800">${jobPct}%</div>
   </div>`;
 
@@ -3041,6 +3048,38 @@ function ganttCollapseAll() {
   renderGanttLeft(_ganttJobId, job);
 }
 window.ganttCollapseAll = ganttCollapseAll;
+
+async function updateJobDate(field, value) {
+  if (!_ganttJobId || !conDb) return;
+  await coll('jobs').doc(_ganttJobId).update({
+    [field]: value,
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+  });
+  // Update local conJobs cache
+  const job = conJobs.find(j => j.id === _ganttJobId);
+  if (job) job[field] = value;
+  renderJobGantt(_ganttJobId);
+}
+window.updateJobDate = updateJobDate;
+
+// Gantt panel resize
+function initGanttResize() {
+  const resizer = document.getElementById('ganttResizer');
+  const left = document.getElementById('ganttLeft');
+  if (!resizer || !left) return;
+  let startX, startW;
+  resizer.addEventListener('mousedown', e => {
+    startX = e.clientX;
+    startW = left.offsetWidth;
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', () => document.removeEventListener('mousemove', onMove), { once: true });
+  });
+  function onMove(e) {
+    const newW = Math.max(300, Math.min(800, startW + e.clientX - startX));
+    left.style.width = newW + 'px';
+  }
+}
+window.initGanttResize = initGanttResize;
 
 async function updatePhaseDate(phaseId, field, value) {
   if (!_ganttJobId || !conDb) return;
