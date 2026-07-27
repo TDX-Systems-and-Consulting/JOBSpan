@@ -2737,7 +2737,19 @@ function renderGanttLeft(jobId, job) {
         </div>`;
 
         if (!roomCollapsed) {
-          tasks.forEach(task => {
+          // Use actual items; fall back to scope notes parsed by line break
+          let displayTasks = tasks;
+          if (!tasks.length && room.scopeNotes) {
+            displayTasks = room.scopeNotes.split('\n')
+              .map(l => l.trim()).filter(Boolean)
+              .map((line, i) => ({
+                id: `scope_${room.id}_${i}`,
+                name: line,
+                taskStatus: 'todo',
+                fromScopeNotes: true,
+              }));
+          }
+          displayTasks.forEach(task => {
             const isDone = task.taskStatus === 'done';
             html += `<div class="gantt-left-row task-row">
               <div class="gantt-name-cell" style="padding-left:44px;color:${isDone?'var(--muted)':'#cbd5e1'}">
@@ -19402,6 +19414,9 @@ function loadEpicTree(jobId) {
             dependsOn: featData.dependsOn || [],
             assignedTeamLead: featData.assignedTeamLead || null,
             requestedStatus: featData.requestedStatus || null,
+            scopeNotes: featData.scopeNotes || '',
+            startDate: featData.startDate || null,
+            endDate: featData.endDate || null,
             tasks: [],
           };
 
