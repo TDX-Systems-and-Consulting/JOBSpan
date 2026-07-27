@@ -3051,14 +3051,20 @@ window.ganttCollapseAll = ganttCollapseAll;
 
 async function updateJobDate(field, value) {
   if (!_ganttJobId || !conDb) return;
-  await coll('jobs').doc(_ganttJobId).update({
-    [field]: value,
-    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-  });
-  // Update local conJobs cache
-  const job = conJobs.find(j => j.id === _ganttJobId);
-  if (job) job[field] = value;
-  renderJobGantt(_ganttJobId);
+  try {
+    // Update local cache immediately so re-render shows the new value
+    const job = conJobs.find(j => j.id === _ganttJobId);
+    if (job) job[field] = value;
+    // Write to Firestore
+    await coll('jobs').doc(_ganttJobId).update({
+      [field]: value,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    renderJobGantt(_ganttJobId);
+  } catch(e) {
+    console.error('updateJobDate failed:', e);
+    alert('Could not save date: ' + e.message);
+  }
 }
 window.updateJobDate = updateJobDate;
 
