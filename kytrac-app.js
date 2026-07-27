@@ -2770,10 +2770,21 @@ function renderGanttLeft(jobId, job) {
         }
       });
     }
-  });
-
-  container.innerHTML = html;
-}
+      // Add room button at bottom of phase
+      if (!phaseCollapsed) {
+        html += `<div class="gantt-left-row" style="background:rgba(8,19,37,.15)">
+          <div class="gantt-name-cell" style="padding-left:24px">
+            <button onclick="addGanttRoom('${phase.id}')"
+              style="background:none;border:1px dashed rgba(110,145,210,.3);border-radius:4px;color:var(--muted);font-size:.7rem;padding:2px 8px;cursor:pointer">
+              + Add room
+            </button>
+          </div>
+          <div class="gantt-days-cell"></div>
+          <div class="gantt-date-cell"></div>
+          <div class="gantt-date-cell"></div>
+          <div class="gantt-pct-cell"></div>
+        </div>`;
+      }
 
 function renderGanttRight(minDate, maxDate, today) {
   const totalDays = Math.ceil((maxDate - minDate) / 86400000);
@@ -2873,9 +2884,10 @@ function renderGanttRight(minDate, maxDate, today) {
         }
       });
     }
-  });
-
-  // Set total width and render bars
+    // Add room button row
+    if (!phaseCollapsed) {
+      barsHtml += `<div class="gantt-bar-row" style="height:${rowH}px;background:rgba(8,19,37,.15)"></div>`;
+    }
   const barsContainer = document.getElementById('ganttBars');
   const rightInner = document.getElementById('ganttRightInner');
   if (barsContainer) barsContainer.innerHTML = barsHtml;
@@ -3058,7 +3070,24 @@ async function addGanttTask(phaseId, roomId) {
     });
   renderJobGantt(_ganttJobId);
 }
-window.addGanttTask = addGanttTask;
+async function addGanttRoom(phaseId) {
+  const name = prompt('Room name (e.g. "Kitchen", "Master Bath", "Living Room"):');
+  if (!name?.trim()) return;
+  if (!_ganttJobId || !conDb) return;
+  const phaseEntry = _ganttData.find(p => p.phase.id === phaseId);
+  const order = phaseEntry ? phaseEntry.rooms.length : 0;
+  await coll('jobs').doc(_ganttJobId)
+    .collection('estimateGroups').doc(phaseId)
+    .collection('subgroups').add({
+      name: name.trim(),
+      order,
+      status: 'not-started',
+      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      companyId: currentCompanyId,
+    });
+  renderJobGantt(_ganttJobId);
+}
+window.addGanttRoom = addGanttRoom;
 
 function renderEpicGantt() { if (_ganttJobId) renderJobGantt(_ganttJobId); }
 // The piece from the locked Schedule redesign spec that was never built:
@@ -3280,17 +3309,20 @@ let _newFeatureEpics = [];
 
 async function openAddPhaseModal() {
   if (!conCurrentJobId) return;
-  const sel = document.getElementById('newFeatureEpicSel');
-  sel.innerHTML = '<option value="">— Loading —</option>';
-  document.getElementById('newFeatureEpicNameRow').style.display = 'none';
-  document.getElementById('newFeatureEpicName').value = '';
-  document.getElementById('newFeatureName').value = '';
-
-  const epics = await loadEpicTree(conCurrentJobId);
-  _newFeatureEpics = epics;
-  sel.innerHTML = epics.map(e => '<option value="'+e.id+'">'+esc(e.name)+'</option>').join('') +
-    '<option value="__new__">+ New Epic (one-off / unusual)</option>';
-  kOpen('addPhaseModal');
+  const name = prompt('Phase name (e.g. "Demo", "Rough-in", "Paint", "Finish"):');
+  if (!name?.trim()) return;
+  try {
+    const existing = await loadEpicTree(conCurrentJobId);
+    await coll('jobs').doc(conCurrentJobId).collection('estimateGroups').add({
+      name: name.trim(),
+      order: existing.length,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      companyId: currentCompanyId,
+    });
+    renderJobGantt(conCurrentJobId);
+  } catch(e) {
+    alert('Error creating phase: ' + e.message);
+  }
 }
 
 async function migrateLegacyPhaseToFeature(phaseId, phaseName, phaseStatus) {
