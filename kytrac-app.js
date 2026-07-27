@@ -1877,6 +1877,87 @@ function renderJobMessages(msgs) {
   listEl.scrollTop = listEl.scrollHeight;
 }
 
+// ── @mention dropdown ─────────────────────────────────────────────────────
+let _mentionTeamCache = [];
+
+async function handleMentionInput(textarea) {
+  const val = textarea.value;
+  const cursor = textarea.selectionStart;
+  // Find the @ token before the cursor
+  const beforeCursor = val.slice(0, cursor);
+  const match = beforeCursor.match(/@([A-Za-z][\w'-]*)$/);
+  const dropdown = document.getElementById('mentionDropdown');
+  if (!dropdown) return;
+
+  if (!match) {
+    dropdown.style.display = 'none';
+    return;
+  }
+
+  const query = match[1].toLowerCase();
+
+  // Load team members once and cache
+  if (!_mentionTeamCache.length) {
+    _mentionTeamCache = await fetchTeamMembersFlat(conDb, currentCompanyId);
+  }
+
+  const matches = _mentionTeamCache.filter(m => {
+    const first = (m.name || m.email || '').split(' ')[0].toLowerCase();
+    return first.startsWith(query);
+  });
+
+  if (!matches.length) {
+    dropdown.style.display = 'none';
+    return;
+  }
+
+  dropdown.style.display = 'block';
+  dropdown.innerHTML = matches.map(m => {
+    const name = m.name || m.email;
+    const first = name.split(' ')[0];
+    const hasPhone = !!m.phone;
+    return `<div onclick="insertMention('${esc(first)}')"
+      style="padding:10px 14px;cursor:pointer;display:flex;align-items:center;gap:10px;border-bottom:1px solid rgba(255,255,255,.05)"
+      onmouseover="this.style.background='rgba(245,158,11,.12)'"
+      onmouseout="this.style.background='transparent'">
+      <div style="width:30px;height:30px;border-radius:50%;background:var(--amber);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:.8rem;flex-shrink:0">${esc(first[0].toUpperCase())}</div>
+      <div>
+        <div style="font-weight:700;font-size:.85rem">${esc(name)}</div>
+        <div style="font-size:.7rem;color:${hasPhone ? '#4ade80' : 'var(--muted)'}">${hasPhone ? '📱 Will receive SMS' : 'No phone — in-app only'}</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function insertMention(firstName) {
+  const textarea = document.getElementById('messageInput');
+  const dropdown = document.getElementById('mentionDropdown');
+  if (!textarea) return;
+
+  const val = textarea.value;
+  const cursor = textarea.selectionStart;
+  const beforeCursor = val.slice(0, cursor);
+  // Replace the partial @mention with the full name
+  const newBefore = beforeCursor.replace(/@([A-Za-z][\w'-]*)$/, `@${firstName} `);
+  textarea.value = newBefore + val.slice(cursor);
+  // Move cursor to after inserted mention
+  const newPos = newBefore.length;
+  textarea.setSelectionRange(newPos, newPos);
+  textarea.focus();
+  if (dropdown) dropdown.style.display = 'none';
+}
+window.insertMention = insertMention;
+window.handleMentionInput = handleMentionInput;
+
+// Close dropdown if clicking outside
+document.addEventListener('click', e => {
+  const dropdown = document.getElementById('mentionDropdown');
+  const textarea = document.getElementById('messageInput');
+  if (dropdown && !dropdown.contains(e.target) && e.target !== textarea) {
+    dropdown.style.display = 'none';
+  }
+});
+
 function sendJobMessage() {
   const input = document.getElementById('messageInput');
   const text = (input?.value || '').trim();

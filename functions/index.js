@@ -42,10 +42,14 @@ const admin = require('firebase-admin');
 admin.initializeApp();
 
 function getTwilioClient() {
-  const cfg = functions.config().twilio || {};
-  if (!cfg.sid || !cfg.token) return null;
+  // Prefer environment variables (recommended post-2027 approach)
+  // Fall back to functions.config() for backward compatibility
+  const sid   = process.env.TWILIO_SID   || (functions.config().twilio || {}).sid;
+  const token = process.env.TWILIO_TOKEN || (functions.config().twilio || {}).token;
+  const from  = process.env.TWILIO_FROM  || (functions.config().twilio || {}).from;
+  if (!sid || !token) return null;
   const twilio = require('twilio');
-  return { client: twilio(cfg.sid, cfg.token), from: cfg.from };
+  return { client: twilio(sid, token), from };
 }
 
 // syncMyClaims
