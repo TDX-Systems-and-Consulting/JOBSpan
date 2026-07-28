@@ -334,6 +334,12 @@ function ktNav(key, btn) {
   if(key==='costing') renderJobCostDashboard();
 
   if(key==='jobs') {
+    // Only reset filter when navigating via sidebar (not from filterJobsToStage)
+    if (!window._jobsFilterIntent) {
+      const f = document.getElementById('jobsStatusFilter');
+      if (f) { f.value = ''; }
+    }
+    window._jobsFilterIntent = false;
     if(_jobsView === 'kanban') renderJobsBoard();
     else conRenderList();
   }
@@ -6381,10 +6387,9 @@ window.renderHomeDashboard = renderHomeDashboard;
 function filterJobsToStage(key) {
   const statusMap = PIPELINE_BUCKETS;
   const statuses = statusMap[key] || [];
-  // Navigate to Jobs page and filter
+  window._jobsFilterIntent = true; // signal: don't reset filter on nav
   ktNav('jobs', document.querySelector('.kt-nav-item:nth-child(5)'));
   setTimeout(() => {
-    // Set filter dropdown if it exists
     const filterEl = document.getElementById('jobsStatusFilter');
     if (filterEl && statuses.length) {
       filterEl.value = statuses[0];
