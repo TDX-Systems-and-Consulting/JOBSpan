@@ -383,7 +383,7 @@
     /* ══ STATS STRIP ══ */
     .kt-stats {
       display: grid;
-      grid-template-columns: repeat(4, minmax(0,1fr));
+      grid-template-columns: repeat(6, minmax(0,1fr));
       gap: 12px;
       margin-bottom: 20px;
     }
@@ -405,7 +405,10 @@
     .kt-stat-val { font-size: 1.7rem; font-weight: 900; color: var(--amber); line-height: 1; margin-bottom: 4px; }
     .kt-stat-label { font-size: .72rem; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; font-weight: 700; }
 
-    /* ══ JOB BOARD ══ */
+    @media(max-width:768px) {
+      #homeMasterGantt .master-gantt-row { min-height:52px; }
+      #homeMasterGantt .master-gantt-row:active { background:rgba(245,158,11,.12) !important; }
+    }
     .kt-board-wrap {
       overflow-x: auto;
       overflow-y: auto;
@@ -650,7 +653,10 @@
       .kt-main { margin-left: 0; width: 100%; }
       .kt-menu-btn { display: block; }
       .kt-search { width: 160px; }
-      .kt-stats { grid-template-columns: repeat(2,1fr); }
+      .kt-stats { grid-template-columns: repeat(3,1fr); gap:8px; }
+      .kt-stat { padding: 10px 8px; }
+      .kt-stat-val { font-size: 1.3rem; }
+      .kt-stat-label { font-size: .62rem; letter-spacing:.02em; }
       .jcd-hero { grid-template-columns: repeat(2,1fr); }
       .cost-cat-row { grid-template-columns: 1fr 80px 80px; }
       .form-grid { grid-template-columns: 1fr; }
@@ -1181,7 +1187,7 @@
       </div>
 
       <!-- Row 1: Operations (counts & percentages) -->
-      <div class="kt-stats" id="conStats" style="margin-bottom:10px;grid-template-columns:repeat(6,1fr)">
+      <div class="kt-stats" id="conStats" style="margin-bottom:10px">
         <div class="kt-stat" id="statActiveJobsTile" title="Total active jobs">
           <div class="kt-stat-val" id="statActiveJobs" style="color:#4d8dff">0</div>
           <div class="kt-stat-label">Active Jobs</div>
@@ -1209,7 +1215,7 @@
       </div>
 
       <!-- Row 2: Money (all dollar values, QBO-synced daily) -->
-      <div class="kt-stats" id="conStatsFinancial" style="margin-bottom:16px;grid-template-columns:repeat(6,1fr)">
+      <div class="kt-stats" id="conStatsFinancial" style="margin-bottom:16px">
         <div class="kt-stat" id="statCollectedTile" title="Cash collected this month (QBO)">
           <div class="kt-stat-val" id="statCollectedMTD" style="color:#1dbb87">—</div>
           <div class="kt-stat-label">Collected MTD</div>

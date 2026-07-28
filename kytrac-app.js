@@ -5856,8 +5856,8 @@ function renderMasterGantt() {
   const ACTIVE = ['Scheduled','In Progress','Approved','To Be Scheduled','Inspection Pending'];
   const allActive = conJobs.filter(j => ACTIVE.includes(j.status))
     .sort((a,b) => (a.startDate||'9999').localeCompare(b.startDate||'9999'));
-  const jobs = allActive.filter(j => j.startDate && j.endDate);
-  const undated = allActive.filter(j => !j.startDate || !j.endDate);
+  const jobs = allActive.filter(j => j.startDate && j.endDate && j.startDate !== j.endDate);
+  const undated = allActive.filter(j => !j.startDate || !j.endDate || j.startDate === j.endDate);
 
   if (!allActive.length) {
     el.innerHTML = '<div class="small muted" style="padding:16px;font-style:italic">No active jobs found.</div>';
@@ -5935,7 +5935,7 @@ function renderMasterGantt() {
   // Undated jobs — show as rows with no bar
   undated.forEach(job => {
     rowsHtml += `
-      <div style="display:flex;align-items:center;border-bottom:1px solid rgba(110,145,210,.07);min-height:${ROW_H}px;cursor:pointer;opacity:.6;transition:background .1s"
+      <div class="master-gantt-row" style="display:flex;align-items:center;border-bottom:1px solid rgba(110,145,210,.07);min-height:${ROW_H}px;cursor:pointer;opacity:.6;transition:background .1s"
            onclick="openJobDetail('${job.id}')" onmouseover="this.style.background='rgba(245,158,11,.05)'" onmouseout="this.style.background=''">
         <div style="width:${LABEL_W}px;flex-shrink:0;padding:6px 10px;font-size:.78rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border-right:1px solid rgba(110,145,210,.1)">
           <div style="font-weight:700;color:#eaf0fb;overflow:hidden;text-overflow:ellipsis">${esc(job.name)}</div>
