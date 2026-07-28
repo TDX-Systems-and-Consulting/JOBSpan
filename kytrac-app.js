@@ -3079,12 +3079,11 @@ function getRoomDates(room, phase) {
 function toggleGanttFullscreen() {
   const container = document.getElementById('ganttContainer');
   const btn = document.getElementById('ganttFullscreenBtn');
-  const detailPhases = document.getElementById('detailPhases');
+  const exitBtn = document.getElementById('ganttExitFullscreenBtn');
   if (!container) return;
 
   const isFullscreen = container.dataset.fullscreen === 'true';
   if (isFullscreen) {
-    // Exit fullscreen
     container.dataset.fullscreen = 'false';
     container.style.position = '';
     container.style.top = '';
@@ -3095,8 +3094,8 @@ function toggleGanttFullscreen() {
     container.style.height = '';
     container.style.background = '';
     if (btn) btn.textContent = '⛶ Full Screen';
+    if (exitBtn) exitBtn.style.display = 'none';
   } else {
-    // Enter fullscreen
     container.dataset.fullscreen = 'true';
     container.style.position = 'fixed';
     container.style.top = '0';
@@ -3106,12 +3105,20 @@ function toggleGanttFullscreen() {
     container.style.zIndex = '9999';
     container.style.height = '100vh';
     container.style.background = 'rgba(5,14,28,.99)';
-    if (btn) btn.textContent = '✕ Exit Full Screen';
+    if (btn) btn.textContent = '⛶ Full Screen';
+    if (exitBtn) exitBtn.style.display = 'block';
   }
-  // Re-render to recalculate sizes
   setTimeout(() => renderGanttFromCache(), 50);
 }
 window.toggleGanttFullscreen = toggleGanttFullscreen;
+
+// Escape key exits Gantt fullscreen
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    const container = document.getElementById('ganttContainer');
+    if (container && container.dataset.fullscreen === 'true') toggleGanttFullscreen();
+  }
+});
 
 function ganttToggleJob() {
   _ganttJobCollapsed = !_ganttJobCollapsed;
