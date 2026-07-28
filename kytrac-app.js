@@ -2622,6 +2622,36 @@ let _ganttJobId = null;
 
 let _ganttJobCollapsed = false;
 
+// Fast re-render using cached _ganttData — no Firestore reload
+function renderGanttFromCache() {
+  const jobId = _ganttJobId;
+  const job = conJobs.find(j => j.id === jobId);
+  if (!job || !_ganttData) return;
+
+  const allDates = [];
+  _ganttData.forEach(({ phase, rooms }) => {
+    if (phase.startDate) allDates.push(new Date(phase.startDate));
+    if (phase.endDate) allDates.push(new Date(phase.endDate));
+    rooms.forEach(({ room }) => {
+      if (room.startDate) allDates.push(new Date(room.startDate));
+      if (room.endDate) allDates.push(new Date(room.endDate));
+    });
+  });
+  if (job?.startDate) allDates.push(new Date(job.startDate));
+  if (job?.endDate) allDates.push(new Date(job.endDate));
+
+  const today = new Date();
+  today.setHours(0,0,0,0);
+  let minDate = allDates.length ? new Date(Math.min(...allDates)) : new Date(today);
+  let maxDate = allDates.length ? new Date(Math.max(...allDates)) : new Date(today);
+  minDate.setDate(minDate.getDate() - 7);
+  maxDate.setDate(maxDate.getDate() + 14);
+
+  renderGanttLeft(jobId, job);
+  renderGanttRight(minDate, maxDate, today);
+}
+window.renderGanttFromCache = renderGanttFromCache;
+
 async function renderJobGantt(jobId) {
   _ganttJobId = jobId;
   const job = conJobs.find(j => j.id === jobId);
@@ -3017,40 +3047,26 @@ function getRoomDates(room, phase) {
 
 function ganttToggleJob() {
   _ganttJobCollapsed = !_ganttJobCollapsed;
-  renderJobGantt(_ganttJobId);
+  renderGanttFromCache();
 }
 window.ganttToggleJob = ganttToggleJob;
 
 function ganttTogglePhase(phaseId) {
   _ganttCollapsed[phaseId] = !_ganttCollapsed[phaseId];
-  const job = conJobs.find(j => j.id === _ganttJobId);
-  renderGanttLeft(_ganttJobId, job);
-  // Re-render bars with same date range
-  const allDates = [];
-  _ganttData.forEach(({ phase, rooms }) => {
-    if (phase.startDate) allDates.push(new Date(phase.startDate));
-    if (phase.endDate) allDates.push(new Date(phase.endDate));
-  });
-  if (job?.startDate) allDates.push(new Date(job.startDate));
-  if (job?.endDate) allDates.push(new Date(job.endDate));
-  const today = new Date(); today.setHours(0,0,0,0);
-  const minDate = allDates.length ? new Date(Math.min(...allDates)) : new Date(today);
-  const maxDate = allDates.length ? new Date(Math.max(...allDates)) : new Date(today);
-  minDate.setDate(minDate.getDate() - 7);
-  maxDate.setDate(maxDate.getDate() + 14);
-  renderGanttRight(minDate, maxDate, today);
+  renderGanttFromCache();
 }
 window.ganttTogglePhase = ganttTogglePhase;
 
 function ganttToggleRoom(roomId) {
   _ganttCollapsed[roomId] = !_ganttCollapsed[roomId];
-  renderJobGantt(_ganttJobId);
+  renderGanttFromCache();
 }
 window.ganttToggleRoom = ganttToggleRoom;
 
 function ganttExpandAll() {
   _ganttCollapsed = {};
-  renderJobGantt(_ganttJobId);
+  _ganttJobCollapsed = false;
+  renderGanttFromCache();
 }
 window.ganttExpandAll = ganttExpandAll;
 
@@ -3059,8 +3075,7 @@ function ganttCollapseAll() {
     _ganttCollapsed[phase.id] = true;
     rooms.forEach(({ room }) => { _ganttCollapsed[room.id] = true; });
   });
-  const job = conJobs.find(j => j.id === _ganttJobId);
-  renderGanttLeft(_ganttJobId, job);
+  renderGanttFromCache();
 }
 window.ganttCollapseAll = ganttCollapseAll;
 
