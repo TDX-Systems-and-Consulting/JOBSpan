@@ -6736,7 +6736,7 @@ function renderActivityFeed(targetElId, itemCap) {
     el.innerHTML = groups.map(g =>
       '<div style="font-size:.72rem;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--amber);margin:10px 0 4px">' + esc(g.label) + '</div>' +
       g.rows.map(i => `
-        <div onclick="openJobDetail('${i.jobId}')" style="display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-bottom:1px solid rgba(110,145,210,.07);cursor:pointer">
+        <div onclick="${i.docId ? `openDocument('${i.docId}')` : `openJobDetail('${i.jobId}')`}" style="display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-bottom:1px solid rgba(110,145,210,.07);cursor:pointer">
           <span style="font-size:1rem;flex-shrink:0">${i.icon}</span>
           <div style="flex:1;min-width:0">
             <div style="font-size:.83rem;font-weight:700;color:#eaf0fb;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(i.text)}</div>
@@ -6816,7 +6816,7 @@ function renderActivityFeed(targetElId, itemCap) {
         } else if (l.type === 'proposal_viewed') {
           items.push({ icon: '👁', text: 'Customer opened proposal in portal', sub: job ? job.name : '', jobId, ms });
         } else if (l.type === 'proposal_signed') {
-          items.push({ icon: '✅', text: l.notes || 'Customer signed proposal', sub: job ? job.name : '', jobId, ms });
+          items.push({ icon: '📎', text: l.notes || 'Customer signed proposal', sub: job ? job.name : '', jobId, ms, docId: l.docId || null });
         } else {
           items.push({ icon:'📋', text: l.notes ? (l.notes.length > 60 ? l.notes.slice(0,60)+'…' : l.notes) : 'Daily log added', sub: job ? job.name : '', jobId, ms });
         }
@@ -6838,7 +6838,7 @@ function renderActivityFeed(targetElId, itemCap) {
             } else if (l.type === 'proposal_viewed') {
               items.push({ icon: '👁', text: 'Customer opened proposal in portal', sub: job.name, jobId: job.id, ms });
             } else if (l.type === 'proposal_signed') {
-              items.push({ icon: '✅', text: l.notes || 'Customer signed proposal', sub: job.name, jobId: job.id, ms });
+              items.push({ icon: '📎', text: l.notes || 'Customer signed proposal', sub: job.name, jobId: job.id, ms, docId: l.docId || null });
             } else {
               items.push({ icon:'📋', text: l.notes ? (l.notes.length > 60 ? l.notes.slice(0,60)+'…' : l.notes) : 'Daily log added', sub: job.name, jobId: job.id, ms });
             }
@@ -11158,11 +11158,11 @@ function openDocument(id) {
   const doc = allDocuments.find(d => d.id === id);
   if (!doc) return;
   if (doc.dataUrl) {
-    // Open in new tab
     const win = window.open('', '_blank');
     win.document.write(`<!DOCTYPE html><html><head><title>${esc(doc.name)}</title></head><body style="margin:0;background:#000;display:flex;align-items:center;justify-content:center;min-height:100vh">
       ${doc.type?.startsWith('image/') ? `<img src="${doc.dataUrl}" style="max-width:100%;max-height:100vh;object-fit:contain" />` :
         doc.type === 'application/pdf' ? `<iframe src="${doc.dataUrl}" style="width:100vw;height:100vh;border:none"></iframe>` :
+        doc.type === 'text/html' ? `<iframe src="${doc.dataUrl}" style="width:100vw;height:100vh;border:none;background:#fff"></iframe>` :
         `<div style="color:#fff;text-align:center;padding:40px"><p>Preview not available for this file type.</p><a href="${doc.dataUrl}" download="${esc(doc.name)}" style="color:#d97706;font-size:1.1rem">⬇ Download ${esc(doc.name)}</a></div>`
       }
     </body></html>`);
@@ -11739,6 +11739,7 @@ function initPortalFirebase(jobId, token) {
 let _portalDb = null;
 let _portalCompanyId = null;
 let _portalJobId = null;
+let _portalJobName = null;
 let _portalColl = null;
 let _portalLatestProposal = null;
 let _portalToken = null;
@@ -11769,6 +11770,7 @@ function loadPortalJob(db, jobId, tokenData, token) {
     .then(doc => {
       if (!doc.exists) { showPortalNotFound(); return; }
       const job = { id: doc.id, ...doc.data() };
+      _portalJobName = job.name || '';
       renderPortalJob(job);
 
       // Load phases
@@ -12476,11 +12478,8 @@ function submitPortalSignature(proposalId, jobId, action) {
         const now = firebase.firestore.FieldValue.serverTimestamp();
         const nowMs = Date.now();
 
-        // 1. Activity log
-        jobRef.collection('logs').add({
-          type: 'proposal_signed', notes: `Customer signed proposal — ${name}`,
-          jobId, companyId, createdAt: now, createdMs: nowMs, createdBy: 'customer-portal'
-        }).catch(()=>{});
+        // 1. Activity log — written after doc save so we can store docId
+        // (done below after document write)
 
         // 2. Auto-advance job to Approved
         const advanceStatuses = ['New Lead','Appointment Set','Estimate Sent','Follow Up','Negotiating'];
@@ -12491,26 +12490,46 @@ function submitPortalSignature(proposalId, jobId, action) {
           }
         }).catch(()=>{});
 
-        // 3. Save signed proposal to Documents
+        // 3. Save signed proposal to Documents then log with docId
         try {
+          const jobName = _portalJobName || '';
           const signedHtml = '<html><body style="font-family:Arial;padding:20px;max-width:700px;margin:auto">' +
             '<h2 style="color:#d97706">Signed Proposal</h2>' +
+            '<p><strong>Job:</strong> ' + (jobName || jobId) + '</p>' +
             '<p><strong>Signed by:</strong> ' + name + '</p>' +
             '<p><strong>Date:</strong> ' + new Date().toLocaleDateString() + '</p>' +
             (dataUrl ? '<p><strong>Signature:</strong><br><img src="' + dataUrl + '" style="height:60px;border:1px solid #ccc;padding:4px;border-radius:4px"></p>' : '') +
             '<hr><p style="font-size:.85em;color:#666">Proposal ID: ' + proposalId + ' · Job ID: ' + jobId + '</p>' +
             '</body></html>';
           const docData = 'data:text/html;base64,' + btoa(unescape(encodeURIComponent(signedHtml)));
-          // Write to company-level documents collection (rules now allow portal writes with source=proposal_signature)
           db.collection('companies').doc(companyId).collection('documents').add({
             name: 'Signed Proposal — ' + new Date().toLocaleDateString(),
             type: 'text/html', category: 'Contract',
-            jobId, companyId, dataUrl: docData,
+            jobId, jobName, companyId, dataUrl: docData,
             signedByName: name, signatureDataUrl: dataUrl,
             uploadedAt: now, uploadedDate: new Date().toISOString().split('T')[0],
             uploadedBy: 'customer-portal', source: 'proposal_signature'
+          }).then(docRef => {
+            // Activity log with docId so feed can link directly to the document
+            jobRef.collection('logs').add({
+              type: 'proposal_signed',
+              notes: 'Customer signed proposal — ' + name,
+              jobId, companyId, docId: docRef.id,
+              createdAt: now, createdMs: nowMs, createdBy: 'customer-portal'
+            }).catch(()=>{});
+          }).catch(()=>{
+            // Log without docId if doc save failed
+            jobRef.collection('logs').add({
+              type: 'proposal_signed', notes: 'Customer signed proposal — ' + name,
+              jobId, companyId, createdAt: now, createdMs: nowMs, createdBy: 'customer-portal'
+            }).catch(()=>{});
+          });
+        } catch(e) {
+          jobRef.collection('logs').add({
+            type: 'proposal_signed', notes: 'Customer signed proposal — ' + name,
+            jobId, companyId, createdAt: now, createdMs: nowMs, createdBy: 'customer-portal'
           }).catch(()=>{});
-        } catch(e) {}
+        }
 
         // 4. PlannerXD notification
         try {
