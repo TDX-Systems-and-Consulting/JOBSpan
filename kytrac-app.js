@@ -15813,6 +15813,86 @@ function reprintProposalVersion(proposalId) {
 }
 window.reprintProposalVersion = reprintProposalVersion;
 
+// Resend portal link email for any existing proposal
+async function resendProposalEmail(proposalId) {
+  const job = conJobs.find(j => j.id === conCurrentJobId);
+  if (!job) return;
+  if (!job.email) { alert('No customer email on file. Add one in job details first.'); return; }
+  if (!conFunctions) { alert('Cloud Functions not available.'); return; }
+
+  const prop = conProposals.find(p => p.id === proposalId);
+  const status = prop?.status || 'pending';
+
+  // Get or create portal token
+  let portalUrl = '';
+  const snap = await conDb.collection('portalTokens').where('jobId','==',conCurrentJobId).limit(1).get();
+  if (!snap.empty) {
+    portalUrl = window.location.origin + window.location.pathname + '?portal=' + snap.docs[0].id;
+  } else {
+    const token = conCurrentJobId + '-hash-' + Math.random().toString(36).slice(2,10);
+    await conDb.collection('portalTokens').doc(token).set({
+      jobId: conCurrentJobId, jobName: job.name||'', companyId: currentCompanyId,
+      created: Date.now(), createdBy: conCurrentUser?.email||'', expires: null, shareInvoices: true
+    });
+    portalUrl = window.location.origin + window.location.pathname + '?portal=' + token;
+  }
+
+  const toName = job.client || job.name || 'Valued Customer';
+  const co = companyProfile?.companyName || 'JTXD Contracting';
+  const jobNum = job.jobNumber || '';
+  const isRevised = status === 'draft';
+  const subject = isRevised
+    ? `Revised Proposal from ${co}${jobNum ? ' — Job ' + jobNum : ''}`
+    : `Your Proposal from ${co}${jobNum ? ' — Job ' + jobNum : ''} (Resent)`;
+  const bodyHtml = `
+    <p>Hi ${toName},</p>
+    <p>${isRevised ? `${co} has sent you a <strong>revised proposal</strong>` : `Here is your proposal from ${co} again`}${jobNum ? ' for job <strong>' + jobNum + '</strong>' : ''}.</p>
+    ${portalUrl ? `<p style="margin:24px 0"><a href="${portalUrl}" style="background:#d97706;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:700;font-size:1rem">View & Sign Proposal</a></p>` : ''}
+    <p style="color:#888;font-size:.85rem">If the button above doesn't work, copy and paste this link:<br>${portalUrl}</p>
+    <p>Thank you for choosing ${co}.</p>`;
+
+  try {
+    await conFunctions.httpsCallable('sendJobspanEmail')({
+      to: job.email, toName, subject, bodyHtml,
+      jobId: conCurrentJobId, docType: 'proposal'
+    });
+    // Log it
+    logProposalEvent(conCurrentJobId, 'proposal_emailed',
+      `Proposal ${isRevised ? 're-sent (revised)' : 'resent'} to ${job.email}`, job.name||'');
+    // Stamp emailSentAt
+    if (prop) {
+      coll('jobs').doc(conCurrentJobId).collection('proposals').doc(proposalId)
+        .update({ emailSentAt: firebase.firestore.FieldValue.serverTimestamp(),
+                  status: prop.status === 'draft' ? 'pending' : prop.status }).catch(()=>{});
+    }
+    alert(`Proposal resent to ${job.email}.`);
+    loadProposals(conCurrentJobId);
+  } catch(e) {
+    alert('Error resending: ' + e.message);
+  }
+}
+window.resendProposalEmail = resendProposalEmail;
+
+// Revise a signed proposal — clears signature, resets to draft so estimate can be updated
+function reviseProposal(proposalId) {
+  if (!confirm('This will clear the customer\'s signature and reset this proposal to Draft so you can revise the estimate and send a new version. The original signed document is preserved in the Documents tab.\n\nContinue?')) return;
+  coll('jobs').doc(conCurrentJobId).collection('proposals').doc(proposalId).update({
+    status: 'draft',
+    signedByName: firebase.firestore.FieldValue.delete(),
+    signatureDataUrl: firebase.firestore.FieldValue.delete(),
+    respondedAt: firebase.firestore.FieldValue.delete(),
+    viewedAt: firebase.firestore.FieldValue.delete(),
+    revisedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    revisedBy: conCurrentUser?.email || ''
+  }).then(() => {
+    logProposalEvent(conCurrentJobId, 'proposal_emailed',
+      'Proposal revised — signature cleared, reset to draft', '');
+    alert('Proposal reset to Draft. Update the estimate and use Send via Email to send the revised version.');
+    loadProposals(conCurrentJobId);
+  }).catch(e => alert('Error: ' + e.message));
+}
+window.reviseProposal = reviseProposal;
+
 function renderProposalHistory() {
   const el = document.getElementById('proposalHistoryList');
   if (!el) return;
@@ -15820,7 +15900,7 @@ function renderProposalHistory() {
     el.innerHTML = '<div class="small muted" style="font-style:italic;padding:8px 4px">No proposals printed yet for this job.</div>';
     return;
   }
-  const STATUS_COLORS = { draft: '#9ca3af', pending: '#d97706', approved: '#1dbb87', declined: '#ef4444' };
+  const STATUS_COLORS = { draft: '#9ca3af', pending: '#d97706', approved: '#1dbb87', declined: '#ef4444', voided: '#4b5563' };
   const job = conJobs.find(j => j.id === conCurrentJobId);
   el.innerHTML = conProposals.map(p => {
     const color = STATUS_COLORS[p.status] || '#9ca3af';
@@ -15830,6 +15910,18 @@ function renderProposalHistory() {
     if (p.status === 'pending') {
       actions.push(`<button class="btn" style="padding:3px 10px;font-size:.75rem;color:#1dbb87" onclick="markProposalStatus('${p.id}','approved')">Mark Approved</button>`);
       actions.push(`<button class="btn" style="padding:3px 10px;font-size:.75rem;color:#ef4444" onclick="markProposalStatus('${p.id}','declined')">Mark Declined</button>`);
+    }
+    // Resend — any non-voided proposal can be resent
+    if (p.status !== 'voided') {
+      actions.push(`<button class="btn" style="padding:3px 10px;font-size:.75rem;color:#60a5fa" onclick="resendProposalEmail('${p.id}')">📧 Resend</button>`);
+    }
+    // Revise — lets owner revise a signed proposal (new scope change, customer request)
+    if (p.status === 'approved') {
+      actions.push(`<button class="btn" style="padding:3px 10px;font-size:.75rem;color:#f59e0b" onclick="reviseProposal('${p.id}')">✏️ Revise</button>`);
+    }
+    // Void — removes from active consideration without deleting
+    if (p.status !== 'voided' && p.status !== 'approved') {
+      actions.push(`<button class="btn" style="padding:3px 10px;font-size:.75rem;color:#6b7280" onclick="markProposalStatus('${p.id}','voided')">Void</button>`);
     }
     actions.push(`<button class="btn" style="padding:3px 10px;font-size:.75rem" onclick="reprintProposalVersion('${p.id}')">🖨 Reprint</button>`);
     const signedBanner = (p.status === 'approved' && p.signedByName)
