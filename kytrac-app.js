@@ -1706,20 +1706,14 @@ function loadPlans(jobId) {
   const list = document.getElementById('plansList');
   if (!list) return;
   list.innerHTML = '<div class="small muted" style="padding:12px">Loading plans…</div>';
-  // Load company-level Plan documents + job-level Contract documents (signed proposals)
+  // Load Plan docs + Contract docs (signed proposals) for this job
   Promise.all([
     coll('documents').where('jobId','==',jobId).where('category','==','Plan').get(),
-    coll('jobs').doc(jobId).collection('documents').get()
-  ]).then(([planSnap, jobDocSnap]) => {
+    coll('documents').where('jobId','==',jobId).where('category','==','Contract').get()
+  ]).then(([planSnap, contractSnap]) => {
     const plans = [];
     planSnap.forEach(d => plans.push({ id: d.id, ...d.data() }));
-    jobDocSnap.forEach(d => {
-      const data = d.data();
-      // Only include signed proposals and contract docs from job-level subcollection
-      if (data.source === 'proposal_signature' || data.category === 'Contract') {
-        plans.push({ id: d.id, ...data });
-      }
-    });
+    contractSnap.forEach(d => plans.push({ id: d.id, ...d.data() }));
     renderPlans(plans);
   }).catch(() => renderPlans([]));
 }
@@ -12507,8 +12501,8 @@ function submitPortalSignature(proposalId, jobId, action) {
             '<hr><p style="font-size:.85em;color:#666">Proposal ID: ' + proposalId + ' · Job ID: ' + jobId + '</p>' +
             '</body></html>';
           const docData = 'data:text/html;base64,' + btoa(unescape(encodeURIComponent(signedHtml)));
-          // Write to job-level documents subcollection (portal has write access via existing rules)
-          db.collection('companies').doc(companyId).collection('jobs').doc(jobId).collection('documents').add({
+          // Write to company-level documents collection (rules now allow portal writes with source=proposal_signature)
+          db.collection('companies').doc(companyId).collection('documents').add({
             name: 'Signed Proposal — ' + new Date().toLocaleDateString(),
             type: 'text/html', category: 'Contract',
             jobId, companyId, dataUrl: docData,
