@@ -2422,7 +2422,7 @@ function renderJobMap(job) {
     });
 }
 
-function openJobDetail(jobId) {
+function openJobDetail(jobId, defaultTab) {
   const job = conJobs.find(j => j.id === jobId);
   if (!job) return;
   conCurrentJobId = jobId;
@@ -2487,7 +2487,7 @@ function openJobDetail(jobId) {
   loadJobActivity(jobId);
 
   // Switch to dashboard tab
-  switchDetailTab('dashboard', document.querySelector('#jobDetailModal .con-subtab'));
+  switchDetailTab(defaultTab || 'dashboard', document.querySelector('#jobDetailModal .con-subtab'));
   kOpen('jobDetailModal');
 }
 
@@ -5959,7 +5959,7 @@ function renderMasterGantt() {
 
     rowsHtml += `
       <div style="display:flex;align-items:center;border-bottom:1px solid rgba(110,145,210,.07);min-height:${ROW_H}px;cursor:pointer;transition:background .1s" 
-           onclick="openJobDetail('${job.id}')" onmouseover="this.style.background='rgba(245,158,11,.05)'" onmouseout="this.style.background=''">
+           onclick="openJobDetail('${job.id}','schedule')" onmouseover="this.style.background='rgba(245,158,11,.05)'" onmouseout="this.style.background=''">
         <!-- Label -->
         <div style="width:${LABEL_W}px;flex-shrink:0;padding:6px 10px;font-size:.78rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border-right:1px solid rgba(110,145,210,.1)">
           <div style="font-weight:700;color:#eaf0fb;overflow:hidden;text-overflow:ellipsis">${esc(job.name)}</div>
@@ -5978,7 +5978,7 @@ function renderMasterGantt() {
   undated.forEach(job => {
     rowsHtml += `
       <div class="master-gantt-row" style="display:flex;align-items:center;border-bottom:1px solid rgba(110,145,210,.07);min-height:${ROW_H}px;cursor:pointer;opacity:.6;transition:background .1s"
-           onclick="openJobDetail('${job.id}')" onmouseover="this.style.background='rgba(245,158,11,.05)'" onmouseout="this.style.background=''">
+           onclick="openJobDetail('${job.id}','schedule')" onmouseover="this.style.background='rgba(245,158,11,.05)'" onmouseout="this.style.background=''">
         <div style="width:${LABEL_W}px;flex-shrink:0;padding:6px 10px;font-size:.78rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border-right:1px solid rgba(110,145,210,.1)">
           <div style="font-weight:700;color:#eaf0fb;overflow:hidden;text-overflow:ellipsis">${esc(job.name)}</div>
           <div style="font-size:.68rem;color:var(--muted)">${esc(job.status)} · <span style="color:#f59e0b">No dates set</span></div>
@@ -6064,7 +6064,7 @@ function renderHomeDashboard() {
       { label: 'Bidding',   color: '#d97706', key: 'bidding',   statuses: PIPELINE_BUCKETS.bidding },
       { label: 'Approved',  color: '#16a34a', key: 'approved',  statuses: PIPELINE_BUCKETS.approved },
       { label: 'Scheduled', color: '#0d9488', key: 'scheduled', statuses: PIPELINE_BUCKETS.scheduled },
-      { label: 'In Progress',color:'#3b82f6', key: 'inprogress',statuses: PIPELINE_BUCKETS.inprogress },
+      { label: 'Active',color:'#3b82f6', key: 'inprogress',statuses: PIPELINE_BUCKETS.inprogress },
       { label: 'Closing',   color: '#7c3aed', key: 'closing',   statuses: PIPELINE_BUCKETS.closing },
     ];
     pipeline.innerHTML = groups.map((g, i) => {
