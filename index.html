@@ -1263,6 +1263,17 @@
         <div id="homePipelineSummary" style="display:grid;grid-template-columns:repeat(6,1fr);gap:0;padding:0;overflow-x:auto;min-width:0"></div>
       </div>
 
+      <!-- Master Schedule Gantt -->
+      <div class="kt-card" id="homeMasterGanttCard" style="margin-bottom:16px">
+        <div class="kt-card-head" style="display:flex;justify-content:space-between;align-items:center">
+          <h3>📅 Master Schedule</h3>
+          <span id="homeMasterGanttMeta" style="font-size:.75rem;color:var(--muted)"></span>
+        </div>
+        <div id="homeMasterGantt" style="overflow-x:auto;padding:0 0 8px 0">
+          <div class="small muted" style="padding:16px;font-style:italic">Loading schedule...</div>
+        </div>
+      </div>
+
       <!-- Off Today — approved time off requests -->
       <div class="kt-card" id="homeOffTodayCard" style="margin-bottom:16px;display:none">
         <div class="kt-card-head" style="padding:14px 16px 10px">

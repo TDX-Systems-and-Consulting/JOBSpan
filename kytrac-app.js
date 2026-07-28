@@ -5848,6 +5848,100 @@ function getMyJobIds() {
 }
 window.getMyJobIds = getMyJobIds;
 
+function renderMasterGantt() {
+  const el = document.getElementById('homeMasterGantt');
+  const meta = document.getElementById('homeMasterGanttMeta');
+  if (!el) return;
+
+  const ACTIVE = ['Scheduled','In Progress','Approved','To Be Scheduled','Inspection Pending'];
+  const jobs = conJobs.filter(j => j.startDate && j.endDate && ACTIVE.includes(j.status))
+    .sort((a,b) => a.startDate.localeCompare(b.startDate));
+
+  if (!jobs.length) {
+    el.innerHTML = '<div class="small muted" style="padding:16px;font-style:italic">No scheduled jobs with dates set. Set start and end dates on your jobs to see them here.</div>';
+    if (meta) meta.textContent = '';
+    return;
+  }
+
+  if (meta) meta.textContent = jobs.length + ' active job' + (jobs.length !== 1 ? 's' : '');
+
+  // Date range
+  const today = new Date(); today.setHours(0,0,0,0);
+  const allDates = jobs.flatMap(j => [new Date(j.startDate), new Date(j.endDate)]);
+  let minDate = new Date(Math.min(...allDates));
+  let maxDate = new Date(Math.max(...allDates));
+  minDate.setDate(minDate.getDate() - 3);
+  maxDate.setDate(maxDate.getDate() + 7);
+
+  const totalDays = Math.ceil((maxDate - minDate) / 86400000);
+  const DAY_W = 28; // px per day
+  const totalWidth = totalDays * DAY_W;
+  const ROW_H = 40;
+  const LABEL_W = 220;
+
+  // Build month headers
+  let monthHtml = `<div style="display:flex;margin-left:${LABEL_W}px;min-width:${totalWidth}px">`;
+  let d = new Date(minDate);
+  while (d <= maxDate) {
+    const monthStart = new Date(d.getFullYear(), d.getMonth(), 1);
+    const monthEnd = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+    const visStart = d < minDate ? minDate : d;
+    const visEnd = monthEnd > maxDate ? maxDate : monthEnd;
+    const days = Math.ceil((visEnd - visStart) / 86400000) + 1;
+    const w = days * DAY_W;
+    monthHtml += `<div style="width:${w}px;flex-shrink:0;font-size:.7rem;font-weight:800;color:var(--muted);border-right:1px solid rgba(110,145,210,.15);padding:3px 4px;white-space:nowrap;overflow:hidden">${d.toLocaleString('default',{month:'short'})} ${d.getFullYear()}</div>`;
+    d = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+  }
+  monthHtml += '</div>';
+
+  // Today line offset
+  const todayOffset = LABEL_W + Math.floor((today - minDate) / 86400000) * DAY_W;
+
+  // Job rows
+  let rowsHtml = '';
+  jobs.forEach(job => {
+    const s = new Date(job.startDate), e = new Date(job.endDate);
+    const left = LABEL_W + Math.floor((s - minDate) / 86400000) * DAY_W;
+    const width = Math.max(DAY_W, Math.ceil((e - s) / 86400000) * DAY_W);
+    const isLate = e < today;
+    const isActive = job.status === 'In Progress';
+    const barColor = isLate
+      ? 'background:linear-gradient(90deg,#991b1b,#ef4444)'
+      : isActive
+        ? 'background:linear-gradient(90deg,#065f46,#10b981)'
+        : 'background:linear-gradient(90deg,#b45309,#d97706)';
+
+    const days = Math.ceil((e - s) / 86400000);
+
+    rowsHtml += `
+      <div style="display:flex;align-items:center;border-bottom:1px solid rgba(110,145,210,.07);min-height:${ROW_H}px;cursor:pointer;transition:background .1s" 
+           onclick="openJobDetail('${job.id}')" onmouseover="this.style.background='rgba(245,158,11,.05)'" onmouseout="this.style.background=''">
+        <!-- Label -->
+        <div style="width:${LABEL_W}px;flex-shrink:0;padding:6px 10px;font-size:.78rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border-right:1px solid rgba(110,145,210,.1)">
+          <div style="font-weight:700;color:#eaf0fb;overflow:hidden;text-overflow:ellipsis">${esc(job.name)}</div>
+          <div style="font-size:.68rem;color:var(--muted)">${esc(job.status)} · ${days}d</div>
+        </div>
+        <!-- Bar row -->
+        <div style="flex:1;min-width:${totalWidth}px;height:${ROW_H}px;position:relative">
+          <div style="position:absolute;left:${left - LABEL_W}px;width:${width}px;height:22px;top:9px;${barColor};border-radius:4px;display:flex;align-items:center;overflow:hidden">
+            ${width > 60 ? `<span style="font-size:.65rem;font-weight:700;color:#fff;padding:0 8px;white-space:nowrap;overflow:hidden;max-width:${width-16}px">${esc(job.name)}</span>` : ''}
+          </div>
+        </div>
+      </div>`;
+  });
+
+  el.innerHTML = `
+    <div style="position:relative;overflow-x:auto">
+      ${monthHtml}
+      <div style="position:relative">
+        <!-- Today line -->
+        <div style="position:absolute;left:${todayOffset}px;top:0;bottom:0;width:1px;background:rgba(239,68,68,.35);z-index:10;pointer-events:none"></div>
+        ${rowsHtml}
+      </div>
+    </div>`;
+}
+window.renderMasterGantt = renderMasterGantt;
+
 function renderHomeDashboard() {
   const fullAccess = isOwnerOrAdmin();
 
@@ -5935,6 +6029,7 @@ function renderHomeDashboard() {
   renderWhatsChanged();
   renderCompanyLaborEfficiency();
   renderOffToday();
+  renderMasterGantt();
 }
 window.renderHomeDashboard = renderHomeDashboard;
 
