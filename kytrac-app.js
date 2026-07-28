@@ -339,6 +339,7 @@ function ktNav(key, btn) {
   if(key==='dashboard') { conRenderBoard(); conRenderStats(); renderHomeDashboard(); }
   if(key==='catalog') renderCatalog();
   if(key==='calendar') { loadGlobalPhases(); loadCalendarEvents(); buildTeamColors(); renderCalendar(); loadGCalStatus(); loadTimeOffRequests(); }
+  if(key==='masterschedule') { renderMasterSchedulePage(); }
   if(key==='time') { loadTimeEntries(); renderTimeLog(); renderTodaySummary(); populateTimeFilters(); }
   if(key==='logs') { loadGlobalLogs(); renderGlobalLogs(); }
   if(key==='todos') { loadTodos(); populateTodoJobFilter(); populateTodoAssigneeFilter(); renderTodos(); }
@@ -5852,6 +5853,210 @@ function getMyJobIds() {
   return ids;
 }
 window.getMyJobIds = getMyJobIds;
+
+async function renderMasterSchedulePage() {
+  const el = document.getElementById('masterPageGantt');
+  const meta = document.getElementById('masterPageMeta');
+  if (!el) return;
+
+  el.innerHTML = '<div class="small muted" style="padding:24px;font-style:italic">Loading all jobs...</div>';
+
+  const ACTIVE = ['Scheduled','In Progress','Approved','To Be Scheduled','Inspection Pending'];
+  const activeJobs = conJobs.filter(j => ACTIVE.includes(j.status))
+    .sort((a,b) => (a.startDate||'9999').localeCompare(b.startDate||'9999'));
+
+  if (meta) meta.textContent = activeJobs.length + ' active job' + (activeJobs.length !== 1 ? 's' : '');
+
+  // Load all phases for all jobs in parallel
+  const jobPhaseMap = {};
+  await Promise.all(activeJobs.map(async job => {
+    try {
+      const phases = await loadEpicTree(job.id);
+      jobPhaseMap[job.id] = phases;
+    } catch(e) { jobPhaseMap[job.id] = []; }
+  }));
+
+  // Date range across all jobs and phases
+  const today = new Date(); today.setHours(0,0,0,0);
+  const allDates = [];
+  activeJobs.forEach(job => {
+    if (job.startDate) allDates.push(new Date(job.startDate));
+    if (job.endDate) allDates.push(new Date(job.endDate));
+    (jobPhaseMap[job.id] || []).forEach(phase => {
+      if (phase.startDate) allDates.push(new Date(phase.startDate));
+      if (phase.endDate) allDates.push(new Date(phase.endDate));
+    });
+  });
+
+  if (!allDates.length) {
+    el.innerHTML = '<div class="small muted" style="padding:24px;font-style:italic">No jobs with dates set. Set start and end dates on your jobs to see them here.</div>';
+    return;
+  }
+
+  let minDate = new Date(Math.min(...allDates));
+  let maxDate = new Date(Math.max(...allDates));
+  minDate.setDate(minDate.getDate() - 5);
+  maxDate.setDate(maxDate.getDate() + 14);
+
+  const totalDays = Math.ceil((maxDate - minDate) / 86400000);
+  const DAY_W = 32;
+  const totalWidth = totalDays * DAY_W;
+  const LABEL_W = 240;
+  const ROW_H = 40;
+  const PHASE_H = 32;
+  const todayOffset = Math.floor((today - minDate) / 86400000) * DAY_W;
+
+  // Collapse state
+  if (!window._masterCollapsed) window._masterCollapsed = {};
+
+  function bar(startDate, endDate, color, height, top, label) {
+    if (!startDate || !endDate) return '';
+    const s = new Date(startDate), e = new Date(endDate);
+    const left = Math.floor((s - minDate) / 86400000) * DAY_W;
+    const width = Math.max(DAY_W, Math.ceil((e - s) / 86400000) * DAY_W);
+    return `<div style="position:absolute;left:${left}px;width:${width}px;height:${height}px;top:${top}px;${color};border-radius:4px;display:flex;align-items:center;overflow:hidden">
+      ${width > 60 ? `<span style="font-size:.62rem;font-weight:700;color:#fff;padding:0 6px;white-space:nowrap;overflow:hidden;max-width:${width-12}px">${esc(label)}</span>` : ''}
+    </div>`;
+  }
+
+  // Build month headers
+  let monthHtml = `<div style="display:flex;margin-left:${LABEL_W}px;min-width:${totalWidth}px;border-bottom:1px solid rgba(110,145,210,.15)">`;
+  let d = new Date(minDate.getFullYear(), minDate.getMonth(), 1);
+  while (d <= maxDate) {
+    const monthEnd = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+    const visStart = d < minDate ? minDate : d;
+    const visEnd = monthEnd > maxDate ? maxDate : monthEnd;
+    const days = Math.ceil((visEnd - visStart) / 86400000) + 1;
+    const w = days * DAY_W;
+    monthHtml += `<div style="width:${w}px;flex-shrink:0;font-size:.7rem;font-weight:800;color:var(--muted);border-right:1px solid rgba(110,145,210,.1);padding:4px 6px;white-space:nowrap;overflow:hidden">${d.toLocaleString('default',{month:'short',year:'numeric'})}</div>`;
+    d = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+  }
+  monthHtml += '</div>';
+
+  // Build rows
+  let rowsHtml = '';
+  let barsHtml = '';
+
+  activeJobs.forEach(job => {
+    const jobCollapsed = window._masterCollapsed[job.id];
+    const phases = (jobPhaseMap[job.id] || []).filter(p => p.startDate && p.endDate);
+    const isLate = job.endDate && new Date(job.endDate) < today;
+    const isActive = job.status === 'In Progress';
+    const jobBarColor = isLate ? 'background:linear-gradient(90deg,#991b1b,#ef4444)'
+      : isActive ? 'background:linear-gradient(90deg,#065f46,#10b981)'
+      : 'background:linear-gradient(90deg,#b45309,#d97706)';
+
+    // Job row — left
+    rowsHtml += `<div style="display:flex;align-items:center;min-height:${ROW_H}px;border-bottom:1px solid rgba(110,145,210,.1);background:rgba(245,158,11,.06);cursor:pointer"
+      onclick="window._masterCollapsed['${job.id}']=!window._masterCollapsed['${job.id}'];renderMasterSchedulePage()">
+      <div style="width:${LABEL_W}px;flex-shrink:0;padding:6px 10px;border-right:1px solid rgba(110,145,210,.1);overflow:hidden">
+        <div style="display:flex;align-items:center;gap:6px">
+          <span style="font-size:.65rem;color:var(--muted)">${jobCollapsed ? '▶' : '▼'}</span>
+          <span style="font-size:.8rem;font-weight:800;color:var(--amber);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(job.name)}</span>
+        </div>
+        <div style="font-size:.68rem;color:var(--muted);padding-left:16px">${esc(job.status)}${job.startDate ? ' · ' + job.startDate + ' → ' + (job.endDate||'?') : ' · No dates'}</div>
+      </div>
+    </div>`;
+
+    // Job bar — right
+    barsHtml += `<div style="min-height:${ROW_H}px;border-bottom:1px solid rgba(110,145,210,.1);background:rgba(245,158,11,.03);position:relative">
+      ${bar(job.startDate, job.endDate, jobBarColor, 22, 9, job.name)}
+    </div>`;
+
+    // Phase rows
+    if (!jobCollapsed) {
+      phases.forEach(phase => {
+        const roomCount = (phase.features || []).length;
+        const phaseCollapsed = window._masterCollapsed[phase.id];
+
+        // Phase row — left
+        rowsHtml += `<div style="display:flex;align-items:center;min-height:${PHASE_H}px;border-bottom:1px solid rgba(110,145,210,.07);background:rgba(8,19,37,.3);cursor:pointer"
+          onclick="window._masterCollapsed['${phase.id}']=!window._masterCollapsed['${phase.id}'];renderMasterSchedulePage()">
+          <div style="width:${LABEL_W}px;flex-shrink:0;padding:4px 10px 4px 24px;border-right:1px solid rgba(110,145,210,.1);overflow:hidden">
+            <div style="display:flex;align-items:center;gap:6px">
+              ${roomCount ? `<span style="font-size:.62rem;color:var(--muted)">${phaseCollapsed ? '▶' : '▼'}</span>` : '<span style="width:12px"></span>'}
+              <span style="font-size:.75rem;font-weight:700;color:#93c5fd;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(phase.name)}</span>
+            </div>
+          </div>
+        </div>`;
+
+        // Phase bar — right
+        barsHtml += `<div style="min-height:${PHASE_H}px;border-bottom:1px solid rgba(110,145,210,.07);background:rgba(8,19,37,.2);position:relative">
+          ${bar(phase.startDate, phase.endDate, 'background:linear-gradient(90deg,#1d4ed8,#3b82f6)', 16, 8, phase.name)}
+        </div>`;
+
+        // Room rows
+        if (!phaseCollapsed) {
+          (phase.features || []).forEach(room => {
+            const displayTasks = getDisplayTasks(room, room.tasks || []);
+            const doneTasks = displayTasks.filter(t => t.taskStatus === 'done').length;
+            const pct = displayTasks.length ? Math.round(doneTasks / displayTasks.length * 100) : 0;
+
+            rowsHtml += `<div style="display:flex;align-items:center;min-height:${PHASE_H}px;border-bottom:1px solid rgba(110,145,210,.05);background:rgba(8,19,37,.15)">
+              <div style="width:${LABEL_W}px;flex-shrink:0;padding:4px 10px 4px 40px;border-right:1px solid rgba(110,145,210,.08);overflow:hidden">
+                <div style="font-size:.72rem;color:#94a3b8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(room.name)}</div>
+                <div style="font-size:.62rem;color:var(--muted)">${doneTasks}/${displayTasks.length} tasks · ${pct}%</div>
+              </div>
+            </div>`;
+
+            const roomColor = pct === 100 ? 'background:#10b981'
+              : room.endDate && new Date(room.endDate) < today ? 'background:#ef4444'
+              : 'background:linear-gradient(90deg,#0d9488,#14b8a6)';
+
+            barsHtml += `<div style="min-height:${PHASE_H}px;border-bottom:1px solid rgba(110,145,210,.05);background:rgba(8,19,37,.1);position:relative">
+              ${bar(room.startDate || phase.startDate, room.endDate || phase.endDate, roomColor, 12, 10, room.name)}
+            </div>`;
+          });
+        }
+      });
+
+      // No phases message
+      if (!phases.length) {
+        rowsHtml += `<div style="display:flex;align-items:center;min-height:28px;border-bottom:1px solid rgba(110,145,210,.05)">
+          <div style="width:${LABEL_W}px;padding:4px 10px 4px 24px;font-size:.68rem;color:var(--muted);font-style:italic">No phases with dates set</div>
+        </div>`;
+        barsHtml += `<div style="min-height:28px;border-bottom:1px solid rgba(110,145,210,.05)"></div>`;
+      }
+    }
+  });
+
+  // No active jobs
+  if (!activeJobs.length) {
+    el.innerHTML = '<div class="small muted" style="padding:24px;font-style:italic">No active jobs found.</div>';
+    return;
+  }
+
+  el.innerHTML = `
+    <div style="display:flex;height:100%;overflow:hidden">
+      <!-- Left panel -->
+      <div style="width:${LABEL_W}px;flex-shrink:0;overflow-y:auto;border-right:2px solid rgba(110,145,210,.2)" id="masterPageLeft">
+        <div style="height:32px;background:rgba(8,19,37,.9);border-bottom:2px solid rgba(110,145,210,.2);display:flex;align-items:center;padding:0 10px;font-size:.7rem;font-weight:800;color:var(--muted);position:sticky;top:0;z-index:5">JOB / PHASE / ROOM</div>
+        ${rowsHtml}
+      </div>
+      <!-- Right panel -->
+      <div style="flex:1;overflow:auto;position:relative" id="masterPageRight">
+        <div style="min-width:${totalWidth}px;position:relative">
+          <!-- Header -->
+          <div style="position:sticky;top:0;z-index:10;background:rgba(8,19,37,.95);border-bottom:2px solid rgba(110,145,210,.2)">
+            ${monthHtml}
+          </div>
+          <!-- Today line -->
+          <div style="position:absolute;left:${todayOffset}px;top:0;bottom:0;width:1px;background:rgba(239,68,68,.3);z-index:5;pointer-events:none"></div>
+          <!-- Bars -->
+          ${barsHtml}
+        </div>
+      </div>
+    </div>`;
+
+  // Sync scroll
+  const left = document.getElementById('masterPageLeft');
+  const right = document.getElementById('masterPageRight');
+  if (left && right) {
+    right.addEventListener('scroll', () => { left.scrollTop = right.scrollTop; });
+    left.addEventListener('scroll', () => { right.scrollTop = left.scrollTop; });
+  }
+}
+window.renderMasterSchedulePage = renderMasterSchedulePage;
 
 function masterGanttOpenJob(jobId) {
   // Exit fullscreen first if active

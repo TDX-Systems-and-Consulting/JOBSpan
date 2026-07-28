@@ -1106,6 +1106,9 @@
       <button class="kt-nav-item" onclick="ktNav('calendar',this)">
         <span class="kt-nav-icon">📅</span> Calendar
       </button>
+      <button class="kt-nav-item" onclick="ktNav('masterschedule',this)">
+        <span class="kt-nav-icon">📊</span> Master Schedule
+      </button>
       <button class="kt-nav-item" onclick="ktNav('time',this)">
         <span class="kt-nav-icon">⏱</span> Time
         <span class="kt-nav-badge" id="navTimeBadge" style="display:none;background:#1dbb87">●</span>
@@ -1516,6 +1519,15 @@
           </div>
         </div>
       </div>
+    </div>
+
+    <!-- ── PAGE: MASTER SCHEDULE ── -->
+    <div class="kt-page" id="ktPageMasterschedule" style="padding:0;display:flex;flex-direction:column;height:calc(100vh - 56px)">
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid rgba(110,145,210,.1);flex-shrink:0">
+        <h2 style="font-size:1rem;font-weight:800;margin:0">📊 Master Schedule</h2>
+        <span id="masterPageMeta" style="font-size:.75rem;color:var(--muted)"></span>
+      </div>
+      <div id="masterPageGantt" style="flex:1;overflow:auto"></div>
     </div>
 
     <!-- ── PAGE: TIME TRACKING ── -->
