@@ -8560,7 +8560,6 @@ const DEFAULT_COMPANY_PROFILE = {
 
 function loadCompanyProfile() {
   if (!conDb || !conCurrentUser) return;
-  // Also refresh role display in case it wasn't set yet
   const roleEl = document.getElementById('ktUserRole');
   if (roleEl && currentUserRole) {
     const roleData = KYTRAC_ROLES[currentUserRole] || {};
@@ -8571,8 +8570,14 @@ function loadCompanyProfile() {
     .then(doc => {
       if (doc.exists) {
         companyProfile = { ...DEFAULT_COMPANY_PROFILE, ...doc.data() };
+        // Store owner uid so portal can route notifications
+        if (currentUserRole === 'Owner' || currentUserRole === 'Full Access Override') {
+          const uid = conCurrentUser.uid;
+          if (doc.data().ownerUid !== uid) {
+            coll('settings').doc('company').update({ ownerUid: uid }).catch(() => {});
+          }
+        }
       } else {
-        // First time — save the default profile
         companyProfile = { ...DEFAULT_COMPANY_PROFILE };
         coll('settings').doc('company').set(companyProfile).catch(() => {});
       }
@@ -12528,21 +12533,20 @@ function submitPortalSignature(proposalId, jobId, action) {
           }).catch(()=>{});
         } catch(e) {}
 
-        // 5. PlannerXD notification
+        // 5. PlannerXD notification — look up ownerUid from company settings
         try {
-          db.collection('companies').doc(companyId).collection('team')
-            .where('role', 'in', ['Owner', 'Full Access Override']).limit(3).get()
-            .then(snap => {
-              snap.forEach(memberDoc => {
-                db.collection('plannerxd_notifications').doc(memberDoc.id)
-                  .collection('items').add({
-                    type: 'proposal_signed',
-                    title: 'Customer Signed Proposal — Schedule Now',
-                    body: name + ' signed the proposal. Job approved and ready to schedule.',
-                    jobId, companyId, actionLabel: 'Open Job',
-                    createdAt: now, createdMs: nowMs, read: false
-                  }).catch(()=>{});
-              });
+          db.collection('companies').doc(companyId).collection('settings').doc('company').get()
+            .then(settDoc => {
+              const ownerUid = settDoc.exists ? settDoc.data().ownerUid : null;
+              if (!ownerUid) return;
+              db.collection('plannerxd_notifications').doc(ownerUid)
+                .collection('items').add({
+                  type: 'proposal_signed',
+                  title: 'Customer Signed Proposal — Schedule Now',
+                  body: name + ' signed the proposal. Job approved and ready to schedule.',
+                  jobId, companyId, actionLabel: 'Open Job',
+                  createdAt: now, createdMs: nowMs, read: false
+                }).catch(()=>{});
             }).catch(()=>{});
         } catch(e) {}
       })
