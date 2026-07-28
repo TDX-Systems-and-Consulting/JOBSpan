@@ -15801,10 +15801,8 @@ window.printProposal = printProposal;
 function sendProposalViaEmail(btn) {
   const job = conJobs.find(j => j.id === conCurrentJobId);
   if (!job) return;
-  const prop = conProposals[0];
-  if (!prop) { alert('Print a Proposal first before sending it by email.'); return; }
   if (!job.email) { alert('This job has no customer email on file. Add one in the job details first.'); return; }
-  if (!conFunctions) { alert("Email sending isn't set up yet — this needs the Postmark Cloud Functions deployed first."); return; }
+  if (!conFunctions) { alert("Email sending isn't set up yet — deploy the Cloud Functions first."); return; }
 
   if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }
 
@@ -15816,12 +15814,13 @@ function sendProposalViaEmail(btn) {
   const proceed = (portalUrl) => {
     const toName = job.client || job.name || 'Valued Customer';
     const jobNum = job.jobNumber || '';
-    const total = prop.snapshot?.grandTotal || 0;
+    const prop = conProposals && conProposals[0];
+    const total = prop?.snapshot?.grandTotal || 0;
     const co = companyProfile?.companyName || 'JTXD Contracting';
     const bodyHtml = `
       <p>Hi ${toName},</p>
       <p>${co} has sent you a proposal${jobNum ? ' for job <strong>' + jobNum + '</strong>' : ''}.</p>
-      <p><strong>Total: $${Number(total).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</strong></p>
+      ${total ? `<p><strong>Total: $${Number(total).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</strong></p>` : ''}
       ${portalUrl ? `<p style="margin:24px 0"><a href="${portalUrl}" style="background:#d97706;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:700;font-size:1rem">View & Sign Proposal</a></p>` : ''}
       <p style="color:#888;font-size:.85rem">If the button above doesn't work, copy and paste this link into your browser:<br>${portalUrl || ''}</p>
       <p>Thank you for choosing ${co}.</p>
@@ -15835,7 +15834,7 @@ function sendProposalViaEmail(btn) {
       docType: 'proposal'
     }).then(() => {
       finish('Proposal emailed to ' + job.email + '.');
-      if (prop.status === 'draft') markProposalStatus(prop.id, 'pending');
+      if (prop && prop.status === 'draft') markProposalStatus(prop.id, 'pending');
       else loadProposals(conCurrentJobId);
     }).catch(e => finish('Error sending email: ' + e.message));
   };
