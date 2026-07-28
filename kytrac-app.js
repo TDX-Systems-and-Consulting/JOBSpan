@@ -2694,9 +2694,10 @@ async function renderJobGantt(jobId) {
   // Calculate overall % complete
   let totalTasks = 0, doneTasks = 0;
   _ganttData.forEach(({ rooms }) => {
-    rooms.forEach(({ tasks }) => {
-      totalTasks += tasks.length;
-      doneTasks += tasks.filter(t => t.taskStatus === 'done').length;
+    rooms.forEach(({ room, tasks }) => {
+      const dt = getDisplayTasks(room, tasks);
+      totalTasks += dt.length;
+      doneTasks += dt.filter(t => t.taskStatus === 'done').length;
     });
   });
   const overallPct = totalTasks ? Math.round(doneTasks / totalTasks * 100) : 0;
@@ -2763,7 +2764,7 @@ function renderGanttLeft(jobId, job) {
     if (!phaseCollapsed) {
       rooms.forEach(({ room, tasks }) => {
         const roomCollapsed = _ganttCollapsed[room.id];
-        const roomPct = calcRoomPct(tasks);
+        const roomPct = calcRoomPct(room, tasks);
         const { start: roomStart, end: roomEnd } = getRoomDates(room, phase);
         const roomDays = dateDiff(roomStart, roomEnd);
 
@@ -2782,12 +2783,13 @@ function renderGanttLeft(jobId, job) {
           // Use actual items; fall back to scope notes parsed by line break
           let displayTasks = tasks;
           if (!tasks.length && room.scopeNotes) {
+            const statusMap = room.scopeNoteStatus || {};
             displayTasks = room.scopeNotes.split('\n')
               .map(l => l.trim()).filter(Boolean)
               .map((line, i) => ({
                 id: `scope_${room.id}_${i}`,
                 name: line,
-                taskStatus: 'todo',
+                taskStatus: statusMap[`scope_${room.id}_${i}`] || 'todo',
                 fromScopeNotes: true,
               }));
           }
@@ -2931,9 +2933,10 @@ function renderGanttRight(minDate, maxDate, today) {
         // Mirror displayTasks logic from renderGanttLeft
         let displayTasks = tasks;
         if (!tasks.length && room.scopeNotes) {
+          const statusMap = room.scopeNoteStatus || {};
           displayTasks = room.scopeNotes.split('\n')
             .map(l => l.trim()).filter(Boolean)
-            .map((line, i) => ({ id: `scope_${room.id}_${i}`, name: line, taskStatus: 'todo' }));
+            .map((line, i) => ({ id: `scope_${room.id}_${i}`, name: line, taskStatus: statusMap[`scope_${room.id}_${i}`] || 'todo' }));
         }
         const roomPct = displayTasks.length
           ? Math.round(displayTasks.filter(t => t.taskStatus === 'done').length / displayTasks.length * 100)
@@ -3005,26 +3008,44 @@ function pctColor(pct) {
 function calcJobPct() {
   let total = 0, done = 0;
   _ganttData.forEach(({ rooms }) => {
-    rooms.forEach(({ tasks }) => {
-      total += tasks.length;
-      done += tasks.filter(t => t.taskStatus === 'done').length;
+    rooms.forEach(({ room, tasks }) => {
+      const displayTasks = getDisplayTasks(room, tasks);
+      total += displayTasks.length;
+      done += displayTasks.filter(t => t.taskStatus === 'done').length;
     });
   });
   return total ? Math.round(done / total * 100) : 0;
 }
 
+// Helper to get displayTasks consistently
+function getDisplayTasks(room, tasks) {
+  if (!tasks.length && room.scopeNotes) {
+    const statusMap = room.scopeNoteStatus || {};
+    return room.scopeNotes.split('\n')
+      .map(l => l.trim()).filter(Boolean)
+      .map((line, i) => ({
+        id: `scope_${room.id}_${i}`,
+        name: line,
+        taskStatus: statusMap[`scope_${room.id}_${i}`] || 'todo',
+      }));
+  }
+  return tasks;
+}
+
 function calcPhasePct(rooms) {
   let total = 0, done = 0;
-  rooms.forEach(({ tasks }) => {
-    total += tasks.length;
-    done += tasks.filter(t => t.taskStatus === 'done').length;
+  rooms.forEach(({ room, tasks }) => {
+    const dt = getDisplayTasks(room, tasks);
+    total += dt.length;
+    done += dt.filter(t => t.taskStatus === 'done').length;
   });
   return total ? Math.round(done / total * 100) : 0;
 }
 
-function calcRoomPct(tasks) {
-  if (!tasks.length) return 0;
-  return Math.round(tasks.filter(t => t.taskStatus === 'done').length / tasks.length * 100);
+function calcRoomPct(room, tasks) {
+  const dt = getDisplayTasks(room, tasks);
+  if (!dt.length) return 0;
+  return Math.round(dt.filter(t => t.taskStatus === 'done').length / dt.length * 100);
 }
 
 // Room dates: use room's own dates if set, otherwise auto-divide phase dates equally
@@ -3184,21 +3205,52 @@ window.updatePhaseDate = updatePhaseDate;
 
 async function toggleGanttTask(phaseId, roomId, taskId, checked) {
   if (!_ganttJobId || !conDb) return;
-  await coll('jobs').doc(_ganttJobId)
-    .collection('estimateGroups').doc(phaseId)
-    .collection('subgroups').doc(roomId)
-    .collection('items').doc(taskId)
-    .update({ taskStatus: checked ? 'done' : 'todo' });
-  // Update local cache
-  const entry = _ganttData.find(p => p.phase.id === phaseId);
-  if (entry) {
-    const room = entry.rooms.find(r => r.room.id === roomId);
-    if (room) {
-      const task = room.tasks.find(t => t.id === taskId);
-      if (task) task.taskStatus = checked ? 'done' : 'todo';
+
+  const isScopeNote = taskId.startsWith('scope_');
+
+  if (isScopeNote) {
+    // Scope note tasks — store status in room's scopeNoteStatus map in Firestore
+    const key = taskId; // e.g. scope_roomId_0
+    try {
+      await coll('jobs').doc(_ganttJobId)
+        .collection('estimateGroups').doc(phaseId)
+        .collection('subgroups').doc(roomId)
+        .update({ [`scopeNoteStatus.${key}`]: checked ? 'done' : 'todo' });
+    } catch(e) {
+      console.warn('Could not save scope note status:', e.message);
+    }
+    // Update local cache on the room
+    const entry = _ganttData.find(p => p.phase.id === phaseId);
+    if (entry) {
+      const roomEntry = entry.rooms.find(r => r.room.id === roomId);
+      if (roomEntry) {
+        if (!roomEntry.room.scopeNoteStatus) roomEntry.room.scopeNoteStatus = {};
+        roomEntry.room.scopeNoteStatus[key] = checked ? 'done' : 'todo';
+      }
+    }
+  } else {
+    // Real Firestore item
+    try {
+      await coll('jobs').doc(_ganttJobId)
+        .collection('estimateGroups').doc(phaseId)
+        .collection('subgroups').doc(roomId)
+        .collection('items').doc(taskId)
+        .update({ taskStatus: checked ? 'done' : 'todo' });
+    } catch(e) {
+      console.warn('Could not save task status:', e.message);
+    }
+    // Update local cache
+    const entry = _ganttData.find(p => p.phase.id === phaseId);
+    if (entry) {
+      const roomEntry = entry.rooms.find(r => r.room.id === roomId);
+      if (roomEntry) {
+        const task = roomEntry.tasks.find(t => t.id === taskId);
+        if (task) task.taskStatus = checked ? 'done' : 'todo';
+      }
     }
   }
-  renderJobGantt(_ganttJobId);
+
+  renderGanttFromCache();
 }
 window.toggleGanttTask = toggleGanttTask;
 
@@ -19547,6 +19599,7 @@ function loadEpicTree(jobId) {
             scopeNotes: featData.scopeNotes || '',
             startDate: featData.startDate || null,
             endDate: featData.endDate || null,
+            scopeNoteStatus: featData.scopeNoteStatus || {},
             tasks: [],
           };
 
