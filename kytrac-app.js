@@ -5960,10 +5960,11 @@ async function renderMasterSchedulePage() {
     const s = new Date(startDate), e = new Date(endDate);
     const left = Math.floor((s - minDate) / 86400000) * DAY_W;
     const width = Math.max(DAY_W, Math.ceil((e - s) / 86400000) * DAY_W);
-    const progressOverlay = (pct > 0 && pct <= 100)
-      ? `<div style="position:absolute;left:0;top:0;height:100%;width:${pct}%;background:rgba(255,255,255,0.22);pointer-events:none;border-radius:4px 0 0 4px"></div>`
+    // Progress: dark overlay on the UNFILLED portion so filled section stays bright
+    const progressOverlay = (pct >= 0 && pct < 100)
+      ? `<div style="position:absolute;right:0;top:0;height:100%;width:${100-pct}%;background:rgba(0,0,0,0.45);pointer-events:none;border-radius:0 4px 4px 0"></div>`
       : '';
-    return `<div style="position:absolute;left:${left}px;width:${width}px;height:${height}px;top:${top}px;${color};border-radius:4px;display:flex;align-items:center;overflow:hidden;position:absolute">
+    return `<div style="position:absolute;left:${left}px;width:${width}px;height:${height}px;top:${top}px;${color};border-radius:4px;display:flex;align-items:center;overflow:hidden">
       ${progressOverlay}
       ${width > 60 ? `<span style="position:relative;z-index:1;font-size:.62rem;font-weight:700;color:#fff;padding:0 6px;white-space:nowrap;overflow:hidden;max-width:${width-12}px">${esc(label)}</span>` : ''}
     </div>`;
