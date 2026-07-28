@@ -5854,16 +5854,18 @@ function renderMasterGantt() {
   if (!el) return;
 
   const ACTIVE = ['Scheduled','In Progress','Approved','To Be Scheduled','Inspection Pending'];
-  const jobs = conJobs.filter(j => j.startDate && j.endDate && ACTIVE.includes(j.status))
-    .sort((a,b) => a.startDate.localeCompare(b.startDate));
+  const allActive = conJobs.filter(j => ACTIVE.includes(j.status))
+    .sort((a,b) => (a.startDate||'9999').localeCompare(b.startDate||'9999'));
+  const jobs = allActive.filter(j => j.startDate && j.endDate);
+  const undated = allActive.filter(j => !j.startDate || !j.endDate);
 
-  if (!jobs.length) {
-    el.innerHTML = '<div class="small muted" style="padding:16px;font-style:italic">No scheduled jobs with dates set. Set start and end dates on your jobs to see them here.</div>';
+  if (!allActive.length) {
+    el.innerHTML = '<div class="small muted" style="padding:16px;font-style:italic">No active jobs found.</div>';
     if (meta) meta.textContent = '';
     return;
   }
 
-  if (meta) meta.textContent = jobs.length + ' active job' + (jobs.length !== 1 ? 's' : '');
+  if (meta) meta.textContent = allActive.length + ' active job' + (allActive.length !== 1 ? 's' : '') + (undated.length ? ` · ${undated.length} no dates` : '');
 
   // Date range
   const today = new Date(); today.setHours(0,0,0,0);
@@ -5926,6 +5928,21 @@ function renderMasterGantt() {
           <div style="position:absolute;left:${left - LABEL_W}px;width:${width}px;height:22px;top:9px;${barColor};border-radius:4px;display:flex;align-items:center;overflow:hidden">
             ${width > 60 ? `<span style="font-size:.65rem;font-weight:700;color:#fff;padding:0 8px;white-space:nowrap;overflow:hidden;max-width:${width-16}px">${esc(job.name)}</span>` : ''}
           </div>
+        </div>
+      </div>`;
+  });
+
+  // Undated jobs — show as rows with no bar
+  undated.forEach(job => {
+    rowsHtml += `
+      <div style="display:flex;align-items:center;border-bottom:1px solid rgba(110,145,210,.07);min-height:${ROW_H}px;cursor:pointer;opacity:.6;transition:background .1s"
+           onclick="openJobDetail('${job.id}')" onmouseover="this.style.background='rgba(245,158,11,.05)'" onmouseout="this.style.background=''">
+        <div style="width:${LABEL_W}px;flex-shrink:0;padding:6px 10px;font-size:.78rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border-right:1px solid rgba(110,145,210,.1)">
+          <div style="font-weight:700;color:#eaf0fb;overflow:hidden;text-overflow:ellipsis">${esc(job.name)}</div>
+          <div style="font-size:.68rem;color:var(--muted)">${esc(job.status)} · <span style="color:#f59e0b">No dates set</span></div>
+        </div>
+        <div style="flex:1;min-width:${totalWidth||600}px;height:${ROW_H}px;display:flex;align-items:center;padding-left:12px">
+          <span style="font-size:.7rem;color:var(--muted);font-style:italic">Set start &amp; end dates to show on timeline</span>
         </div>
       </div>`;
   });
