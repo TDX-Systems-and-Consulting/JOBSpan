@@ -5866,37 +5866,20 @@ window.masterGanttOpenJob = masterGanttOpenJob;
 
 function toggleMasterGanttFullscreen() {
   const card = document.getElementById('homeMasterGanttCard');
-  const btn = document.getElementById('masterGanttFullscreenBtn');
   const exitBtn = document.getElementById('masterGanttExitBtn');
   if (!card) return;
 
   const isFullscreen = card.dataset.fullscreen === 'true';
   if (isFullscreen) {
     card.dataset.fullscreen = 'false';
-    card.style.position = '';
-    card.style.top = '';
-    card.style.left = '';
-    card.style.right = '';
-    card.style.bottom = '';
-    card.style.zIndex = '';
-    card.style.height = '';
-    card.style.borderRadius = '';
-    card.style.overflow = '';
-    if (btn) btn.textContent = '⛶ Full Screen';
+    card.style.cssText = 'margin-bottom:16px';
     if (exitBtn) exitBtn.style.display = 'none';
+    document.body.style.overflow = '';
   } else {
     card.dataset.fullscreen = 'true';
-    card.style.position = 'fixed';
-    card.style.top = '0';
-    card.style.left = '0';
-    card.style.right = '0';
-    card.style.bottom = '0';
-    card.style.zIndex = '9999';
-    card.style.height = '100vh';
-    card.style.borderRadius = '0';
-    card.style.overflow = 'hidden';
-    if (btn) btn.textContent = '⛶ Full Screen';
+    card.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;z-index:9999;height:100vh;border-radius:0;overflow:hidden;background:var(--bg);display:flex;flex-direction:column';
     if (exitBtn) exitBtn.style.display = 'block';
+    document.body.style.overflow = 'hidden';
   }
   renderMasterGantt();
 }

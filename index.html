@@ -1255,14 +1255,14 @@
           style="display:none;position:fixed;top:12px;right:16px;z-index:10000;background:rgba(6,14,28,.9);border:1px solid var(--amber-border);color:var(--amber);font-size:.8rem;padding:6px 14px;border-radius:8px;cursor:pointer;font-weight:700">
           ✕ Exit Full Screen
         </button>
-        <div class="kt-card-head" style="display:flex;justify-content:space-between;align-items:center">
+        <div class="kt-card-head" style="display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="toggleMasterGanttFullscreen()">
           <h3>📅 Master Schedule</h3>
           <div style="display:flex;gap:8px;align-items:center">
             <span id="homeMasterGanttMeta" style="font-size:.75rem;color:var(--muted)"></span>
-            <button class="btn" onclick="toggleMasterGanttFullscreen()" id="masterGanttFullscreenBtn" style="font-size:.75rem;padding:4px 10px">⛶ Full Screen</button>
+            <span style="font-size:.75rem;color:var(--amber)">⛶ Full Screen</span>
           </div>
         </div>
-        <div id="homeMasterGantt" style="overflow-x:auto;overflow-y:auto;padding:0 0 8px 0;max-height:calc(100vh - 80px)">
+        <div id="homeMasterGantt" style="overflow:auto;padding:0;flex:1">
           <div class="small muted" style="padding:16px;font-style:italic">Loading schedule...</div>
         </div>
       </div>
