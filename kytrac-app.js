@@ -14149,7 +14149,7 @@ async function applyLaborBurden() {
   });
   if (!laborLines.length) { alert('No Labor line items found on this estimate.'); return; }
 
-  if (!confirm('Rewrite the COST of ' + laborLines.length + ' labor line(s) so total labor cost = $' + totalBurden.toLocaleString() + ' (' + crew + ' crew × ' + days + ' day(s) × 8 hrs × $' + rate + ')?\n\nPrices are NOT changed — only costs, so profit/margin become real.')) return;
+  if (!confirm('Rewrite the COST of ' + laborLines.length + ' labor line(s) so total labor cost = $' + totalBurden.toLocaleString() + ' (' + crew + ' crew × ' + hours + ' hr(s) × $' + rate + '/hr)?\n\nPrices are NOT changed — only costs, so profit/margin become real.')) return;
 
   try {
     for (const L of laborLines) {
