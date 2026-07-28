@@ -2495,12 +2495,15 @@ function openJobDetail(jobId, defaultTab) {
   conLoadLogs(jobId);
   loadJobActivity(jobId);
 
-  // Switch to dashboard tab
-  switchDetailTab(defaultTab || 'dashboard', document.querySelector('#jobDetailModal .con-subtab'));
-  if (defaultTab && defaultTab !== 'dashboard') {
-    setTimeout(() => switchDetailTab(defaultTab, null), 300);
-  }
+  // Switch to dashboard tab first, then jump to requested tab after modal opens
+  switchDetailTab('dashboard', document.querySelector('#jobDetailModal .con-subtab'));
   kOpen('jobDetailModal');
+  if (defaultTab && defaultTab !== 'dashboard') {
+    setTimeout(() => {
+      const btn = document.querySelector(`#jobDetailModal .con-subtab[onclick*="'${defaultTab}'"]`);
+      switchDetailTab(defaultTab, btn || null);
+    }, 300);
+  }
 }
 
 function editCurrentJob() {
