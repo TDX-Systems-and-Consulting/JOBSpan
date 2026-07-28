@@ -3117,6 +3117,8 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
     const container = document.getElementById('ganttContainer');
     if (container && container.dataset.fullscreen === 'true') toggleGanttFullscreen();
+    const masterCard = document.getElementById('homeMasterGanttCard');
+    if (masterCard && masterCard.dataset.fullscreen === 'true') toggleMasterGanttFullscreen();
   }
 });
 
@@ -5848,10 +5850,50 @@ function getMyJobIds() {
 }
 window.getMyJobIds = getMyJobIds;
 
+function toggleMasterGanttFullscreen() {
+  const card = document.getElementById('homeMasterGanttCard');
+  const btn = document.getElementById('masterGanttFullscreenBtn');
+  const exitBtn = document.getElementById('masterGanttExitBtn');
+  if (!card) return;
+
+  const isFullscreen = card.dataset.fullscreen === 'true';
+  if (isFullscreen) {
+    card.dataset.fullscreen = 'false';
+    card.style.position = '';
+    card.style.top = '';
+    card.style.left = '';
+    card.style.right = '';
+    card.style.bottom = '';
+    card.style.zIndex = '';
+    card.style.height = '';
+    card.style.borderRadius = '';
+    card.style.overflow = '';
+    if (btn) btn.textContent = '⛶ Full Screen';
+    if (exitBtn) exitBtn.style.display = 'none';
+  } else {
+    card.dataset.fullscreen = 'true';
+    card.style.position = 'fixed';
+    card.style.top = '0';
+    card.style.left = '0';
+    card.style.right = '0';
+    card.style.bottom = '0';
+    card.style.zIndex = '9999';
+    card.style.height = '100vh';
+    card.style.borderRadius = '0';
+    card.style.overflow = 'hidden';
+    if (btn) btn.textContent = '⛶ Full Screen';
+    if (exitBtn) exitBtn.style.display = 'block';
+  }
+  renderMasterGantt();
+}
+window.toggleMasterGanttFullscreen = toggleMasterGanttFullscreen;
+
 function renderMasterGantt() {
   const el = document.getElementById('homeMasterGantt');
   const meta = document.getElementById('homeMasterGanttMeta');
+  const card = document.getElementById('homeMasterGanttCard');
   if (!el) return;
+  const isFullscreen = card?.dataset.fullscreen === 'true';
 
   const ACTIVE = ['Scheduled','In Progress','Approved','To Be Scheduled','Inspection Pending'];
   const allActive = conJobs.filter(j => ACTIVE.includes(j.status))
