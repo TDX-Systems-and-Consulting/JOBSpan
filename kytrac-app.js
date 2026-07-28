@@ -14112,8 +14112,8 @@ function updateBurdenPreview() {
   const rateLabel = document.getElementById('laborBurdenRateLabel');
   if (rateLabel) rateLabel.textContent = '$' + rate + '/man-hour · $' + (rate * 8) + '/man-day (Settings)';
   const crew = parseFloat(document.getElementById('burdenCrewSize')?.value) || 0;
-  const days = parseFloat(document.getElementById('burdenDays')?.value) || 0;
-  const total = crew * days * 8 * rate;
+  const hours = parseFloat(document.getElementById('burdenDays')?.value) || 0;
+  const total = crew * hours * rate;
   const el = document.getElementById('burdenTotalPreview');
   if (el) el.textContent = total > 0 ? ('$' + total.toLocaleString(undefined, {maximumFractionDigits: 0})) : '—';
 }
@@ -14126,7 +14126,7 @@ function loadLaborBurdenBasis(job) {
   setV('burdenDays', basis ? basis.days : '');
   const status = document.getElementById('burdenStatus');
   if (status) status.textContent = basis
-    ? ('Applied ' + (basis.appliedAt || '') + ' — labor costs reflect ' + basis.crewSize + ' crew × ' + basis.days + ' day(s) at $' + basis.burdenRate + '/man-hr = $' + (basis.totalCost || 0).toLocaleString())
+    ? ('Applied ' + (basis.appliedAt || '') + ' — labor costs reflect ' + basis.crewSize + ' crew × ' + basis.days + ' hour(s) at $' + basis.burdenRate + '/man-hr = $' + (basis.totalCost || 0).toLocaleString())
     : 'Not applied yet — labor line costs still use billing-derived rates.';
   updateBurdenPreview();
 }
@@ -14134,10 +14134,10 @@ function loadLaborBurdenBasis(job) {
 async function applyLaborBurden() {
   if (!conCurrentJobId) { alert('Open a job first.'); return; }
   const crew = parseFloat(document.getElementById('burdenCrewSize')?.value);
-  const days = parseFloat(document.getElementById('burdenDays')?.value);
-  if (!(crew > 0) || !(days > 0)) { alert('Enter crew size and days first.'); return; }
+  const hours = parseFloat(document.getElementById('burdenDays')?.value);
+  if (!(crew > 0) || !(hours > 0)) { alert('Enter crew size and hours first.'); return; }
   const rate = getBurdenRate();
-  const totalBurden = crew * days * 8 * rate;
+  const totalBurden = crew * hours * rate;
 
   // Collect labor lines and their price weight
   const laborLines = [];
