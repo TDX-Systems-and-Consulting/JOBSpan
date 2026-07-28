@@ -2620,6 +2620,8 @@ let _ganttData = [];  // [{phase, rooms:[{room, tasks:[]}]}]
 let _ganttCollapsed = {}; // phaseId → bool, roomId → bool
 let _ganttJobId = null;
 
+let _ganttJobCollapsed = false;
+
 async function renderJobGantt(jobId) {
   _ganttJobId = jobId;
   const job = conJobs.find(j => j.id === jobId);
@@ -2687,21 +2689,24 @@ function renderGanttLeft(jobId, job) {
 
   // Job-level summary row — with date pickers
   const jobPct = calcJobPct();
-  html += `<div class="gantt-left-row phase-row" style="background:rgba(245,158,11,.08);border-bottom:2px solid rgba(245,158,11,.2)">
+  html += `<div class="gantt-left-row phase-row" style="background:rgba(245,158,11,.08);border-bottom:2px solid rgba(245,158,11,.2)" onclick="ganttToggleJob()">
     <div class="gantt-name-cell" style="color:var(--amber);font-size:.85rem">
+      <span class="gantt-collapse-btn">${_ganttJobCollapsed ? '▶' : '▼'}</span>
       🏠 ${esc(job?.name || 'This Job')}
     </div>
     <div class="gantt-days-cell" style="color:var(--amber)">${dateDiff(job?.startDate, job?.endDate) !== null ? dateDiff(job?.startDate, job?.endDate)+'d' : '—'}</div>
-    <div class="gantt-date-cell">${isOwner
+    <div class="gantt-date-cell" onclick="event.stopPropagation()">${isOwner
       ? `<input type="date" value="${job?.startDate||''}" onchange="updateJobDate('startDate',this.value)" onclick="event.stopPropagation()">`
       : (job?.startDate||'—')}
     </div>
-    <div class="gantt-date-cell">${isOwner
+    <div class="gantt-date-cell" onclick="event.stopPropagation()">${isOwner
       ? `<input type="date" value="${job?.endDate||''}" onchange="updateJobDate('endDate',this.value)" onclick="event.stopPropagation()">`
       : (job?.endDate||'—')}
     </div>
     <div class="gantt-pct-cell" style="color:${pctColor(jobPct)};font-weight:800">${jobPct}%</div>
   </div>`;
+
+  if (!_ganttJobCollapsed) {
 
   _ganttData.forEach(({ phase, rooms }) => {
     const phaseCollapsed = _ganttCollapsed[phase.id];
@@ -2806,6 +2811,8 @@ function renderGanttLeft(jobId, job) {
       }
   });
 
+  } // end if (!_ganttJobCollapsed)
+
   container.innerHTML = html;
 }
 
@@ -2877,6 +2884,7 @@ function renderGanttRight(minDate, maxDate, today) {
     bar(job?.startDate, job?.endDate, 'background:linear-gradient(90deg,#b45309,#d97706);border-radius:4px;position:absolute;height:22px;top:7px', jobPct, job?.name||'Job', '') +
     '</div>';
 
+  if (!_ganttJobCollapsed) {
   _ganttData.forEach(({ phase, rooms }) => {
     const phaseCollapsed = _ganttCollapsed[phase.id];
     const phasePct = calcPhasePct(rooms);
@@ -2911,7 +2919,8 @@ function renderGanttRight(minDate, maxDate, today) {
     if (!phaseCollapsed) {
       barsHtml += `<div class="gantt-bar-row" style="height:${rowH}px;background:rgba(8,19,37,.15)"></div>`;
     }
-  });
+  }); // end _ganttData.forEach
+  } // end if (!_ganttJobCollapsed)
 
   const barsContainer = document.getElementById('ganttBars');
   const rightInner = document.getElementById('ganttRightInner');
@@ -3005,6 +3014,12 @@ function getRoomDates(room, phase) {
     end: roomEnd.toISOString().split('T')[0],
   };
 }
+
+function ganttToggleJob() {
+  _ganttJobCollapsed = !_ganttJobCollapsed;
+  renderJobGantt(_ganttJobId);
+}
+window.ganttToggleJob = ganttToggleJob;
 
 function ganttTogglePhase(phaseId) {
   _ganttCollapsed[phaseId] = !_ganttCollapsed[phaseId];
