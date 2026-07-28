@@ -5861,7 +5861,6 @@ function toggleMasterRow(type, id) {
   window._masterCollapsed[id] = nowCollapsed;
 
   function showEl(el) {
-    // left panel rows use flex, right panel bars use block
     el.style.display = el.hasAttribute('data-master-row') ? 'flex' : 'block';
   }
 
@@ -5872,19 +5871,29 @@ function toggleMasterRow(type, id) {
       if (nowCollapsed) {
         el.style.display = 'none';
       } else {
-        // Rooms only visible if their phase is also expanded
         const phaseId = el.getAttribute('data-parent-phase');
-        if (phaseId && window._masterCollapsed[phaseId]) {
-          el.style.display = 'none';
-        } else {
-          showEl(el);
-        }
+        const roomId = el.getAttribute('data-parent-room');
+        if (roomId && window._masterCollapsed[roomId]) { el.style.display = 'none'; return; }
+        if (phaseId && window._masterCollapsed[phaseId]) { el.style.display = 'none'; return; }
+        showEl(el);
       }
     });
   } else if (type === 'phase') {
     const arrow = document.getElementById('masterArrowPhase_' + id);
     if (arrow) arrow.textContent = nowCollapsed ? '▶' : '▼';
     document.querySelectorAll('[data-parent-phase="' + id + '"]').forEach(el => {
+      if (nowCollapsed) {
+        el.style.display = 'none';
+      } else {
+        const roomId = el.getAttribute('data-parent-room');
+        if (roomId && window._masterCollapsed[roomId]) { el.style.display = 'none'; return; }
+        showEl(el);
+      }
+    });
+  } else if (type === 'room') {
+    const arrow = document.getElementById('masterArrowRoom_' + id);
+    if (arrow) arrow.textContent = nowCollapsed ? '▶' : '▼';
+    document.querySelectorAll('[data-parent-room="' + id + '"]').forEach(el => {
       el.style.display = nowCollapsed ? 'none' : (el.hasAttribute('data-master-row') ? 'flex' : 'block');
     });
   }
@@ -6028,11 +6037,17 @@ async function renderMasterSchedulePage() {
             const displayTasks = getDisplayTasks(room, room.tasks || []);
             const doneTasks = displayTasks.filter(t => t.taskStatus === 'done').length;
             const pct = displayTasks.length ? Math.round(doneTasks / displayTasks.length * 100) : 0;
+            const roomCollapsed = window._masterCollapsed[room.id];
+            const roomHidden = jobCollapsed || phaseCollapsed;
 
-            rowsHtml += `<div data-master-row="room" data-room-id="${room.id}" data-parent-phase="${phase.id}" data-parent-job="${job.id}" style="display:${(jobCollapsed||phaseCollapsed)?'none':'flex'};align-items:center;min-height:${PHASE_H}px;border-bottom:1px solid rgba(110,145,210,.05);background:rgba(8,19,37,.15)">
+            rowsHtml += `<div data-master-row="room" data-room-id="${room.id}" data-parent-phase="${phase.id}" data-parent-job="${job.id}" style="display:${roomHidden?'none':'flex'};align-items:center;min-height:${PHASE_H}px;border-bottom:1px solid rgba(110,145,210,.05);background:rgba(8,19,37,.15);cursor:${displayTasks.length?'pointer':'default'}"
+              ${displayTasks.length ? `onclick="toggleMasterRow('room','${room.id}')"` : ''}>
               <div style="width:${LABEL_W}px;flex-shrink:0;padding:4px 10px 4px 40px;border-right:1px solid rgba(110,145,210,.08);overflow:hidden">
-                <div style="font-size:.72rem;color:#94a3b8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(room.name)}</div>
-                <div style="font-size:.62rem;color:var(--muted)">${doneTasks}/${displayTasks.length} tasks · ${pct}%</div>
+                <div style="display:flex;align-items:center;gap:5px">
+                  ${displayTasks.length ? `<span id="masterArrowRoom_${room.id}" style="font-size:.58rem;color:var(--muted)">${roomCollapsed?'▶':'▼'}</span>` : '<span style="width:10px"></span>'}
+                  <span style="font-size:.72rem;color:#94a3b8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(room.name)}</span>
+                </div>
+                <div style="font-size:.62rem;color:var(--muted);padding-left:15px">${doneTasks}/${displayTasks.length} tasks · ${pct}%</div>
               </div>
             </div>`;
 
@@ -6040,9 +6055,23 @@ async function renderMasterSchedulePage() {
               : room.endDate && new Date(room.endDate) < today ? 'background:#ef4444'
               : 'background:linear-gradient(90deg,#0d9488,#14b8a6)';
 
-            barsHtml += `<div data-master-bar="room" data-room-id="${room.id}" data-parent-phase="${phase.id}" data-parent-job="${job.id}" style="display:${(jobCollapsed||phaseCollapsed)?'none':'block'};min-height:${PHASE_H}px;border-bottom:1px solid rgba(110,145,210,.05);background:rgba(8,19,37,.1);position:relative">
+            barsHtml += `<div data-master-bar="room" data-room-id="${room.id}" data-parent-phase="${phase.id}" data-parent-job="${job.id}" style="display:${roomHidden?'none':'block'};min-height:${PHASE_H}px;border-bottom:1px solid rgba(110,145,210,.05);background:rgba(8,19,37,.1);position:relative">
               ${bar(room.startDate || phase.startDate, room.endDate || phase.endDate, roomColor, 12, 10, room.name)}
             </div>`;
+
+            // Task rows
+            const TASK_H = 28;
+            displayTasks.forEach((task, ti) => {
+              const isDone = task.taskStatus === 'done';
+              const taskHidden = roomHidden || roomCollapsed;
+              rowsHtml += `<div data-master-row="task" data-task-idx="${ti}" data-parent-room="${room.id}" data-parent-phase="${phase.id}" data-parent-job="${job.id}" style="display:${taskHidden?'none':'flex'};align-items:center;min-height:${TASK_H}px;border-bottom:1px solid rgba(110,145,210,.03);background:rgba(8,19,37,.08)">
+                <div style="width:${LABEL_W}px;flex-shrink:0;padding:3px 10px 3px 54px;border-right:1px solid rgba(110,145,210,.06);overflow:hidden;display:flex;align-items:center;gap:6px">
+                  <span style="font-size:.75rem;color:${isDone?'#10b981':'var(--muted)'}">☑</span>
+                  <span style="font-size:.68rem;color:${isDone?'#10b981':'#64748b'};text-decoration:${isDone?'line-through':'none'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(task.name)}</span>
+                </div>
+              </div>`;
+              barsHtml += `<div data-master-bar="task" data-parent-room="${room.id}" data-parent-job="${job.id}" style="display:${taskHidden?'none':'block'};min-height:${TASK_H}px;border-bottom:1px solid rgba(110,145,210,.03);background:rgba(8,19,37,.05)"></div>`;
+            });
           });
         }
       });
@@ -6327,7 +6356,6 @@ function renderHomeDashboard() {
   renderWhatsChanged();
   renderCompanyLaborEfficiency();
   renderOffToday();
-  renderMasterGantt();
 }
 window.renderHomeDashboard = renderHomeDashboard;
 
