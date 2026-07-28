@@ -17618,15 +17618,8 @@ window.tplAddPaintToEstimate = tplAddPaintToEstimate;
 
 function openSmartAdd() {
   if (!estGroups.length) {
-    // Auto-create a group if none exists
-    const name = 'General';
-    if (!conDb || !conCurrentJobId) return;
-    coll('jobs').doc(conCurrentJobId).collection('estimateGroups').add({
-      name, order:0, createdAt: firebase.firestore.FieldValue.serverTimestamp()
-    }).then(ref => {
-      estGroups.push({ id: ref.id, name, order:0, subgroups:[], directItems:[] });
-      _launchSmartAdd();
-    }).catch(e => alert('Error: ' + e.message));
+    alert('Add a group first (click "+ Group") before using Smart Add.');
+    return;
   } else {
     _launchSmartAdd();
   }
