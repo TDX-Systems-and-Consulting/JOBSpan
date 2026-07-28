@@ -5955,13 +5955,17 @@ async function renderMasterSchedulePage() {
   // Collapse state
   if (!window._masterCollapsed) window._masterCollapsed = {};
 
-  function bar(startDate, endDate, color, height, top, label) {
+  function bar(startDate, endDate, color, height, top, label, pct) {
     if (!startDate || !endDate) return '';
     const s = new Date(startDate), e = new Date(endDate);
     const left = Math.floor((s - minDate) / 86400000) * DAY_W;
     const width = Math.max(DAY_W, Math.ceil((e - s) / 86400000) * DAY_W);
-    return `<div style="position:absolute;left:${left}px;width:${width}px;height:${height}px;top:${top}px;${color};border-radius:4px;display:flex;align-items:center;overflow:hidden">
-      ${width > 60 ? `<span style="font-size:.62rem;font-weight:700;color:#fff;padding:0 6px;white-space:nowrap;overflow:hidden;max-width:${width-12}px">${esc(label)}</span>` : ''}
+    const progressOverlay = (pct > 0 && pct <= 100)
+      ? `<div style="position:absolute;left:0;top:0;height:100%;width:${pct}%;background:rgba(255,255,255,0.22);pointer-events:none;border-radius:4px 0 0 4px"></div>`
+      : '';
+    return `<div style="position:absolute;left:${left}px;width:${width}px;height:${height}px;top:${top}px;${color};border-radius:4px;display:flex;align-items:center;overflow:hidden;position:absolute">
+      ${progressOverlay}
+      ${width > 60 ? `<span style="position:relative;z-index:1;font-size:.62rem;font-weight:700;color:#fff;padding:0 6px;white-space:nowrap;overflow:hidden;max-width:${width-12}px">${esc(label)}</span>` : ''}
     </div>`;
   }
 
@@ -5992,13 +5996,31 @@ async function renderMasterSchedulePage() {
       : isActive ? 'background:linear-gradient(90deg,#065f46,#10b981)'
       : 'background:linear-gradient(90deg,#b45309,#d97706)';
 
+    // Calculate job % complete
+    const _allPhases = jobPhaseMap[job.id] || [];
+    let _jobDone = 0, _jobTotal = 0;
+    _allPhases.forEach(p => {
+      (p.features || []).forEach(room => {
+        const sm = room.scopeNoteStatus || {};
+        const tl = (room.scopeNotes && room.scopeNotes.trim())
+          ? room.scopeNotes.split('\n').map(l=>l.trim()).filter(Boolean).map((ln,i)=>({taskStatus:sm['scope_'+room.id+'_'+i]||'todo'}))
+          : (room.tasks||[]);
+        _jobTotal += tl.length;
+        _jobDone += tl.filter(t=>t.taskStatus==='done').length;
+      });
+    });
+    const _jobPct = _jobTotal ? Math.round(_jobDone / _jobTotal * 100) : 0;
+    const _jobPctColor = _jobPct===100 ? '#10b981' : _jobPct>0 ? '#60a5fa' : 'var(--muted)';
+
+
     // Job row — left
     rowsHtml += `<div data-master-row="job" data-job-id="${job.id}" style="display:flex;align-items:center;min-height:${ROW_H}px;border-bottom:1px solid rgba(110,145,210,.1);background:rgba(245,158,11,.06);cursor:pointer"
       onclick="toggleMasterRow('job','${job.id}')">
       <div style="width:${LABEL_W}px;flex-shrink:0;padding:6px 10px;border-right:1px solid rgba(110,145,210,.1);overflow:hidden">
         <div style="display:flex;align-items:center;gap:6px">
           <span id="masterArrowJob_${job.id}" style="font-size:.65rem;color:var(--muted)">${jobCollapsed ? '▶' : '▼'}</span>
-          <span style="font-size:.8rem;font-weight:800;color:var(--amber);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(job.name)}</span>
+          <span style="font-size:.8rem;font-weight:800;color:var(--amber);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">${esc(job.name)}</span>
+          <span style="font-size:.68rem;font-weight:700;color:${_jobPctColor};flex-shrink:0;padding-left:4px">${_jobPct}%</span>
         </div>
         <div style="font-size:.68rem;color:var(--muted);padding-left:16px">${esc(job.status)}${job.startDate ? ' · ' + job.startDate + ' → ' + (job.endDate||'?') : ' · No dates'}</div>
       </div>
@@ -6006,7 +6028,7 @@ async function renderMasterSchedulePage() {
 
     // Job bar — right
     barsHtml += `<div data-master-bar="job" data-job-id="${job.id}" style="min-height:${ROW_H}px;border-bottom:1px solid rgba(110,145,210,.1);background:rgba(245,158,11,.03);position:relative">
-      ${bar(job.startDate, job.endDate, jobBarColor, 22, 9, job.name)}
+      ${bar(job.startDate, job.endDate, jobBarColor, 22, 9, job.name, _jobPct)}
     </div>`;
 
     // Phase rows
@@ -6064,7 +6086,7 @@ async function renderMasterSchedulePage() {
               : 'background:linear-gradient(90deg,#0d9488,#14b8a6)';
 
             barsHtml += `<div data-master-bar="room" data-room-id="${room.id}" data-parent-phase="${phase.id}" data-parent-job="${job.id}" style="display:${roomHidden?'none':'block'};min-height:${PHASE_H}px;border-bottom:1px solid rgba(110,145,210,.05);background:rgba(8,19,37,.1);position:relative">
-              ${bar(room.startDate || phase.startDate, room.endDate || phase.endDate, roomColor, 12, 10, room.name)}
+              ${bar(room.startDate || phase.startDate, room.endDate || phase.endDate, roomColor, 12, 10, room.name, pct)}
             </div>`;
 
             // Task rows
@@ -6103,7 +6125,7 @@ async function renderMasterSchedulePage() {
   el.innerHTML = `
     <div style="display:flex;height:100%;overflow:hidden" id="masterPageContainer">
       <!-- Left panel -->
-      <div style="width:${LABEL_W}px;flex-shrink:0;overflow-y:auto;border-right:none" id="masterPageLeft">
+      <div style="width:${LABEL_W}px;flex-shrink:0;overflow:hidden;border-right:none" id="masterPageLeft">
         <div style="height:32px;background:rgba(8,19,37,.9);border-bottom:2px solid rgba(110,145,210,.2);display:flex;align-items:center;padding:0 10px;font-size:.7rem;font-weight:800;color:var(--muted);position:sticky;top:0;z-index:5">JOB / PHASE / ROOM</div>
         ${rowsHtml}
       </div>
