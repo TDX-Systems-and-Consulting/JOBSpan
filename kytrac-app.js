@@ -6804,6 +6804,12 @@ function renderActivityFeed(targetElId, itemCap) {
         const ms = l.createdAt?.toDate ? l.createdAt.toDate().getTime() : 0;
         if (l.type === 'status_change') {
           items.push({ icon: l.toStatus === 'Closed Lost' ? '🔴' : '🔄', text: l.notes || 'Status changed', sub: job ? job.name : '', jobId, ms });
+        } else if (l.type === 'proposal_emailed') {
+          items.push({ icon: '📧', text: l.notes || 'Proposal emailed to customer', sub: job ? job.name : '', jobId, ms });
+        } else if (l.type === 'proposal_viewed') {
+          items.push({ icon: '👁', text: 'Customer opened proposal in portal', sub: job ? job.name : '', jobId, ms });
+        } else if (l.type === 'proposal_signed') {
+          items.push({ icon: '✅', text: l.notes || 'Customer signed proposal', sub: job ? job.name : '', jobId, ms });
         } else {
           items.push({ icon:'📋', text: l.notes ? (l.notes.length > 60 ? l.notes.slice(0,60)+'…' : l.notes) : 'Daily log added', sub: job ? job.name : '', jobId, ms });
         }
@@ -6820,6 +6826,12 @@ function renderActivityFeed(targetElId, itemCap) {
             const ms = l.createdAt?.toDate ? l.createdAt.toDate().getTime() : 0;
             if (l.type === 'status_change') {
               items.push({ icon: l.toStatus === 'Closed Lost' ? '🔴' : '🔄', text: l.notes || 'Status changed', sub: job.name, jobId: job.id, ms });
+            } else if (l.type === 'proposal_emailed') {
+              items.push({ icon: '📧', text: l.notes || 'Proposal emailed to customer', sub: job.name, jobId: job.id, ms });
+            } else if (l.type === 'proposal_viewed') {
+              items.push({ icon: '👁', text: 'Customer opened proposal in portal', sub: job.name, jobId: job.id, ms });
+            } else if (l.type === 'proposal_signed') {
+              items.push({ icon: '✅', text: l.notes || 'Customer signed proposal', sub: job.name, jobId: job.id, ms });
             } else {
               items.push({ icon:'📋', text: l.notes ? (l.notes.length > 60 ? l.notes.slice(0,60)+'…' : l.notes) : 'Daily log added', sub: job.name, jobId: job.id, ms });
             }
@@ -12299,7 +12311,20 @@ function renderPortalProposal(prop, jobId) {
     _portalProposalColl(jobId).doc(prop.id).update({
       viewedAt: firebase.firestore.FieldValue.serverTimestamp(),
       lastPortalToken: _portalToken || ''
-    }).then(() => { prop.viewedAt = { toDate: () => new Date() }; }).catch(() => {});
+    }).then(() => {
+      prop.viewedAt = { toDate: () => new Date() };
+      // Log to activity feed — portal-side write uses firebase directly (no coll() helper)
+      try {
+        firebase.firestore().collection('companies').doc(_portalCompanyId)
+          .collection('jobs').doc(jobId).collection('logs').add({
+            type: 'proposal_viewed',
+            notes: 'Customer opened proposal in portal',
+            jobId, companyId: _portalCompanyId,
+            createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+            createdMs: Date.now(), createdBy: 'customer-portal'
+          });
+      } catch(e) {}
+    }).catch(() => {});
   }
 
   const data = prop.snapshot || { rooms: [], grandTotal: 0, itemized: false, paymentSchedule: null };
@@ -12438,20 +12463,63 @@ function submitPortalSignature(proposalId, jobId, action) {
         _portalLatestProposal.respondedAt = { toDate: () => new Date() };
         renderPortalProposal(_portalLatestProposal, jobId);
 
-        // Auto-advance job status to Approved if still in pre-approval stage
+        const db = firebase.firestore();
+        const companyId = _portalCompanyId;
+        const jobRef = db.collection('companies').doc(companyId).collection('jobs').doc(jobId);
+        const now = firebase.firestore.FieldValue.serverTimestamp();
+        const nowMs = Date.now();
+
+        // 1. Activity log
+        jobRef.collection('logs').add({
+          type: 'proposal_signed', notes: `Customer signed proposal — ${name}`,
+          jobId, companyId, createdAt: now, createdMs: nowMs, createdBy: 'customer-portal'
+        }).catch(()=>{});
+
+        // 2. Auto-advance job to Approved
         const advanceStatuses = ['New Lead','Appointment Set','Estimate Sent','Follow Up','Negotiating'];
+        jobRef.get().then(snap => {
+          if (snap.exists && advanceStatuses.includes(snap.data().status)) {
+            jobRef.update({ status: 'Approved', statusDate: new Date().toISOString().split('T')[0],
+              lastActivity: now, lastActivityNote: `Proposal signed by ${name}` });
+          }
+        }).catch(()=>{});
+
+        // 3. Save signed proposal to Documents
         try {
-          const jobRef = firebase.firestore().collection('companies').doc(_portalCompanyId).collection('jobs').doc(jobId);
-          jobRef.get().then(snap => {
-            if (snap.exists && advanceStatuses.includes(snap.data().status)) {
-              jobRef.update({
-                status: 'Approved',
-                statusDate: new Date().toISOString().split('T')[0],
-                lastActivity: firebase.firestore.FieldValue.serverTimestamp(),
-                lastActivityNote: `Proposal signed by ${name}`
+          const signedHtml = '<html><body style="font-family:Arial;padding:20px;max-width:700px;margin:auto">' +
+            '<h2 style="color:#d97706">Signed Proposal</h2>' +
+            '<p><strong>Signed by:</strong> ' + name + '</p>' +
+            '<p><strong>Date:</strong> ' + new Date().toLocaleDateString() + '</p>' +
+            (dataUrl ? '<p><strong>Signature:</strong><br><img src="' + dataUrl + '" style="height:60px;border:1px solid #ccc;padding:4px;border-radius:4px"></p>' : '') +
+            '<hr><p style="font-size:.85em;color:#666">Proposal ID: ' + proposalId + ' · Job ID: ' + jobId + '</p>' +
+            '</body></html>';
+          const docData = 'data:text/html;base64,' + btoa(unescape(encodeURIComponent(signedHtml)));
+          jobRef.collection('documents').add({
+            name: 'Signed Proposal — ' + new Date().toLocaleDateString(),
+            type: 'text/html', category: 'Contract',
+            jobId, companyId, dataUrl: docData,
+            signedByName: name, signatureDataUrl: dataUrl,
+            uploadedAt: now, uploadedDate: new Date().toISOString().split('T')[0],
+            uploadedBy: 'customer-portal', source: 'proposal_signature'
+          }).catch(()=>{});
+        } catch(e) {}
+
+        // 4. PlannerXD notification
+        try {
+          db.collection('companies').doc(companyId).collection('team')
+            .where('role', 'in', ['Owner', 'Full Access Override']).limit(3).get()
+            .then(snap => {
+              snap.forEach(memberDoc => {
+                db.collection('plannerxd_notifications').doc(memberDoc.id)
+                  .collection('items').add({
+                    type: 'proposal_signed',
+                    title: 'Customer Signed Proposal — Schedule Now',
+                    body: name + ' signed the proposal. Job approved and ready to schedule.',
+                    jobId, companyId, actionLabel: 'Open Job',
+                    createdAt: now, createdMs: nowMs, read: false
+                  }).catch(()=>{});
               });
-            }
-          });
+            }).catch(()=>{});
         } catch(e) {}
       })
       .catch(e => alert('Error submitting signature: ' + e.message));
@@ -15824,6 +15892,25 @@ window.printProposal = printProposal;
 // Functions to be deployed (see postmark-functions.js handoff); until
 // then this will fail gracefully with a clear message rather than
 // silently doing nothing.
+// ── Proposal activity logger ──────────────────────────────────────────────
+// Writes to jobs/{jobId}/logs so the activity feed picks it up automatically.
+// type: proposal_emailed | proposal_viewed | proposal_signed
+function logProposalEvent(jobId, type, note, jobName) {
+  if (!jobId || !conDb || !currentCompanyId) return;
+  const ref = coll('jobs').doc(jobId).collection('logs').doc();
+  ref.set({
+    type,
+    notes: note,
+    jobId,
+    jobName: jobName || '',
+    companyId: currentCompanyId,
+    createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+    createdMs: Date.now(),
+    createdBy: conCurrentUser?.email || 'system'
+  }).catch(() => {});
+}
+window.logProposalEvent = logProposalEvent;
+
 function sendProposalViaEmail(btn) {
   const job = conJobs.find(j => j.id === conCurrentJobId);
   if (!job) return;
@@ -15860,6 +15947,14 @@ function sendProposalViaEmail(btn) {
       docType: 'proposal'
     }).then(() => {
       finish('Proposal emailed to ' + job.email + '.');
+      // Log to activity feed
+      logProposalEvent(conCurrentJobId, 'proposal_emailed', `Proposal emailed to ${job.email}`, job.name || '');
+      // Stamp emailSentAt on the proposal doc
+      const prop2 = conProposals && conProposals[0];
+      if (prop2) {
+        coll('jobs').doc(conCurrentJobId).collection('proposals').doc(prop2.id)
+          .update({ emailSentAt: firebase.firestore.FieldValue.serverTimestamp() }).catch(()=>{});
+      }
       if (prop && prop.status === 'draft') markProposalStatus(prop.id, 'pending');
       else loadProposals(conCurrentJobId);
     }).catch(e => finish('Error sending email: ' + e.message));
