@@ -245,18 +245,9 @@ let _showClosedLanes = false;
 function renderJobsBoard() {
   const board = document.getElementById('jobsBoard');
   if (!board) return;
-  const statusFilter = document.getElementById('jobsStatusFilter')?.value || '';
   board.innerHTML = '';
 
-  // Determine which columns to show
-  let colsToShow;
-  if (statusFilter) {
-    // Single-status filter: find the column that owns this status
-    colsToShow = KANBAN_COLUMNS.filter(c => c.statuses.includes(statusFilter));
-    if (!colsToShow.length) colsToShow = KANBAN_COLUMNS.filter(c => !c.hidden);
-  } else {
-    colsToShow = _showClosedLanes ? KANBAN_COLUMNS : KANBAN_COLUMNS.filter(c => !c.hidden);
-  }
+  const colsToShow = _showClosedLanes ? KANBAN_COLUMNS : KANBAN_COLUMNS.filter(c => !c.hidden);
 
   colsToShow.forEach(col => {
     const jobs = conJobs.filter(j => col.statuses.includes(j.status));
@@ -334,12 +325,6 @@ function ktNav(key, btn) {
   if(key==='costing') renderJobCostDashboard();
 
   if(key==='jobs') {
-    // Only reset filter when navigating via sidebar (not from filterJobsToStage)
-    if (!window._jobsFilterIntent) {
-      const f = document.getElementById('jobsStatusFilter');
-      if (f) { f.value = ''; }
-    }
-    window._jobsFilterIntent = false;
     if(_jobsView === 'kanban') renderJobsBoard();
     else conRenderList();
   }
@@ -6385,17 +6370,8 @@ window.renderHomeDashboard = renderHomeDashboard;
 
 // Pipeline click — filter Jobs page to selected stage group
 function filterJobsToStage(key) {
-  const statusMap = PIPELINE_BUCKETS;
-  const statuses = statusMap[key] || [];
-  window._jobsFilterIntent = true; // signal: don't reset filter on nav
+  // Navigate to Jobs page — board shows all columns, user can see the stage
   ktNav('jobs', document.querySelector('.kt-nav-item:nth-child(5)'));
-  setTimeout(() => {
-    const filterEl = document.getElementById('jobsStatusFilter');
-    if (filterEl && statuses.length) {
-      filterEl.value = statuses[0];
-      filterEl.dispatchEvent(new Event('change'));
-    }
-  }, 200);
 }
 window.filterJobsToStage = filterJobsToStage;
 
