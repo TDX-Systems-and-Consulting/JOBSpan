@@ -126,6 +126,9 @@ service cloud.firestore {
       // General team-collaboration data, same access level as jobs.
       match /todos/{todoId} {
         allow read, write: if inCompany(companyId);
+        allow create: if request.auth == null
+          && request.resource.data.source == 'proposal_signed'
+          && request.resource.data.companyId == companyId;
       }
       match /vendors/{vendorId} {
         allow read, write: if inCompany(companyId);

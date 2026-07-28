@@ -2495,20 +2495,9 @@ function openJobDetail(jobId, defaultTab) {
   conLoadLogs(jobId);
   loadJobActivity(jobId);
 
-  // Open modal first, then switch to requested tab
+  // Open modal
   switchDetailTab('dashboard', document.querySelector('#jobDetailModal .con-subtab'));
   kOpen('jobDetailModal');
-  if (defaultTab && defaultTab !== 'dashboard') {
-    window._pendingDetailTab = defaultTab;
-    // Try at 400ms, 800ms, and 1200ms to handle any async callbacks that reset the tab
-    [400, 800, 1200].forEach(delay => {
-      setTimeout(() => {
-        if (window._pendingDetailTab !== defaultTab) return; // already handled
-        const btn = document.querySelector(`#jobDetailModal .con-subtab[onclick*="'${defaultTab}'"]`);
-        if (btn) { btn.click(); window._pendingDetailTab = null; }
-      }, delay);
-    });
-  }
 }
 
 function editCurrentJob() {
@@ -12539,7 +12528,26 @@ function submitPortalSignature(proposalId, jobId, action) {
           }).catch(()=>{});
         }
 
-        // 4. PlannerXD notification
+        // 4. Create To-Do: Schedule this job
+        try {
+          const jobNameForTodo = _portalJobName || jobId;
+          db.collection('companies').doc(companyId).collection('todos').add({
+            text: 'Schedule job — ' + jobNameForTodo + ' (customer signed proposal)',
+            priority: 'high',
+            dueDate: '',
+            jobId,
+            jobName: jobNameForTodo,
+            assignee: '',
+            assigneeName: '',
+            done: false,
+            companyId,
+            createdAt: now,
+            createdBy: 'customer-portal',
+            source: 'proposal_signed'
+          }).catch(()=>{});
+        } catch(e) {}
+
+        // 5. PlannerXD notification
         try {
           db.collection('companies').doc(companyId).collection('team')
             .where('role', 'in', ['Owner', 'Full Access Override']).limit(3).get()
@@ -15963,7 +15971,7 @@ function renderProposalHistory() {
       ? `<div style="background:rgba(16,185,129,.12);border:1px solid rgba(16,185,129,.3);border-radius:8px;padding:8px 12px;margin:4px 0;font-size:.78rem;color:#1dbb87;display:flex;align-items:center;gap:8px">
           ✅ <strong>Signed by ${esc(p.signedByName)}</strong>${p.respondedAt?.toDate ? ' on ' + p.respondedAt.toDate().toLocaleDateString() : ''}
           ${p.signatureDataUrl ? `<img src="${p.signatureDataUrl}" style="height:32px;background:#fff;border-radius:4px;padding:2px 6px;margin-left:8px">` : ''}
-          <span onclick="event.stopPropagation();openJobDetail('${conCurrentJobId}','phases')" style="margin-left:auto;font-size:.72rem;color:#6ee7b7;cursor:pointer;text-decoration:underline;text-underline-offset:2px">Ready to schedule →</span>
+          <span style="margin-left:auto;font-size:.72rem;color:#6ee7b7">✅ To-Do created to schedule</span>
         </div>`
       : '';
     const viewedText = p.viewedAt?.toDate
