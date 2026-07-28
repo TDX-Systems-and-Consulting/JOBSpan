@@ -8923,7 +8923,7 @@ window.clearLogo = clearLogo;
 // create your own" path that let uninvited strangers spin up companies.
 // Enforced server-side too (firestore.rules, companies create rule), so
 // keep this list and the rules pattern in sync when adding domains.
-const SIGNUP_ALLOWED_DOMAINS = ['7pillarsgroup.org', 'jtxdgroup.com'];
+const SIGNUP_ALLOWED_DOMAINS = ['7pillarsgroup.org', '7pillarsgroup.com', 'jtxdgroup.com'];
 
 function canCreateCompany(email) {
   const domain = (email || '').toLowerCase().split('@')[1] || '';
