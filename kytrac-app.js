@@ -6710,7 +6710,7 @@ function addCatalogItemToEstimate(catItem) {
     createdAt: firebase.firestore.FieldValue.serverTimestamp()
   };
 
-  const groupName = catItem.category || 'General';
+  const groupName = catItem.category || catItem.costCodeName || 'Uncategorized';
 
   (async () => {
     let group = estGroups.find(g => g.name.toLowerCase() === groupName.toLowerCase());
