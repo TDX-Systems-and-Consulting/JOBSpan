@@ -2926,15 +2926,25 @@ function renderGanttRight(minDate, maxDate, today) {
     if (!phaseCollapsed) {
       rooms.forEach(({ room, tasks }) => {
         const roomCollapsed = _ganttCollapsed[room.id];
-        const roomPct = calcRoomPct(tasks);
         const { start: roomStart, end: roomEnd } = getRoomDates(room, phase);
+
+        // Mirror displayTasks logic from renderGanttLeft
+        let displayTasks = tasks;
+        if (!tasks.length && room.scopeNotes) {
+          displayTasks = room.scopeNotes.split('\n')
+            .map(l => l.trim()).filter(Boolean)
+            .map((line, i) => ({ id: `scope_${room.id}_${i}`, name: line, taskStatus: 'todo' }));
+        }
+        const roomPct = displayTasks.length
+          ? Math.round(displayTasks.filter(t => t.taskStatus === 'done').length / displayTasks.length * 100)
+          : 0;
 
         barsHtml += barRow('background:rgba(8,19,37,.2)') +
           bar(roomStart, roomEnd, 'background:linear-gradient(90deg,#0d9488,#14b8a6);border-radius:3px;position:absolute;height:16px;top:10px', roomPct, room.name, '') +
           '</div>';
 
         if (!roomCollapsed) {
-          tasks.forEach(task => {
+          displayTasks.forEach(task => {
             const isDone = task.taskStatus === 'done';
             barsHtml += barRow() +
               bar(roomStart, roomEnd, `background:${isDone?'#10b981':'#334155'};border-radius:2px;position:absolute;height:8px;top:14px`, isDone?100:0, '', '') +
