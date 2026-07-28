@@ -12499,7 +12499,7 @@ function submitPortalSignature(proposalId, jobId, action) {
             '<p><strong>Signed by:</strong> ' + name + '</p>' +
             '<p><strong>Date:</strong> ' + new Date().toLocaleDateString() + '</p>' +
             (dataUrl ? '<p><strong>Signature:</strong><br><img src="' + dataUrl + '" style="height:60px;border:1px solid #ccc;padding:4px;border-radius:4px"></p>' : '') +
-            '<hr><p style="font-size:.85em;color:#666">Proposal ID: ' + proposalId + ' · Job ID: ' + jobId + '</p>' +
+            '<hr><p style="font-size:.85em;color:#666">Proposal ID: ' + proposalId + ' &middot; Job ID: ' + jobId + '</p>' +
             '</body></html>';
           const docData = 'data:text/html;base64,' + btoa(unescape(encodeURIComponent(signedHtml)));
           db.collection('companies').doc(companyId).collection('documents').add({
@@ -15955,7 +15955,7 @@ function renderProposalHistory() {
       ? `<div style="background:rgba(16,185,129,.12);border:1px solid rgba(16,185,129,.3);border-radius:8px;padding:8px 12px;margin:4px 0;font-size:.78rem;color:#1dbb87;display:flex;align-items:center;gap:8px">
           ✅ <strong>Signed by ${esc(p.signedByName)}</strong>${p.respondedAt?.toDate ? ' on ' + p.respondedAt.toDate().toLocaleDateString() : ''}
           ${p.signatureDataUrl ? `<img src="${p.signatureDataUrl}" style="height:32px;background:#fff;border-radius:4px;padding:2px 6px;margin-left:8px">` : ''}
-          <span style="margin-left:auto;font-size:.72rem;color:#6ee7b7">Ready to schedule →</span>
+          <span onclick="event.stopPropagation();openJobDetail('${conCurrentJobId}','schedule')" style="margin-left:auto;font-size:.72rem;color:#6ee7b7;cursor:pointer;text-decoration:underline;text-underline-offset:2px">Ready to schedule →</span>
         </div>`
       : '';
     const viewedText = p.viewedAt?.toDate
