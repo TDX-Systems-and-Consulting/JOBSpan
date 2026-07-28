@@ -5855,6 +5855,46 @@ function getMyJobIds() {
 }
 window.getMyJobIds = getMyJobIds;
 
+function toggleMasterRow(type, id) {
+  if (!window._masterCollapsed) window._masterCollapsed = {};
+  const nowCollapsed = !window._masterCollapsed[id];
+  window._masterCollapsed[id] = nowCollapsed;
+
+  if (type === 'job') {
+    // Update arrow
+    const arrow = document.getElementById('masterArrowJob_' + id);
+    if (arrow) arrow.textContent = nowCollapsed ? '▶' : '▼';
+    // Hide/show all phases and rooms belonging to this job
+    document.querySelectorAll(`[data-parent-job="${id}"]`).forEach(el => {
+      const isRoom = el.dataset.masterRow === 'room' || el.dataset.masterBar === 'room';
+      if (nowCollapsed) {
+        el.style.display = 'none';
+      } else {
+        // Only show rooms if their parent phase is also not collapsed
+        if (isRoom) {
+          const phaseId = el.dataset.parentPhase;
+          if (window._masterCollapsed[phaseId]) {
+            el.style.display = 'none';
+            return;
+          }
+        }
+        const isLeftRow = el.dataset.masterRow !== undefined;
+        el.style.display = isLeftRow ? 'flex' : 'block';
+      }
+    });
+  } else if (type === 'phase') {
+    // Update arrow
+    const arrow = document.getElementById('masterArrowPhase_' + id);
+    if (arrow) arrow.textContent = nowCollapsed ? '▶' : '▼';
+    // Hide/show rooms belonging to this phase
+    document.querySelectorAll(`[data-parent-phase="${id}"]`).forEach(el => {
+      const isLeftRow = el.dataset.masterRow !== undefined;
+      el.style.display = nowCollapsed ? 'none' : (isLeftRow ? 'flex' : 'block');
+    });
+  }
+}
+window.toggleMasterRow = toggleMasterRow;
+
 async function renderMasterSchedulePage() {
   const el = document.getElementById('masterPageGantt');
   const meta = document.getElementById('masterPageMeta');
@@ -5948,11 +5988,11 @@ async function renderMasterSchedulePage() {
       : 'background:linear-gradient(90deg,#b45309,#d97706)';
 
     // Job row — left
-    rowsHtml += `<div style="display:flex;align-items:center;min-height:${ROW_H}px;border-bottom:1px solid rgba(110,145,210,.1);background:rgba(245,158,11,.06);cursor:pointer"
-      onclick="window._masterCollapsed['${job.id}']=!window._masterCollapsed['${job.id}'];renderMasterSchedulePage()">
+    rowsHtml += `<div data-master-row="job" data-job-id="${job.id}" style="display:flex;align-items:center;min-height:${ROW_H}px;border-bottom:1px solid rgba(110,145,210,.1);background:rgba(245,158,11,.06);cursor:pointer"
+      onclick="toggleMasterRow('job','${job.id}')">
       <div style="width:${LABEL_W}px;flex-shrink:0;padding:6px 10px;border-right:1px solid rgba(110,145,210,.1);overflow:hidden">
         <div style="display:flex;align-items:center;gap:6px">
-          <span style="font-size:.65rem;color:var(--muted)">${jobCollapsed ? '▶' : '▼'}</span>
+          <span id="masterArrowJob_${job.id}" style="font-size:.65rem;color:var(--muted)">${jobCollapsed ? '▶' : '▼'}</span>
           <span style="font-size:.8rem;font-weight:800;color:var(--amber);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(job.name)}</span>
         </div>
         <div style="font-size:.68rem;color:var(--muted);padding-left:16px">${esc(job.status)}${job.startDate ? ' · ' + job.startDate + ' → ' + (job.endDate||'?') : ' · No dates'}</div>
@@ -5960,7 +6000,7 @@ async function renderMasterSchedulePage() {
     </div>`;
 
     // Job bar — right
-    barsHtml += `<div style="min-height:${ROW_H}px;border-bottom:1px solid rgba(110,145,210,.1);background:rgba(245,158,11,.03);position:relative">
+    barsHtml += `<div data-master-bar="job" data-job-id="${job.id}" style="min-height:${ROW_H}px;border-bottom:1px solid rgba(110,145,210,.1);background:rgba(245,158,11,.03);position:relative">
       ${bar(job.startDate, job.endDate, jobBarColor, 22, 9, job.name)}
     </div>`;
 
@@ -5971,18 +6011,18 @@ async function renderMasterSchedulePage() {
         const phaseCollapsed = window._masterCollapsed[phase.id];
 
         // Phase row — left
-        rowsHtml += `<div style="display:flex;align-items:center;min-height:${PHASE_H}px;border-bottom:1px solid rgba(110,145,210,.07);background:rgba(8,19,37,.3);cursor:pointer"
-          onclick="window._masterCollapsed['${phase.id}']=!window._masterCollapsed['${phase.id}'];renderMasterSchedulePage()">
+        rowsHtml += `<div data-master-row="phase" data-phase-id="${phase.id}" data-parent-job="${job.id}" style="display:${jobCollapsed?'none':'flex'};align-items:center;min-height:${PHASE_H}px;border-bottom:1px solid rgba(110,145,210,.07);background:rgba(8,19,37,.3);cursor:pointer"
+          onclick="toggleMasterRow('phase','${phase.id}')">
           <div style="width:${LABEL_W}px;flex-shrink:0;padding:4px 10px 4px 24px;border-right:1px solid rgba(110,145,210,.1);overflow:hidden">
             <div style="display:flex;align-items:center;gap:6px">
-              ${roomCount ? `<span style="font-size:.62rem;color:var(--muted)">${phaseCollapsed ? '▶' : '▼'}</span>` : '<span style="width:12px"></span>'}
+              ${roomCount ? `<span id="masterArrowPhase_${phase.id}" style="font-size:.62rem;color:var(--muted)">${phaseCollapsed ? '▶' : '▼'}</span>` : '<span style="width:12px"></span>'}
               <span style="font-size:.75rem;font-weight:700;color:#93c5fd;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(phase.name)}</span>
             </div>
           </div>
         </div>`;
 
         // Phase bar — right
-        barsHtml += `<div style="min-height:${PHASE_H}px;border-bottom:1px solid rgba(110,145,210,.07);background:rgba(8,19,37,.2);position:relative">
+        barsHtml += `<div data-master-bar="phase" data-phase-id="${phase.id}" data-parent-job="${job.id}" style="display:${jobCollapsed?'none':'block'};min-height:${PHASE_H}px;border-bottom:1px solid rgba(110,145,210,.07);background:rgba(8,19,37,.2);position:relative">
           ${bar(phase.startDate, phase.endDate, 'background:linear-gradient(90deg,#1d4ed8,#3b82f6)', 16, 8, phase.name)}
         </div>`;
 
@@ -5993,7 +6033,7 @@ async function renderMasterSchedulePage() {
             const doneTasks = displayTasks.filter(t => t.taskStatus === 'done').length;
             const pct = displayTasks.length ? Math.round(doneTasks / displayTasks.length * 100) : 0;
 
-            rowsHtml += `<div style="display:flex;align-items:center;min-height:${PHASE_H}px;border-bottom:1px solid rgba(110,145,210,.05);background:rgba(8,19,37,.15)">
+            rowsHtml += `<div data-master-row="room" data-room-id="${room.id}" data-parent-phase="${phase.id}" data-parent-job="${job.id}" style="display:${(jobCollapsed||phaseCollapsed)?'none':'flex'};align-items:center;min-height:${PHASE_H}px;border-bottom:1px solid rgba(110,145,210,.05);background:rgba(8,19,37,.15)">
               <div style="width:${LABEL_W}px;flex-shrink:0;padding:4px 10px 4px 40px;border-right:1px solid rgba(110,145,210,.08);overflow:hidden">
                 <div style="font-size:.72rem;color:#94a3b8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(room.name)}</div>
                 <div style="font-size:.62rem;color:var(--muted)">${doneTasks}/${displayTasks.length} tasks · ${pct}%</div>
@@ -6004,7 +6044,7 @@ async function renderMasterSchedulePage() {
               : room.endDate && new Date(room.endDate) < today ? 'background:#ef4444'
               : 'background:linear-gradient(90deg,#0d9488,#14b8a6)';
 
-            barsHtml += `<div style="min-height:${PHASE_H}px;border-bottom:1px solid rgba(110,145,210,.05);background:rgba(8,19,37,.1);position:relative">
+            barsHtml += `<div data-master-bar="room" data-room-id="${room.id}" data-parent-phase="${phase.id}" data-parent-job="${job.id}" style="display:${(jobCollapsed||phaseCollapsed)?'none':'block'};min-height:${PHASE_H}px;border-bottom:1px solid rgba(110,145,210,.05);background:rgba(8,19,37,.1);position:relative">
               ${bar(room.startDate || phase.startDate, room.endDate || phase.endDate, roomColor, 12, 10, room.name)}
             </div>`;
           });
