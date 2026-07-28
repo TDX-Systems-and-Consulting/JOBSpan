@@ -463,7 +463,7 @@
     .gantt-bar-fill { height:100%; background:rgba(255,255,255,.25); border-radius:inherit; transition:width .3s; }
     .gantt-month-cell { font-size:.72rem; font-weight:800; color:var(--muted); text-align:center; border-right:1px solid rgba(110,145,210,.15); padding:4px 0; flex-shrink:0; }
     .gantt-week-cell { font-size:.66rem; color:rgba(110,145,210,.6); text-align:center; border-right:1px solid rgba(110,145,210,.08); padding:3px 0; flex-shrink:0; }
-    .gantt-today-line { position:absolute; top:0; bottom:0; width:2px; background:rgba(239,68,68,.8); z-index:20; pointer-events:none; }
+    .gantt-today-line { position:absolute; top:0; bottom:0; width:1px; background:rgba(239,68,68,.35); z-index:20; pointer-events:none; }
     .gantt-collapse-btn { font-size:.65rem; width:14px; height:14px; display:inline-flex; align-items:center; justify-content:center; background:rgba(110,145,210,.2); border-radius:2px; flex-shrink:0; color:var(--muted); }
     .kt-board-wrap::-webkit-scrollbar-track { background: rgba(255,255,255,.04); border-radius: 4px; }
     .kt-board-wrap::-webkit-scrollbar-thumb { background: var(--amber-border); border-radius: 4px; }
@@ -4053,7 +4053,7 @@
 
             <!-- RIGHT PANEL: timeline bars -->
             <div id="ganttRight" style="flex:1;overflow:auto">
-              <div id="ganttRightInner" style="position:relative;min-width:600px">
+              <div id="ganttRightInner" style="position:relative;min-width:600px;min-height:100%">
                 <!-- Month/week headers -->
                 <div id="ganttTimeHeader" style="position:sticky;top:0;z-index:10;background:rgba(8,19,37,.95);border-bottom:2px solid rgba(110,145,210,.2)">
                   <div id="ganttMonthRow" style="display:flex;border-bottom:1px solid rgba(110,145,210,.1);height:28px"></div>
@@ -4062,7 +4062,7 @@
                 <!-- Bar rows -->
                 <div id="ganttBars" style="position:relative"></div>
                 <!-- Today line — absolute, drawn after bars render -->
-                <div id="ganttTodayLine" style="position:absolute;top:0;bottom:0;width:2px;background:rgba(239,68,68,.8);z-index:20;pointer-events:none;display:none"></div>
+                <div id="ganttTodayLine" style="position:absolute;top:0;bottom:0;width:1px;background:rgba(239,68,68,.3);z-index:20;pointer-events:none;display:none"></div>
               </div>
             </div>
 
