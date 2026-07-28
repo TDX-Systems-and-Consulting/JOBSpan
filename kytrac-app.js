@@ -19448,6 +19448,8 @@ function loadEpicTree(jobId) {
           name: epicData.name,
           order: epicData.order || 0,
           sprintEnabled: !!epicData.sprintEnabled,
+          startDate: epicData.startDate || null,
+          endDate: epicData.endDate || null,
           features: [],
         };
 
