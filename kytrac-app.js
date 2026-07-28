@@ -2499,11 +2499,15 @@ function openJobDetail(jobId, defaultTab) {
   switchDetailTab('dashboard', document.querySelector('#jobDetailModal .con-subtab'));
   kOpen('jobDetailModal');
   if (defaultTab && defaultTab !== 'dashboard') {
-    setTimeout(() => {
-      const btn = document.querySelector(`#jobDetailModal .con-subtab[onclick*="'${defaultTab}'"]`);
-      if (btn) btn.click();
-      else switchDetailTab(defaultTab, null);
-    }, 500);
+    window._pendingDetailTab = defaultTab;
+    // Try at 400ms, 800ms, and 1200ms to handle any async callbacks that reset the tab
+    [400, 800, 1200].forEach(delay => {
+      setTimeout(() => {
+        if (window._pendingDetailTab !== defaultTab) return; // already handled
+        const btn = document.querySelector(`#jobDetailModal .con-subtab[onclick*="'${defaultTab}'"]`);
+        if (btn) { btn.click(); window._pendingDetailTab = null; }
+      }, delay);
+    });
   }
 }
 
