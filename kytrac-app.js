@@ -2498,7 +2498,7 @@ function openJobDetail(jobId, defaultTab) {
   // Switch to dashboard tab
   switchDetailTab(defaultTab || 'dashboard', document.querySelector('#jobDetailModal .con-subtab'));
   if (defaultTab && defaultTab !== 'dashboard') {
-    setTimeout(() => switchDetailTab(defaultTab, null), 100);
+    setTimeout(() => switchDetailTab(defaultTab, null), 300);
   }
   kOpen('jobDetailModal');
 }
@@ -15955,7 +15955,7 @@ function renderProposalHistory() {
       ? `<div style="background:rgba(16,185,129,.12);border:1px solid rgba(16,185,129,.3);border-radius:8px;padding:8px 12px;margin:4px 0;font-size:.78rem;color:#1dbb87;display:flex;align-items:center;gap:8px">
           ✅ <strong>Signed by ${esc(p.signedByName)}</strong>${p.respondedAt?.toDate ? ' on ' + p.respondedAt.toDate().toLocaleDateString() : ''}
           ${p.signatureDataUrl ? `<img src="${p.signatureDataUrl}" style="height:32px;background:#fff;border-radius:4px;padding:2px 6px;margin-left:8px">` : ''}
-          <span onclick="event.stopPropagation();openJobDetail('${conCurrentJobId}','schedule')" style="margin-left:auto;font-size:.72rem;color:#6ee7b7;cursor:pointer;text-decoration:underline;text-underline-offset:2px">Ready to schedule →</span>
+          <span onclick="event.stopPropagation();openJobDetail('${conCurrentJobId}','phases')" style="margin-left:auto;font-size:.72rem;color:#6ee7b7;cursor:pointer;text-decoration:underline;text-underline-offset:2px">Ready to schedule →</span>
         </div>`
       : '';
     const viewedText = p.viewedAt?.toDate
