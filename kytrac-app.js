@@ -5860,36 +5860,32 @@ function toggleMasterRow(type, id) {
   const nowCollapsed = !window._masterCollapsed[id];
   window._masterCollapsed[id] = nowCollapsed;
 
+  function showEl(el) {
+    // left panel rows use flex, right panel bars use block
+    el.style.display = el.hasAttribute('data-master-row') ? 'flex' : 'block';
+  }
+
   if (type === 'job') {
-    // Update arrow
     const arrow = document.getElementById('masterArrowJob_' + id);
     if (arrow) arrow.textContent = nowCollapsed ? '▶' : '▼';
-    // Hide/show all phases and rooms belonging to this job
-    document.querySelectorAll(`[data-parent-job="${id}"]`).forEach(el => {
-      const isRoom = el.dataset.masterRow === 'room' || el.dataset.masterBar === 'room';
+    document.querySelectorAll('[data-parent-job="' + id + '"]').forEach(el => {
       if (nowCollapsed) {
         el.style.display = 'none';
       } else {
-        // Only show rooms if their parent phase is also not collapsed
-        if (isRoom) {
-          const phaseId = el.dataset.parentPhase;
-          if (window._masterCollapsed[phaseId]) {
-            el.style.display = 'none';
-            return;
-          }
+        // Rooms only visible if their phase is also expanded
+        const phaseId = el.getAttribute('data-parent-phase');
+        if (phaseId && window._masterCollapsed[phaseId]) {
+          el.style.display = 'none';
+        } else {
+          showEl(el);
         }
-        const isLeftRow = el.dataset.masterRow !== undefined;
-        el.style.display = isLeftRow ? 'flex' : 'block';
       }
     });
   } else if (type === 'phase') {
-    // Update arrow
     const arrow = document.getElementById('masterArrowPhase_' + id);
     if (arrow) arrow.textContent = nowCollapsed ? '▶' : '▼';
-    // Hide/show rooms belonging to this phase
-    document.querySelectorAll(`[data-parent-phase="${id}"]`).forEach(el => {
-      const isLeftRow = el.dataset.masterRow !== undefined;
-      el.style.display = nowCollapsed ? 'none' : (isLeftRow ? 'flex' : 'block');
+    document.querySelectorAll('[data-parent-phase="' + id + '"]').forEach(el => {
+      el.style.display = nowCollapsed ? 'none' : (el.hasAttribute('data-master-row') ? 'flex' : 'block');
     });
   }
 }
@@ -6141,8 +6137,8 @@ function renderMasterGantt() {
   const ACTIVE = ['Scheduled','In Progress','Approved','To Be Scheduled','Inspection Pending'];
   const allActive = conJobs.filter(j => ACTIVE.includes(j.status))
     .sort((a,b) => (a.startDate||'9999').localeCompare(b.startDate||'9999'));
-  const jobs = allActive.filter(j => j.startDate && j.endDate && j.startDate !== j.endDate);
-  const undated = allActive.filter(j => !j.startDate || !j.endDate || j.startDate === j.endDate);
+  const jobs = allActive.filter(j => j.startDate && j.endDate);
+  const undated = allActive.filter(j => !j.startDate || !j.endDate);
 
   if (!allActive.length) {
     el.innerHTML = '<div class="small muted" style="padding:16px;font-style:italic">No active jobs found.</div>';
