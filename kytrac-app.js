@@ -6034,7 +6034,15 @@ async function renderMasterSchedulePage() {
         // Room rows
         if (!phaseCollapsed) {
           (phase.features || []).forEach(room => {
-            const displayTasks = getDisplayTasks(room, room.tasks || []);
+            // Prefer scope notes as tasks; fall back to line items only if no scope notes
+            const scopeTaskList = (room.scopeNotes && room.scopeNotes.trim())
+              ? (() => {
+                  const statusMap = room.scopeNoteStatus || {};
+                  return room.scopeNotes.split('\n').map(l => l.trim()).filter(Boolean)
+                    .map((line, i) => ({ id: `scope_${room.id}_${i}`, name: line, taskStatus: statusMap[`scope_${room.id}_${i}`] || 'todo' }));
+                })()
+              : null;
+            const displayTasks = scopeTaskList || getDisplayTasks(room, room.tasks || []);
             const doneTasks = displayTasks.filter(t => t.taskStatus === 'done').length;
             const pct = displayTasks.length ? Math.round(doneTasks / displayTasks.length * 100) : 0;
             const roomCollapsed = window._masterCollapsed[room.id];
