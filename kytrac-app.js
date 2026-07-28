@@ -16000,15 +16000,15 @@ const TIERED_BUNDLES = {
       tiers: {
         low: { label: '42" Littleton White', priceRange: '~$56', lines: [
           { desc: 'Littleton 42 in. LED Indoor White Ceiling Fan with Light Kit', qty: 1, unitCost: 44.97, unitPrice: 56.21, unit: 'ea', type: 'material' },
-          { desc: 'Ceiling fan install Labor (real historical avg, 45 real jobs)', qty: 1, unitCost: 38.30, unitPrice: 44.05, unit: 'hr', type: 'labor' },
+          { desc: 'Ceiling fan install Labor', qty: 1.5, unitCost: getBurdenRate(), unitPrice: Math.round(getBurdenRate() * (1 + getDefaultMarkupForCostType('Labor')/100) * 100)/100, unit: 'hr', type: 'labor' },
         ]},
         med: { label: '44" Hampton Bay Bronze', priceRange: '~$94', lines: [
           { desc: 'Hampton Bay Wellston II 44 in. Indoor LED Bronze Dry Rated Downrod Ceiling Fan with Light Kit and 5 Reversible Blades', qty: 1, unitCost: 74.97, unitPrice: 93.71, unit: 'ea', type: 'material' },
-          { desc: 'Ceiling fan install Labor (real historical avg, 45 real jobs)', qty: 1, unitCost: 38.30, unitPrice: 44.05, unit: 'hr', type: 'labor' },
+          { desc: 'Ceiling fan install Labor', qty: 1.5, unitCost: getBurdenRate(), unitPrice: Math.round(getBurdenRate() * (1 + getDefaultMarkupForCostType('Labor')/100) * 100)/100, unit: 'hr', type: 'labor' },
         ]},
         high: { label: '52" Hampton Bay Menage', priceRange: '~$136', lines: [
           { desc: 'Hampton Bay Menage 52 in. Integrated LED Indoor Low Profile Oil Rubbed Bronze Ceiling Fan with Light Kit', qty: 1, unitCost: 109, unitPrice: 136.25, unit: 'ea', type: 'material' },
-          { desc: 'Ceiling fan install Labor (real historical avg, 45 real jobs)', qty: 1, unitCost: 38.30, unitPrice: 44.05, unit: 'hr', type: 'labor' },
+          { desc: 'Ceiling fan install Labor', qty: 1.5, unitCost: getBurdenRate(), unitPrice: Math.round(getBurdenRate() * (1 + getDefaultMarkupForCostType('Labor')/100) * 100)/100, unit: 'hr', type: 'labor' },
         ]},
       }
     },
@@ -16027,9 +16027,9 @@ const TIERED_BUNDLES = {
       icon: '🌀',
       desc: 'Fan install at existing junction box — patio/exterior locations',
       tiers: {
-        low: { label: '52" Hunter Builder Elite (Indoor/Outdoor)', priceRange: '$224.99 + $44.05 labor', lines: [
+        low: { label: '52" Hunter Builder Elite (Indoor/Outdoor)', priceRange: '$224.99 + labor', lines: [
           { desc: 'Hunter Builder Elite 52 in. Indoor/Outdoor New Bronze Ceiling Fan', qty: 1, unitCost: 179.99, unitPrice: 224.99, unit: 'ea', type: 'material' },
-          { desc: 'Ceiling fan install Labor (real historical avg, 45 real jobs)', qty: 1, unitCost: 38.30, unitPrice: 44.05, unit: 'hr', type: 'labor' },
+          { desc: 'Ceiling fan install Labor', qty: 1.5, unitCost: getBurdenRate(), unitPrice: Math.round(getBurdenRate() * (1 + getDefaultMarkupForCostType('Labor')/100) * 100)/100, unit: 'hr', type: 'labor' },
         ]},
       }
     },
