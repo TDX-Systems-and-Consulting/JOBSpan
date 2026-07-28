@@ -17617,12 +17617,7 @@ async function tplAddPaintToEstimate() {
 window.tplAddPaintToEstimate = tplAddPaintToEstimate;
 
 function openSmartAdd() {
-  if (!estGroups.length) {
-    alert('Add a group first (click "+ Group") before using Smart Add.');
-    return;
-  } else {
-    _launchSmartAdd();
-  }
+  _launchSmartAdd();
 }
 
 function _launchSmartAdd() {
