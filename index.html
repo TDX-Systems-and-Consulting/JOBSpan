@@ -4026,18 +4026,19 @@
           <div style="display:flex;gap:8px;align-items:center">
             <button class="btn" onclick="ganttExpandAll()" style="font-size:.75rem;padding:4px 10px">Expand All</button>
             <button class="btn" onclick="ganttCollapseAll()" style="font-size:.75rem;padding:4px 10px">Collapse All</button>
+            <button class="btn" onclick="toggleGanttFullscreen()" id="ganttFullscreenBtn" style="font-size:.75rem;padding:4px 10px">⛶ Full Screen</button>
             <button class="btn-amber" onclick="openAddPhaseModal()" style="padding:7px 16px;font-size:.82rem">+ Add Phase</button>
           </div>
         </div>
 
         <!-- Gantt container -->
         <div class="kt-card" style="padding:0;overflow:hidden">
-          <div id="ganttContainer" style="display:flex;overflow:hidden">
+          <div id="ganttContainer" style="display:flex;overflow:hidden;transition:all .2s">
 
             <!-- LEFT PANEL: hierarchical task list -->
             <div id="ganttLeft" style="width:480px;flex-shrink:0;overflow-y:auto;border-right:2px solid rgba(110,145,210,.2)">
               <!-- Column headers -->
-              <div style="display:flex;align-items:center;background:rgba(8,19,37,.8);border-bottom:2px solid rgba(110,145,210,.2);position:sticky;top:0;z-index:10">
+              <div style="display:flex;align-items:center;background:rgba(8,19,37,.8);border-bottom:2px solid rgba(110,145,210,.2);position:sticky;top:0;z-index:10;height:56px">
                 <div style="flex:1;min-width:0;padding:8px 10px;font-size:.72rem;font-weight:800;color:var(--muted);border-right:1px solid rgba(110,145,210,.1)">TASK NAME</div>
                 <div style="width:48px;flex-shrink:0;padding:8px 4px;font-size:.72rem;font-weight:800;color:var(--muted);text-align:center;border-right:1px solid rgba(110,145,210,.1)">DAYS</div>
                 <div style="width:96px;flex-shrink:0;padding:8px 6px;font-size:.72rem;font-weight:800;color:var(--muted);border-right:1px solid rgba(110,145,210,.1)">START</div>
@@ -4055,8 +4056,8 @@
               <div id="ganttRightInner" style="position:relative;min-width:600px">
                 <!-- Month/week headers -->
                 <div id="ganttTimeHeader" style="position:sticky;top:0;z-index:10;background:rgba(8,19,37,.95);border-bottom:2px solid rgba(110,145,210,.2)">
-                  <div id="ganttMonthRow" style="display:flex;border-bottom:1px solid rgba(110,145,210,.1)"></div>
-                  <div id="ganttWeekRow" style="display:flex"></div>
+                  <div id="ganttMonthRow" style="display:flex;border-bottom:1px solid rgba(110,145,210,.1);height:28px"></div>
+                  <div id="ganttWeekRow" style="display:flex;height:28px"></div>
                 </div>
                 <!-- Bar rows -->
                 <div id="ganttBars" style="position:relative"></div>

@@ -3045,6 +3045,43 @@ function getRoomDates(room, phase) {
   };
 }
 
+function toggleGanttFullscreen() {
+  const container = document.getElementById('ganttContainer');
+  const btn = document.getElementById('ganttFullscreenBtn');
+  const detailPhases = document.getElementById('detailPhases');
+  if (!container) return;
+
+  const isFullscreen = container.dataset.fullscreen === 'true';
+  if (isFullscreen) {
+    // Exit fullscreen
+    container.dataset.fullscreen = 'false';
+    container.style.position = '';
+    container.style.top = '';
+    container.style.left = '';
+    container.style.right = '';
+    container.style.bottom = '';
+    container.style.zIndex = '';
+    container.style.height = '';
+    container.style.background = '';
+    if (btn) btn.textContent = '⛶ Full Screen';
+  } else {
+    // Enter fullscreen
+    container.dataset.fullscreen = 'true';
+    container.style.position = 'fixed';
+    container.style.top = '0';
+    container.style.left = '0';
+    container.style.right = '0';
+    container.style.bottom = '0';
+    container.style.zIndex = '9999';
+    container.style.height = '100vh';
+    container.style.background = 'rgba(5,14,28,.99)';
+    if (btn) btn.textContent = '✕ Exit Full Screen';
+  }
+  // Re-render to recalculate sizes
+  setTimeout(() => renderGanttFromCache(), 50);
+}
+window.toggleGanttFullscreen = toggleGanttFullscreen;
+
 function ganttToggleJob() {
   _ganttJobCollapsed = !_ganttJobCollapsed;
   renderGanttFromCache();
