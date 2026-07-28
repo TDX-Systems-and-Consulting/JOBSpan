@@ -6066,7 +6066,7 @@ async function renderMasterSchedulePage() {
               const taskHidden = roomHidden || roomCollapsed;
               rowsHtml += `<div data-master-row="task" data-task-idx="${ti}" data-parent-room="${room.id}" data-parent-phase="${phase.id}" data-parent-job="${job.id}" style="display:${taskHidden?'none':'flex'};align-items:center;min-height:${TASK_H}px;border-bottom:1px solid rgba(110,145,210,.03);background:rgba(8,19,37,.08)">
                 <div style="width:${LABEL_W}px;flex-shrink:0;padding:3px 10px 3px 54px;border-right:1px solid rgba(110,145,210,.06);overflow:hidden;display:flex;align-items:center;gap:6px">
-                  <span style="font-size:.75rem;color:${isDone?'#10b981':'var(--muted)'}">☑</span>
+                  <span style="font-size:.75rem;color:${isDone?'#10b981':'var(--muted)'}">${isDone?'☑':'☐'}</span>
                   <span style="font-size:.68rem;color:${isDone?'#10b981':'#64748b'};text-decoration:${isDone?'line-through':'none'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(task.name)}</span>
                 </div>
               </div>`;
@@ -6093,14 +6093,17 @@ async function renderMasterSchedulePage() {
   }
 
   el.innerHTML = `
-    <div style="display:flex;height:100%;overflow:hidden">
+    <div style="display:flex;height:100%;overflow:hidden" id="masterPageContainer">
       <!-- Left panel -->
-      <div style="width:${LABEL_W}px;flex-shrink:0;overflow-y:auto;border-right:2px solid rgba(110,145,210,.2)" id="masterPageLeft">
+      <div style="width:${LABEL_W}px;flex-shrink:0;overflow-y:auto;border-right:none" id="masterPageLeft">
         <div style="height:32px;background:rgba(8,19,37,.9);border-bottom:2px solid rgba(110,145,210,.2);display:flex;align-items:center;padding:0 10px;font-size:.7rem;font-weight:800;color:var(--muted);position:sticky;top:0;z-index:5">JOB / PHASE / ROOM</div>
         ${rowsHtml}
       </div>
+      <!-- Drag handle -->
+      <div id="masterPageDivider" style="width:5px;flex-shrink:0;cursor:col-resize;background:rgba(110,145,210,.2);transition:background .15s;position:relative;z-index:20"
+        onmouseover="this.style.background='rgba(245,158,11,.5)'" onmouseout="this.style.background='rgba(110,145,210,.2)'"></div>
       <!-- Right panel -->
-      <div style="flex:1;overflow:auto;position:relative" id="masterPageRight">
+      <div style="flex:1;overflow:auto;position:relative;min-width:0" id="masterPageRight">
         <div style="min-width:${totalWidth}px;position:relative">
           <!-- Header -->
           <div style="position:sticky;top:0;z-index:10;background:rgba(8,19,37,.95);border-bottom:2px solid rgba(110,145,210,.2)">
@@ -6120,6 +6123,37 @@ async function renderMasterSchedulePage() {
   if (left && right) {
     right.addEventListener('scroll', () => { left.scrollTop = right.scrollTop; });
     left.addEventListener('scroll', () => { right.scrollTop = left.scrollTop; });
+  }
+
+  // Drag-to-resize left panel
+  const divider = document.getElementById('masterPageDivider');
+  const container = document.getElementById('masterPageContainer');
+  if (divider && left && container) {
+    let dragging = false, startX = 0, startW = 0;
+    divider.addEventListener('mousedown', e => {
+      dragging = true;
+      startX = e.clientX;
+      startW = left.offsetWidth;
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+      e.preventDefault();
+    });
+    document.addEventListener('mousemove', e => {
+      if (!dragging) return;
+      const newW = Math.max(160, Math.min(600, startW + (e.clientX - startX)));
+      left.style.width = newW + 'px';
+      // Update all label-width cells
+      document.querySelectorAll('[data-master-row],[data-master-bar]').forEach(row => {
+        const labelCell = row.querySelector('[style*="width:' + LABEL_W + 'px"]') || row.firstElementChild;
+        if (labelCell && labelCell !== row) labelCell.style.width = newW + 'px';
+      });
+    });
+    document.addEventListener('mouseup', () => {
+      if (!dragging) return;
+      dragging = false;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    });
   }
 }
 window.renderMasterSchedulePage = renderMasterSchedulePage;
