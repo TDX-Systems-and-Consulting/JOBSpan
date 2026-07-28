@@ -15379,16 +15379,25 @@ function sendProposalViaEmail(btn) {
   };
 
   const proceed = (portalUrl) => {
-    conFunctions.httpsCallable('sendProposalEmail')({
-      companyId: currentCompanyId,
+    const toName = job.client || job.name || 'Valued Customer';
+    const jobNum = job.jobNumber || '';
+    const total = prop.snapshot?.grandTotal || 0;
+    const co = companyProfile?.companyName || 'JTXD Contracting';
+    const bodyHtml = `
+      <p>Hi ${toName},</p>
+      <p>${co} has sent you a proposal${jobNum ? ' for job <strong>' + jobNum + '</strong>' : ''}.</p>
+      <p><strong>Total: $${Number(total).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</strong></p>
+      ${portalUrl ? `<p style="margin:24px 0"><a href="${portalUrl}" style="background:#d97706;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:700;font-size:1rem">View & Sign Proposal</a></p>` : ''}
+      <p style="color:#888;font-size:.85rem">If the button above doesn't work, copy and paste this link into your browser:<br>${portalUrl || ''}</p>
+      <p>Thank you for choosing ${co}.</p>
+    `;
+    conFunctions.httpsCallable('sendJobspanEmail')({
+      to: job.email,
+      toName,
+      subject: `Your Proposal from ${co}${jobNum ? ' — Job ' + jobNum : ''}`,
+      bodyHtml,
       jobId: conCurrentJobId,
-      proposalId: prop.id,
-      toEmail: job.email,
-      toName: job.client || job.name || '',
-      jobNumber: job.jobNumber || '',
-      grandTotal: prop.snapshot?.grandTotal || 0,
-      portalUrl,
-      companyName: companyProfile?.companyName || ''
+      docType: 'proposal'
     }).then(() => {
       finish('Proposal emailed to ' + job.email + '.');
       if (prop.status === 'draft') markProposalStatus(prop.id, 'pending');
