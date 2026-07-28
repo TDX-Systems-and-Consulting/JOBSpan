@@ -2488,6 +2488,9 @@ function openJobDetail(jobId, defaultTab) {
 
   // Switch to dashboard tab
   switchDetailTab(defaultTab || 'dashboard', document.querySelector('#jobDetailModal .con-subtab'));
+  if (defaultTab && defaultTab !== 'dashboard') {
+    setTimeout(() => switchDetailTab(defaultTab, null), 100);
+  }
   kOpen('jobDetailModal');
 }
 
@@ -5850,6 +5853,17 @@ function getMyJobIds() {
 }
 window.getMyJobIds = getMyJobIds;
 
+function masterGanttOpenJob(jobId) {
+  // Exit fullscreen first if active
+  const card = document.getElementById('homeMasterGanttCard');
+  if (card && card.dataset.fullscreen === 'true') {
+    toggleMasterGanttFullscreen();
+  }
+  // Small delay to let fullscreen exit animate, then open job on Schedule tab
+  setTimeout(() => openJobDetail(jobId, 'schedule'), 150);
+}
+window.masterGanttOpenJob = masterGanttOpenJob;
+
 function toggleMasterGanttFullscreen() {
   const card = document.getElementById('homeMasterGanttCard');
   const btn = document.getElementById('masterGanttFullscreenBtn');
@@ -5959,7 +5973,7 @@ function renderMasterGantt() {
 
     rowsHtml += `
       <div style="display:flex;align-items:center;border-bottom:1px solid rgba(110,145,210,.07);min-height:${ROW_H}px;cursor:pointer;transition:background .1s" 
-           onclick="openJobDetail('${job.id}','schedule')" onmouseover="this.style.background='rgba(245,158,11,.05)'" onmouseout="this.style.background=''">
+           onclick="masterGanttOpenJob('${job.id}')" onmouseover="this.style.background='rgba(245,158,11,.05)'" onmouseout="this.style.background=''">
         <!-- Label -->
         <div style="width:${LABEL_W}px;flex-shrink:0;padding:6px 10px;font-size:.78rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border-right:1px solid rgba(110,145,210,.1)">
           <div style="font-weight:700;color:#eaf0fb;overflow:hidden;text-overflow:ellipsis">${esc(job.name)}</div>
@@ -5978,7 +5992,7 @@ function renderMasterGantt() {
   undated.forEach(job => {
     rowsHtml += `
       <div class="master-gantt-row" style="display:flex;align-items:center;border-bottom:1px solid rgba(110,145,210,.07);min-height:${ROW_H}px;cursor:pointer;opacity:.6;transition:background .1s"
-           onclick="openJobDetail('${job.id}','schedule')" onmouseover="this.style.background='rgba(245,158,11,.05)'" onmouseout="this.style.background=''">
+           onclick="masterGanttOpenJob('${job.id}')" onmouseover="this.style.background='rgba(245,158,11,.05)'" onmouseout="this.style.background=''">
         <div style="width:${LABEL_W}px;flex-shrink:0;padding:6px 10px;font-size:.78rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border-right:1px solid rgba(110,145,210,.1)">
           <div style="font-weight:700;color:#eaf0fb;overflow:hidden;text-overflow:ellipsis">${esc(job.name)}</div>
           <div style="font-size:.68rem;color:var(--muted)">${esc(job.status)} · <span style="color:#f59e0b">No dates set</span></div>
