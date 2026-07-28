@@ -132,6 +132,10 @@ service cloud.firestore {
       }
       match /documents/{docId} {
         allow read, write: if inCompany(companyId);
+        // Portal (anonymous) can create signed proposal documents only
+        allow create: if request.auth == null
+          && request.resource.data.source == 'proposal_signature'
+          && request.resource.data.companyId == companyId;
       }
       match /templates/{templateId} {
         allow read, write: if inCompany(companyId);
