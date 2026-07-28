@@ -27,6 +27,7 @@ const KT_PAGES = {
   reports:            { el:'ktPageReports',            title:'📊 Reports & Analytics' },
   purchaseorders:     { el:'ktPagePurchaseOrders',     title:'📋 Purchase Orders' },
   calendar:           { el:'ktPageCalendar',           title:'📅 Calendar' },
+  masterschedule:     { el:'ktPageMasterschedule',     title:'📊 Master Schedule' },
   time:               { el:'ktPageTime',               title:'⏱ Time Tracking' },
   documents:          { el:'ktPageDocuments',          title:'📁 Documents' },
   todos:              { el:'ktPageTodos',              title:'✅ To-Dos' },
