@@ -2495,14 +2495,15 @@ function openJobDetail(jobId, defaultTab) {
   conLoadLogs(jobId);
   loadJobActivity(jobId);
 
-  // Switch to dashboard tab first, then jump to requested tab after modal opens
+  // Open modal first, then switch to requested tab
   switchDetailTab('dashboard', document.querySelector('#jobDetailModal .con-subtab'));
   kOpen('jobDetailModal');
   if (defaultTab && defaultTab !== 'dashboard') {
     setTimeout(() => {
       const btn = document.querySelector(`#jobDetailModal .con-subtab[onclick*="'${defaultTab}'"]`);
-      switchDetailTab(defaultTab, btn || null);
-    }, 300);
+      if (btn) btn.click();
+      else switchDetailTab(defaultTab, null);
+    }, 500);
   }
 }
 
