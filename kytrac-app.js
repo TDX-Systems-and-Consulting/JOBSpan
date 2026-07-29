@@ -7184,20 +7184,33 @@ function addCatalogItemToEstimate(catItem) {
   };
 
   const groupName = catItem.category || catItem.costCodeName || 'Uncategorized';
+  const jobRef = coll('jobs').doc(conCurrentJobId);
 
   (async () => {
+    // If a subgroup or sub-subgroup is actively selected, add there
+    if (_editingGroupId && _editingSubgroupId && _editingSubSubgroupId) {
+      return jobRef.collection('estimateGroups').doc(_editingGroupId)
+        .collection('subgroups').doc(_editingSubgroupId)
+        .collection('subgroups').doc(_editingSubSubgroupId)
+        .collection('items').add(data);
+    }
+    if (_editingGroupId && _editingSubgroupId) {
+      return jobRef.collection('estimateGroups').doc(_editingGroupId)
+        .collection('subgroups').doc(_editingSubgroupId)
+        .collection('items').add(data);
+    }
+
+    // Otherwise fall back to group by name
     let group = estGroups.find(g => g.name.toLowerCase() === groupName.toLowerCase());
     if (!group) {
-      const ref = await coll('jobs').doc(conCurrentJobId).collection('estimateGroups').add({
+      const ref = await jobRef.collection('estimateGroups').add({
         name: groupName, order: estGroups.length,
         createdAt: firebase.firestore.FieldValue.serverTimestamp()
       });
       group = { id: ref.id, name: groupName, order: estGroups.length, subgroups: [], directItems: [] };
       estGroups.push(group);
     }
-    return coll('jobs').doc(conCurrentJobId)
-      .collection('estimateGroups').doc(group.id)
-      .collection('items').add(data);
+    return jobRef.collection('estimateGroups').doc(group.id).collection('items').add(data);
   })()
     .then(() => {
       loadEstimate(conCurrentJobId);
@@ -14667,6 +14680,7 @@ let estGroups = []; // [{id, name, order, collapsed, subgroups:[{id, name, order
 let _estCollapsed = {}; // groupId/subgroupId -> bool
 let _editingGroupId = null;
 let _editingSubgroupId = null;
+let _editingSubSubgroupId = null;
 let _editingEstItemId = null;
 
 const COST_TYPES = ['Labor','Materials','Subcontractor','Equipment','Permits & Fees','Overhead','Other'];
@@ -14800,6 +14814,29 @@ function loadEstimate(jobId) {
                   subgroup.items.sort((a,b) => (a.order ?? 0) - (b.order ?? 0));
                 });
               subPromises.push(sp);
+              // Load sub-subgroups (3rd level)
+              const ssp = coll('jobs').doc(jobId).collection('estimateGroups')
+                .doc(doc.id).collection('subgroups').doc(subDoc.id).collection('subgroups')
+                .get()
+                .then(subSubSnap => {
+                  const subSubPromises = [];
+                  subSubSnap.forEach(ssDoc => {
+                    const subsub = { id: ssDoc.id, ...ssDoc.data(), items: [] };
+                    if (!subgroup.subgroups) subgroup.subgroups = [];
+                    subgroup.subgroups.push(subsub);
+                    const ssp2 = coll('jobs').doc(jobId).collection('estimateGroups')
+                      .doc(doc.id).collection('subgroups').doc(subDoc.id)
+                      .collection('subgroups').doc(ssDoc.id).collection('items').get()
+                      .then(ssItemSnap => {
+                        ssItemSnap.forEach(ssItemDoc => subsub.items.push({ id: ssItemDoc.id, ...ssItemDoc.data() }));
+                        subsub.items.sort((a,b) => (a.order ?? 0) - (b.order ?? 0));
+                      });
+                    subSubPromises.push(ssp2);
+                  });
+                  if (subgroup.subgroups) subgroup.subgroups.sort((a,b) => (a.order ?? 0) - (b.order ?? 0));
+                  return Promise.all(subSubPromises);
+                });
+              subPromises.push(ssp);
             });
             group.subgroups.sort((a,b) => (a.order ?? 0) - (b.order ?? 0));
             // Also load items directly on group (no subgroup)
@@ -14960,6 +14997,7 @@ function renderSubgroupHTML(groupId, sub) {
       <span style="font-size:.74rem;color:${marginColor}">${Math.round(totals.margin)}%</span>
       <div style="display:flex;gap:4px" onclick="event.stopPropagation()">
         <button onclick="toggleSubgroupVisibility('${groupId}','${sub.id}')" class="btn" style="padding:1px 6px;font-size:.68rem" title="${sub.visibleToCustomer===false?'Hidden from customer - click to show':'Visible to customer - click to hide'}">${sub.visibleToCustomer===false?'🚫':'👁️'}</button>
+        <button onclick="openAddSubSubgroupModal('${groupId}','${sub.id}')" class="btn" style="padding:1px 6px;font-size:.68rem">+ Sub</button>
         <button onclick="openAddEstItemModal(null,'${groupId}','${sub.id}')" class="btn" style="padding:1px 6px;font-size:.68rem">+ Item</button>
         <button onclick="openEditSubgroupModal('${groupId}','${sub.id}')" class="btn" style="padding:1px 6px;font-size:.68rem">✏️</button>
         <button onclick="deleteSubgroup('${groupId}','${sub.id}')" class="btn btn-danger" style="padding:1px 6px;font-size:.68rem">✕</button>
@@ -14967,15 +15005,47 @@ function renderSubgroupHTML(groupId, sub) {
     </div>
     ${sub.scopeNotes ? `<div style="padding:4px 12px 6px 36px;font-size:.78rem;color:#94a3b8;font-style:italic;line-height:1.5;white-space:pre-wrap;border-left:2px solid rgba(217,119,6,.25);margin:0 0 2px 16px">${esc(sub.scopeNotes)}</div>` : ''}
     ${isCollapsed ? '' : `<div>
+      ${(sub.subgroups||[]).map(subsub => renderSubSubgroupHTML(groupId, sub.id, subsub)).join('')}
       ${(sub.items||[]).map(item => renderItemRowHTML(item, groupId, sub.id)).join('')}
       <div style="padding:4px 12px 8px 48px">
-        <button class="est-add-btn" onclick="openAddEstItemModal(null,'${groupId}','${sub.id}')">+ Add item to ${esc(sub.name)}</button>
+        <button class="est-add-btn" onclick="openAddSubSubgroupModal('${groupId}','${sub.id}')">+ Add subgroup to ${esc(sub.name)}</button>
+        <button class="est-add-btn" onclick="openAddEstItemModal(null,'${groupId}','${sub.id}')" style="margin-left:8px">+ Add item to ${esc(sub.name)}</button>
       </div>
     </div>`}
   </div>`;
 }
 
-function renderItemRowHTML(item, groupId, subgroupId) {
+function renderSubSubgroupHTML(groupId, subgroupId, subsub) {
+  const isCollapsed = _estCollapsed[subsub.id];
+  const totals = calcGroupTotals(subsub.items||[]);
+  const marginColor = totals.margin >= 20 ? '#1dbb87' : totals.margin >= 10 ? '#f59e0b' : '#ef5350';
+  const gid = groupId, sid = subgroupId, ssid = subsub.id;
+  const itemRows = (subsub.items||[]).map(item => renderItemRowHTML(item, gid, sid, ssid)).join('');
+  const collapsed = isCollapsed ? 'open' : '';
+
+  let html = '<div class="est-subgroup" id="estSubSub_' + ssid + '" style="margin-left:24px">';
+  html += '<div class="est-subgroup-head" onclick="toggleGroupCollapse(\'' + ssid + '\')">';
+  html += '<span class="est-group-toggle ' + (isCollapsed ? '' : 'open') + '" style="font-size:.7rem">&#9654;</span>';
+  html += '<span class="est-subgroup-name" style="font-size:.82rem">' + esc(subsub.name) + '</span>';
+  html += '<span style="font-size:.7rem;color:var(--muted)">' + (subsub.items||[]).length + ' items</span>';
+  html += '<span style="font-size:.7rem;color:' + marginColor + '">' + Math.round(totals.margin) + '%</span>';
+  html += '<div style="display:flex;gap:4px" onclick="event.stopPropagation()">';
+  html += '<button onclick="openAddEstItemModal(null,' + JSON.stringify(gid) + ',' + JSON.stringify(sid) + ',' + JSON.stringify(ssid) + ')" class="btn" style="padding:1px 5px;font-size:.65rem">+ Item</button>';
+  html += '<button onclick="openEditSubSubgroupModal(' + JSON.stringify(gid) + ',' + JSON.stringify(sid) + ',' + JSON.stringify(ssid) + ')" class="btn" style="padding:1px 5px;font-size:.65rem">&#9999;</button>';
+  html += '<button onclick="deleteSubSubgroup(' + JSON.stringify(gid) + ',' + JSON.stringify(sid) + ',' + JSON.stringify(ssid) + ')" class="btn btn-danger" style="padding:1px 5px;font-size:.65rem">&#10005;</button>';
+  html += '</div></div>';
+  if (!isCollapsed) {
+    html += '<div>' + itemRows;
+    html += '<div style="padding:4px 12px 8px 72px">';
+    html += '<button class="est-add-btn" onclick="openAddEstItemModal(null,' + JSON.stringify(gid) + ',' + JSON.stringify(sid) + ',' + JSON.stringify(ssid) + ')">+ Add item to ' + esc(subsub.name) + '</button>';
+    html += '</div></div>';
+  }
+  html += '</div>';
+  return html;
+}
+
+
+function renderItemRowHTML(item, groupId, subgroupId, subSubgroupId) {
   const qty = item.qty || 1;
   const unitCost = item.unitCost || 0;
   const markup = item.markup || 0;
@@ -15009,7 +15079,10 @@ function renderItemRowHTML(item, groupId, subgroupId) {
 
 function getAllItemsInGroup(group) {
   const items = [...(group.directItems||[])];
-  (group.subgroups||[]).forEach(sub => items.push(...(sub.items||[])));
+  (group.subgroups||[]).forEach(sub => {
+    items.push(...(sub.items||[]));
+    (sub.subgroups||[]).forEach(subsub => items.push(...(subsub.items||[])));
+  });
   return items;
 }
 
@@ -15265,6 +15338,64 @@ function saveSubgroupName() {
 
 function openEditSubgroupModal(groupId, subId) { openAddSubgroupModal(groupId, subId); }
 
+function openAddSubSubgroupModal(groupId, subgroupId, editSubSubId) {
+  _pendingSubSubgroupForGroup = groupId;
+  _pendingSubSubgroupForSub = subgroupId;
+  _pendingSubSubgroupEditId = editSubSubId || null;
+  const group = estGroups.find(g => g.id === groupId);
+  const sub = group?.subgroups?.find(s => s.id === subgroupId);
+  const existingSubSub = editSubSubId ? (sub?.subgroups||[]).find(ss => ss.id === editSubSubId) : null;
+  const name = prompt(editSubSubId ? 'Edit sub-subgroup name:' : 'Sub-subgroup name (e.g. "Screen Kit"):',
+    existingSubSub?.name || '');
+  if (!name?.trim()) return;
+  if (editSubSubId) {
+    coll('jobs').doc(conCurrentJobId).collection('estimateGroups')
+      .doc(groupId).collection('subgroups').doc(subgroupId)
+      .collection('subgroups').doc(editSubSubId).update({ name: name.trim() })
+      .then(() => {
+        if (existingSubSub) existingSubSub.name = name.trim();
+        renderEstimateTree();
+      }).catch(e => alert('Error: ' + e.message));
+  } else {
+    const order = (sub?.subgroups||[]).length;
+    coll('jobs').doc(conCurrentJobId).collection('estimateGroups')
+      .doc(groupId).collection('subgroups').doc(subgroupId)
+      .collection('subgroups').add({ name: name.trim(), order, createdAt: firebase.firestore.FieldValue.serverTimestamp() })
+      .then(ref => {
+        if (sub) {
+          if (!sub.subgroups) sub.subgroups = [];
+          sub.subgroups.push({ id: ref.id, name: name.trim(), order, items: [] });
+        }
+        renderEstimateTree();
+      }).catch(e => alert('Error: ' + e.message));
+  }
+}
+window.openAddSubSubgroupModal = openAddSubSubgroupModal;
+
+let _pendingSubSubgroupForGroup = null;
+let _pendingSubSubgroupForSub = null;
+let _pendingSubSubgroupEditId = null;
+
+function openEditSubSubgroupModal(groupId, subgroupId, subSubId) {
+  openAddSubSubgroupModal(groupId, subgroupId, subSubId);
+}
+window.openEditSubSubgroupModal = openEditSubSubgroupModal;
+
+function deleteSubSubgroup(groupId, subgroupId, subSubId) {
+  if (!confirm('Delete this sub-subgroup and all its items?')) return;
+  coll('jobs').doc(conCurrentJobId).collection('estimateGroups')
+    .doc(groupId).collection('subgroups').doc(subgroupId)
+    .collection('subgroups').doc(subSubId).delete()
+    .then(() => {
+      const group = estGroups.find(g => g.id === groupId);
+      const sub = group?.subgroups?.find(s => s.id === subgroupId);
+      if (sub) sub.subgroups = (sub.subgroups||[]).filter(ss => ss.id !== subSubId);
+      renderEstimateTree();
+      updateEstimateSummary();
+    }).catch(e => alert('Error: ' + e.message));
+}
+window.deleteSubSubgroup = deleteSubSubgroup;
+
 function deleteSubgroup(groupId, subId) {
   if (!confirm('Delete this subgroup and all its items?')) return;
   coll('jobs').doc(conCurrentJobId).collection('estimateGroups')
@@ -15278,10 +15409,11 @@ function deleteSubgroup(groupId, subId) {
 }
 
 // ── ITEM MODAL ──
-function openAddEstItemModal(itemId, groupId, subgroupId) {
+function openAddEstItemModal(itemId, groupId, subgroupId, subSubgroupId) {
   _editingEstItemId = itemId || null;
   _editingGroupId = groupId || null;
   _editingSubgroupId = subgroupId || null;
+  _editingSubSubgroupId = subSubgroupId || null;
 
   // Find item if editing
   let item = null;
@@ -15441,10 +15573,13 @@ function saveEstItem() {
 
   const groupId = _editingGroupId;
   const subgroupId = _editingSubgroupId;
+  const subSubgroupId = _editingSubSubgroupId;
   const jobRef = coll('jobs').doc(conCurrentJobId);
   let colRef;
 
-  if (subgroupId) {
+  if (subSubgroupId && subgroupId) {
+    colRef = jobRef.collection('estimateGroups').doc(groupId).collection('subgroups').doc(subgroupId).collection('subgroups').doc(subSubgroupId).collection('items');
+  } else if (subgroupId) {
     colRef = jobRef.collection('estimateGroups').doc(groupId).collection('subgroups').doc(subgroupId).collection('items');
   } else {
     colRef = jobRef.collection('estimateGroups').doc(groupId).collection('items');
@@ -15460,11 +15595,13 @@ function saveEstItem() {
   }).catch(e => alert('Error: ' + e.message));
 }
 
-function deleteEstItem(itemId, groupId, subgroupId) {
+function deleteEstItem(itemId, groupId, subgroupId, subSubgroupId) {
   if (!confirm('Delete this line item?')) return;
   const jobRef = coll('jobs').doc(conCurrentJobId);
   let colRef;
-  if (subgroupId) {
+  if (subSubgroupId && subgroupId) {
+    colRef = jobRef.collection('estimateGroups').doc(groupId).collection('subgroups').doc(subgroupId).collection('subgroups').doc(subSubgroupId).collection('items');
+  } else if (subgroupId) {
     colRef = jobRef.collection('estimateGroups').doc(groupId).collection('subgroups').doc(subgroupId).collection('items');
   } else {
     colRef = jobRef.collection('estimateGroups').doc(groupId).collection('items');
