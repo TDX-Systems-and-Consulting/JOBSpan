@@ -675,7 +675,11 @@ function conSignIn() {
 
   const provider = new firebase.auth.GoogleAuthProvider();
   provider.setCustomParameters({ prompt: 'select_account' });
-  conAuth.signInWithRedirect(provider);
+  conAuth.signInWithPopup(provider).catch(e => {
+    window._signingIn = false;
+    if (btn) { btn.textContent = 'Sign in with Google'; btn.disabled = false; }
+    if (e.code !== 'auth/popup-closed-by-user') alert('Sign-in failed: ' + e.message);
+  });
 }
 
 function conSignOut() {
@@ -5662,19 +5666,12 @@ function conInitFirebase() {
     conFunctions = firebase.functions();
     conFirebaseReady = true;
 
-    // Handle redirect result from signInWithRedirect
-    // Handle redirect result — must come before onAuthStateChanged
-    conAuth.getRedirectResult().catch(() => {});
-
-    let _authHandled = false;
     // Never show the sign-in wall until Firebase explicitly fires
     // onAuthStateChanged with null — meaning no active session.
     // Firebase always fires once on init. Removing the timer means
     // the loading spinner shows until the answer arrives, no flash.
     conAuth.onAuthStateChanged(user => {
       if (user) {
-        if (_authHandled) return; // prevent double-fire during redirect
-        _authHandled = true;
         conCurrentUser = user;
 
         // ── Domain/member pre-check ──────────────────────────────────
