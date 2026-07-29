@@ -9,6 +9,26 @@ const todayISO = () => new Date().toISOString().slice(0,10);
 const addDays = (iso,n) => { const d=new Date(iso+'T00:00:00'); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); };
 
 function kOpen(id){ const el=document.getElementById(id); if(el){ el.style.display='flex'; el.classList.add('open'); } }
+
+// Firebase Storage helpers
+let conStorage = null;
+
+async function uploadToStorage(path, blob) {
+  if (!conStorage) throw new Error('Storage not ready yet');
+  const ref = conStorage.ref(path);
+  await ref.put(blob);
+  return await ref.getDownloadURL();
+}
+
+function dataUrlToBlob(dataUrl) {
+  const arr = dataUrl.split(',');
+  const mime = arr[0].match(/:(.*?);/)[1];
+  const bstr = atob(arr[1]);
+  let n = bstr.length;
+  const u8arr = new Uint8Array(n);
+  while (n--) u8arr[n] = bstr.charCodeAt(n);
+  return new Blob([u8arr], { type: mime });
+}
 function kClose(id){ const el=document.getElementById(id); if(el){ el.style.display='none'; el.classList.remove('open'); } if(id==='jobDetailModal' && typeof _msgUnsub==='function'){ try{_msgUnsub();}catch(e){} _msgUnsub=null; } }
 window.kOpen = kOpen;
 window.kClose = kClose;
@@ -5674,6 +5694,12 @@ function conInitFirebase() {
     conFunctions = firebase.functions();
     conFirebaseReady = true;
 
+    // Lazy-load Firebase Storage after auth is ready (doesn't block init)
+    const storageScript = document.createElement('script');
+    storageScript.src = 'https://www.gstatic.com/firebasejs/10.12.0/firebase-storage-compat.js';
+    storageScript.onload = () => { conStorage = firebase.storage(); };
+    document.head.appendChild(storageScript);
+
     // Never show the sign-in wall until Firebase explicitly fires
     // onAuthStateChanged with null — meaning no active session.
     // Firebase always fires once on init. Removing the timer means
@@ -10997,7 +11023,7 @@ function renderJobDocList(docs) {
     } else {
       filesEl.innerHTML = docs.map(d => {
         const isImg = (d.type||'').startsWith('image/');
-        const src = d.dataUrl || d.data || '';
+        const src = d.storageUrl || d.dataUrl || d.data || '';
         if (isImg && src) {
           return `<div style="position:relative;border-radius:10px;overflow:hidden;aspect-ratio:1;background:#111">
             <img src="${src}" style="width:100%;height:100%;object-fit:cover;cursor:pointer" onclick="openLightbox('${src.replace(/'/g,"\\'")}')">
@@ -19731,46 +19757,41 @@ function uploadJobFiles(input) {
   if (!conCurrentJobId || !input.files?.length) return;
   const files = Array.from(input.files);
   const listEl = document.getElementById('detailFilesList');
+  const job = conJobs.find(j => j.id === conCurrentJobId);
 
   (async () => {
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
-      if (listEl) listEl.innerHTML = `<div class="small muted" style="text-align:center;padding:20px;grid-column:1/-1">Compressing &amp; uploading ${i+1} of ${files.length}: ${file.name}…</div>`;
+      if (listEl) listEl.innerHTML = `<div class="small muted" style="text-align:center;padding:20px;grid-column:1/-1">Uploading ${i+1} of ${files.length}: ${file.name}\u2026</div>`;
 
       try {
-        let dataUrl;
         const isImage = file.type.startsWith('image/');
+        let storageUrl = null;
+        let dataUrl = null;
 
-        if (isImage) {
-          // Always compress images — avoids the 900KB Firestore limit
-          // and handles real iPhone photos (typically 3–8MB) transparently
-          const raw = await new Promise((res, rej) => {
-            const r = new FileReader();
-            r.onload = e => res(e.target.result);
-            r.onerror = rej;
-            r.readAsDataURL(file);
-          });
+        if (isImage && conStorage) {
+          const raw = await new Promise((res, rej) => { const r = new FileReader(); r.onload = e => res(e.target.result); r.onerror = rej; r.readAsDataURL(file); });
+          const compressed = await compressImage(raw, 1600, 0.8).catch(() => raw);
+          const blob = dataUrlToBlob(compressed);
+          const path = 'companies/' + currentCompanyId + '/jobs/' + conCurrentJobId + '/photos/' + Date.now() + '_' + file.name.replace(/[^a-zA-Z0-9._-]/g,'_');
+          storageUrl = await uploadToStorage(path, blob);
+        } else if (isImage) {
+          const raw = await new Promise((res, rej) => { const r = new FileReader(); r.onload = e => res(e.target.result); r.onerror = rej; r.readAsDataURL(file); });
           dataUrl = await compressImage(raw, 1600, 0.8).catch(() => raw);
-        } else if (file.size > 900000) {
-          if (!confirm(`"${file.name}" is ${(file.size/1024/1024).toFixed(1)}MB. Non-image files over 900KB can't be stored in JOBSMETRIX yet. Skip this file?`)) continue;
+        } else if (file.size > 5 * 1024 * 1024) {
+          alert('"' + file.name + '" is ' + (file.size/1024/1024).toFixed(1) + 'MB — files over 5MB are not supported yet.');
           continue;
         } else {
-          dataUrl = await new Promise((res, rej) => {
-            const r = new FileReader();
-            r.onload = e => res(e.target.result);
-            r.onerror = rej;
-            r.readAsDataURL(file);
-          });
+          dataUrl = await new Promise((res, rej) => { const r = new FileReader(); r.onload = e => res(e.target.result); r.onerror = rej; r.readAsDataURL(file); });
         }
 
         await coll('documents').add({
-          name: file.name,
-          type: file.type,
-          size: file.size,
-          dataUrl,
+          name: file.name, type: file.type, size: file.size,
+          storageUrl: storageUrl || null,
+          dataUrl: dataUrl || null,
           jobId: conCurrentJobId,
-          jobName: conJobs.find(j => j.id === conCurrentJobId)?.name || '',
-          category: file.type.startsWith('image/') ? 'Photo' : 'Other',
+          jobName: job?.name || '',
+          category: isImage ? 'Photo' : 'Other',
           notes: '',
           uploadedAt: firebase.firestore.FieldValue.serverTimestamp(),
           uploadedDate: new Date().toISOString().split('T')[0],
