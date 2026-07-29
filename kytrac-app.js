@@ -5651,7 +5651,8 @@ window.closeLightbox = closeLightbox;
 // Auto-load Firebase immediately on page open
 conLoadFirebase();
 
-// conInitFirebase — called by conLoadFirebase after all SDK scripts load
+// Patch conInitFirebase to use ktRevealSignIn and new auth wall IDs
+const _origConInitFirebase = conInitFirebase;
 function conInitFirebase() {
   try {
     if (!firebase.apps.length) {
@@ -8575,14 +8576,12 @@ function loadCompanyProfile() {
     .then(doc => {
       if (doc.exists) {
         companyProfile = { ...DEFAULT_COMPANY_PROFILE, ...doc.data() };
-        // Store owner uid for PlannerXD notification routing
+        // Store owner uid so portal can route notifications
         if (currentUserRole === 'Owner' || currentUserRole === 'Full Access Override') {
           const uid = conCurrentUser.uid;
-          coll('settings').doc('company').update({ ownerUid: uid })
-            .catch(e => {
-              // If update fails (doc doesn't exist yet), use set with merge
-              coll('settings').doc('company').set({ ownerUid: uid }, { merge: true }).catch(() => {});
-            });
+          if (doc.data().ownerUid !== uid) {
+            coll('settings').doc('company').update({ ownerUid: uid }).catch(() => {});
+          }
         }
       } else {
         companyProfile = { ...DEFAULT_COMPANY_PROFILE };
@@ -12540,14 +12539,13 @@ function submitPortalSignature(proposalId, jobId, action) {
           }).catch(()=>{});
         } catch(e) {}
 
-        // 5. PlannerXD notification — keyed by email (consistent across Firebase projects)
+        // 5. PlannerXD notification — look up ownerUid from company settings
         try {
           db.collection('companies').doc(companyId).collection('settings').doc('company').get()
             .then(settDoc => {
-              const ownerEmail = settDoc.exists ? (settDoc.data().ownerEmail || settDoc.data().email || '') : '';
-              if (!ownerEmail) return;
-              const emailKey = ownerEmail.replace(/\./g, '_').replace(/@/g, '_at_');
-              db.collection('plannerxd_notifications').doc(emailKey)
+              const ownerUid = settDoc.exists ? settDoc.data().ownerUid : null;
+              if (!ownerUid) return;
+              db.collection('plannerxd_notifications').doc(ownerUid)
                 .collection('items').add({
                   type: 'proposal_signed',
                   title: 'Customer Signed Proposal — Schedule Now',
