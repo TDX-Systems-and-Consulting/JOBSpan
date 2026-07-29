@@ -322,8 +322,10 @@ service cloud.firestore {
     }
 
     // PlannerXD notification bridge — email-keyed
+    // PlannerXD authenticates against its own Firebase project so request.auth
+    // is null here. Allow read/update from any caller (email key is the scope).
     match /plannerxd_notifications/{emailKey}/items/{itemId} {
-      allow read, update: if signedIn();
+      allow read, update: if true;
       allow create: if signedIn() || request.auth == null;
     }
   }
