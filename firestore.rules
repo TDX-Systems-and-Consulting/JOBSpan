@@ -321,9 +321,9 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // PlannerXD notification bridge
-    match /plannerxd_notifications/{uid}/items/{itemId} {
-      allow read, update: if signedIn() && request.auth.uid == uid;
+    // PlannerXD notification bridge — email-keyed, authenticated user can read/update
+    match /plannerxd_notifications/{emailKey}/items/{itemId} {
+      allow read, update: if signedIn();
       allow create: if signedIn();
     }
   }

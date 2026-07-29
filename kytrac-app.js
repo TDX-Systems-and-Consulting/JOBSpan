@@ -12541,13 +12541,14 @@ function submitPortalSignature(proposalId, jobId, action) {
           }).catch(()=>{});
         } catch(e) {}
 
-        // 5. PlannerXD notification — look up ownerUid from company settings
+        // 5. PlannerXD notification — keyed by email (consistent across Firebase projects)
         try {
           db.collection('companies').doc(companyId).collection('settings').doc('company').get()
             .then(settDoc => {
-              const ownerUid = settDoc.exists ? settDoc.data().ownerUid : null;
-              if (!ownerUid) return;
-              db.collection('plannerxd_notifications').doc(ownerUid)
+              const ownerEmail = settDoc.exists ? (settDoc.data().ownerEmail || settDoc.data().email || '') : '';
+              if (!ownerEmail) return;
+              const emailKey = ownerEmail.replace(/\./g, '_').replace(/@/g, '_at_');
+              db.collection('plannerxd_notifications').doc(emailKey)
                 .collection('items').add({
                   type: 'proposal_signed',
                   title: 'Customer Signed Proposal — Schedule Now',
