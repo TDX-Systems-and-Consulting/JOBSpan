@@ -8576,12 +8576,14 @@ function loadCompanyProfile() {
     .then(doc => {
       if (doc.exists) {
         companyProfile = { ...DEFAULT_COMPANY_PROFILE, ...doc.data() };
-        // Store owner uid so portal can route notifications
+        // Store owner uid for PlannerXD notification routing
         if (currentUserRole === 'Owner' || currentUserRole === 'Full Access Override') {
           const uid = conCurrentUser.uid;
-          if (doc.data().ownerUid !== uid) {
-            coll('settings').doc('company').update({ ownerUid: uid }).catch(() => {});
-          }
+          coll('settings').doc('company').update({ ownerUid: uid })
+            .catch(e => {
+              // If update fails (doc doesn't exist yet), use set with merge
+              coll('settings').doc('company').set({ ownerUid: uid }, { merge: true }).catch(() => {});
+            });
         }
       } else {
         companyProfile = { ...DEFAULT_COMPANY_PROFILE };
