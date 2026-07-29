@@ -8,7 +8,35 @@ const fmtDate = d => d ? new Date(d+'T00:00:00').toLocaleDateString(undefined,{m
 const todayISO = () => new Date().toISOString().slice(0,10);
 const addDays = (iso,n) => { const d=new Date(iso+'T00:00:00'); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); };
 
-function kOpen(id){ const el=document.getElementById(id); if(el){ el.style.display='flex'; el.classList.add('open'); } }
+let conStorage = null;
+
+function getStorage() {
+  if (conStorage) return conStorage;
+  if (typeof firebase !== 'undefined' && firebase.apps.length) {
+    conStorage = firebase.storage();
+  }
+  return conStorage;
+}
+
+// Upload a blob/dataUrl to Firebase Storage and return the download URL
+async function uploadToStorage(path, blob) {
+  const storage = getStorage();
+  if (!storage) throw new Error('Firebase Storage not initialized');
+  const ref = storage.ref(path);
+  await ref.put(blob);
+  return await ref.getDownloadURL();
+}
+
+// Convert base64 dataUrl to Blob
+function dataUrlToBlob(dataUrl) {
+  const arr = dataUrl.split(',');
+  const mime = arr[0].match(/:(.*?);/)[1];
+  const bstr = atob(arr[1]);
+  let n = bstr.length;
+  const u8arr = new Uint8Array(n);
+  while (n--) u8arr[n] = bstr.charCodeAt(n);
+  return new Blob([u8arr], { type: mime });
+}
 function kClose(id){ const el=document.getElementById(id); if(el){ el.style.display='none'; el.classList.remove('open'); } if(id==='jobDetailModal' && typeof _msgUnsub==='function'){ try{_msgUnsub();}catch(e){} _msgUnsub=null; } }
 window.kOpen = kOpen;
 window.kClose = kClose;
@@ -640,7 +668,8 @@ function conLoadFirebase() {
     'https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js',
     'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js',
     'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js',
-    'https://www.gstatic.com/firebasejs/10.12.0/firebase-functions-compat.js'
+    'https://www.gstatic.com/firebasejs/10.12.0/firebase-functions-compat.js',
+    'https://www.gstatic.com/firebasejs/10.12.0/firebase-storage-compat.js'
   ];
   if (typeof firebase !== 'undefined' && firebase.apps !== undefined) { conInitFirebase(); return; }
   function loadNext(i) {
@@ -10990,10 +11019,10 @@ function renderJobDocList(docs) {
     } else {
       filesEl.innerHTML = docs.map(d => {
         const isImg = (d.type||'').startsWith('image/');
-        const src = d.dataUrl || d.data || '';
+        const src = d.storageUrl || d.dataUrl || d.data || '';
         if (isImg && src) {
           return `<div style="position:relative;border-radius:10px;overflow:hidden;aspect-ratio:1;background:#111">
-            <img src="${src}" style="width:100%;height:100%;object-fit:cover;cursor:pointer" onclick="openLightbox('${src.replace(/'/g,"\\'")}')">
+            <img src="${src}" style="width:100%;height:100%;object-fit:cover;cursor:pointer" loading="lazy" onclick="openLightbox('${src.replace(/'/g,"\\'")}')">
             <div style="position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent,rgba(0,0,0,.7));padding:6px 8px;font-size:.65rem;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(d.name||'')}</div>
             <button onclick="deleteDoc('${d.id}')" style="position:absolute;top:4px;right:4px;background:rgba(0,0,0,.6);border:none;border-radius:50%;width:22px;height:22px;color:#fff;font-size:.7rem;cursor:pointer;display:flex;align-items:center;justify-content:center">✕</button>
           </div>`;
@@ -11165,9 +11194,12 @@ function openDocument(id) {
 
 function downloadDoc(id) {
   const doc = allDocuments.find(d => d.id === id);
-  if (!doc?.dataUrl) { alert('No file data available for download.'); return; }
+  const url = doc?.storageUrl || doc?.dataUrl;
+  if (!url) { alert('No file data available for download.'); return; }
+  // Storage URLs open directly in new tab (browser handles download)
+  if (doc.storageUrl) { window.open(doc.storageUrl, '_blank'); return; }
   const a = document.createElement('a');
-  a.href = doc.dataUrl;
+  a.href = url;
   a.download = doc.name || 'download';
   document.body.appendChild(a);
   a.click();
@@ -11176,11 +11208,16 @@ function downloadDoc(id) {
 
 function deleteDoc(id) {
   if (!confirm('Delete this document? This cannot be undone.')) return;
+  const doc = allDocuments.find(d => d.id === id);
+  if (doc?.storageUrl) {
+    try { const st = getStorage(); if (st) st.refFromURL(doc.storageUrl).delete().catch(()=>{}); } catch(e) {}
+  }
   coll('documents').doc(id).delete()
     .then(() => {
       allDocuments = allDocuments.filter(d => d.id !== id);
       renderDocuments();
       renderDocStats();
+      loadJobDocs(conCurrentJobId);
     })
     .catch(e => alert('Error: ' + e.message));
 }
@@ -19711,30 +19748,35 @@ function uploadJobFiles(input) {
   if (!conCurrentJobId || !input.files?.length) return;
   const files = Array.from(input.files);
   const listEl = document.getElementById('detailFilesList');
+  const job = conJobs.find(j => j.id === conCurrentJobId);
 
   (async () => {
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
-      if (listEl) listEl.innerHTML = `<div class="small muted" style="text-align:center;padding:20px;grid-column:1/-1">Compressing &amp; uploading ${i+1} of ${files.length}: ${file.name}…</div>`;
+      if (listEl) listEl.innerHTML = `<div class="small muted" style="text-align:center;padding:20px;grid-column:1/-1">Uploading ${i+1} of ${files.length}: ${file.name}…</div>`;
 
       try {
-        let dataUrl;
         const isImage = file.type.startsWith('image/');
+        let storageUrl = null;
+        let dataUrl = null;
 
         if (isImage) {
-          // Always compress images — avoids the 900KB Firestore limit
-          // and handles real iPhone photos (typically 3–8MB) transparently
+          // Compress then upload to Firebase Storage — no size limit issues
           const raw = await new Promise((res, rej) => {
             const r = new FileReader();
             r.onload = e => res(e.target.result);
             r.onerror = rej;
             r.readAsDataURL(file);
           });
-          dataUrl = await compressImage(raw, 1600, 0.8).catch(() => raw);
-        } else if (file.size > 900000) {
-          if (!confirm(`"${file.name}" is ${(file.size/1024/1024).toFixed(1)}MB. Non-image files over 900KB can't be stored in JOBSMETRIX yet. Skip this file?`)) continue;
+          const compressed = await compressImage(raw, 1600, 0.8).catch(() => raw);
+          const blob = dataUrlToBlob(compressed);
+          const storagePath = `companies/${currentCompanyId}/jobs/${conCurrentJobId}/photos/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g,'_')}`;
+          storageUrl = await uploadToStorage(storagePath, blob);
+        } else if (file.size > 5 * 1024 * 1024) {
+          alert(`"${file.name}" is ${(file.size/1024/1024).toFixed(1)}MB — files over 5MB aren't supported yet.`);
           continue;
         } else {
+          // Non-image files (PDFs, docs) stored as base64
           dataUrl = await new Promise((res, rej) => {
             const r = new FileReader();
             r.onload = e => res(e.target.result);
@@ -19747,10 +19789,11 @@ function uploadJobFiles(input) {
           name: file.name,
           type: file.type,
           size: file.size,
-          dataUrl,
+          storageUrl: storageUrl || null,
+          dataUrl: dataUrl || null,
           jobId: conCurrentJobId,
-          jobName: conJobs.find(j => j.id === conCurrentJobId)?.name || '',
-          category: file.type.startsWith('image/') ? 'Photo' : 'Other',
+          jobName: job?.name || '',
+          category: isImage ? 'Photo' : 'Other',
           notes: '',
           uploadedAt: firebase.firestore.FieldValue.serverTimestamp(),
           uploadedDate: new Date().toISOString().split('T')[0],
