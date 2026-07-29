@@ -5822,10 +5822,16 @@ window.confirmArchiveJob = confirmArchiveJob;
 function deleteCurrentJob() {
   if (!conCurrentJobId || !conDb) return;
   if (!confirm('Delete this job? This cannot be undone.')) return;
-  coll('jobs').doc(conCurrentJobId).delete()
+  const deletingId = conCurrentJobId;
+  coll('jobs').doc(deletingId).delete()
     .then(() => {
       kClose('jobDetailModal');
       conCurrentJobId = null;
+      // Remove from memory immediately — onSnapshot will confirm
+      conJobs = conJobs.filter(j => j.id !== deletingId);
+      conRenderBoard();
+      conRenderList();
+      conRenderStats();
     })
     .catch(e => alert('Error deleting: ' + e.message));
 }
@@ -12356,7 +12362,7 @@ function renderPortalProposal(prop, jobId) {
       ${termsHtml}
       <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--line)">
         <div style="font-weight:700;color:#eaf0fb;margin-bottom:8px">Sign to Approve</div>
-        <input id="portalSigName" placeholder="Type your full name" style="width:100%;max-width:460px;margin-bottom:10px;padding:8px 10px;border-radius:8px;border:1px solid var(--line);background:rgba(8,18,36,.6);color:#eaf0fb" />
+        <input id="portalSigName" placeholder="Type your full name" autocomplete="off" style="width:100%;max-width:460px;margin-bottom:10px;padding:8px 10px;border-radius:8px;border:1px solid var(--line);background:rgba(8,18,36,.6);color:#eaf0fb" />
         <canvas id="portalSigCanvas" class="portal-sig-canvas"></canvas>
         <div style="margin-top:8px;display:flex;gap:10px;flex-wrap:wrap">
           <button class="btn" style="padding:6px 14px;font-size:.8rem" onclick="clearPortalSignature()">Clear</button>
