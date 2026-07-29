@@ -683,7 +683,15 @@ function conSignIn() {
 }
 
 function conSignOut() {
-  if (conAuth) conAuth.signOut();
+  if (conAuth) {
+    conAuth.signOut().then(() => {
+      window.location.reload();
+    }).catch(() => {
+      window.location.reload();
+    });
+  } else {
+    window.location.reload();
+  }
 }
 
 function conGenJobNumber() {
@@ -16005,6 +16013,20 @@ function printProposal() {
   const job = conJobs.find(j => j.id === conCurrentJobId);
   const co = companyProfile;
   const itemized = !!document.getElementById('proposalItemizedToggle')?.checked;
+
+  // Ensure estimate is loaded before computing proposal data
+  if (!estGroups || !estGroups.length) {
+    conLoadEstimate(conCurrentJobId);
+    setTimeout(() => {
+      const data = computeProposalData(job, itemized);
+      saveProposalSnapshot(conCurrentJobId, data);
+      const win = window.open('', '_blank');
+      win.document.write(renderProposalDocumentHtml(data, job, co));
+      win.document.close();
+    }, 1500);
+    return;
+  }
+
   const data = computeProposalData(job, itemized);
   saveProposalSnapshot(conCurrentJobId, data);
   const win = window.open('', '_blank');
