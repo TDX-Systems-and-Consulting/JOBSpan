@@ -5651,8 +5651,7 @@ window.closeLightbox = closeLightbox;
 // Auto-load Firebase immediately on page open
 conLoadFirebase();
 
-// Patch conInitFirebase to use ktRevealSignIn and new auth wall IDs
-const _origConInitFirebase = conInitFirebase;
+// conInitFirebase — called by conLoadFirebase after all SDK scripts load
 function conInitFirebase() {
   try {
     if (!firebase.apps.length) {
