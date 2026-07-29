@@ -671,7 +671,7 @@ function conLoadFirebase() {
     'https://www.gstatic.com/firebasejs/10.12.0/firebase-functions-compat.js',
     'https://www.gstatic.com/firebasejs/10.12.0/firebase-storage-compat.js'
   ];
-  if (typeof firebase !== 'undefined' && firebase.apps !== undefined) { conInitFirebase(); return; }
+  if (typeof firebase !== 'undefined' && firebase.apps !== undefined && typeof firebase.storage !== 'undefined') { conInitFirebase(); return; }
   function loadNext(i) {
     if (i >= scripts.length) { conInitFirebase(); return; }
     const s = document.createElement('script');
