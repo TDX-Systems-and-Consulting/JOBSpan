@@ -8935,10 +8935,11 @@ window.clearLogo = clearLogo;
 // Enforced server-side too (firestore.rules, companies create rule), so
 // keep this list and the rules pattern in sync when adding domains.
 const SIGNUP_ALLOWED_DOMAINS = ['7pillarsgroup.org', 'jtxdgroup.com'];
+const SIGNUP_ALLOWED_EMAILS = ['travisdurbin73@gmail.com', 'juliad42017@gmail.com'];
 
 function canCreateCompany(email) {
   const domain = (email || '').toLowerCase().split('@')[1] || '';
-  return SIGNUP_ALLOWED_DOMAINS.includes(domain);
+  return SIGNUP_ALLOWED_DOMAINS.includes(domain) || SIGNUP_ALLOWED_EMAILS.includes((email||'').toLowerCase());
 }
 
 function showAccessDenied(user) {
