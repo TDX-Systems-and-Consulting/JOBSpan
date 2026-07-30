@@ -2455,6 +2455,10 @@ function openJobDetail(jobId, defaultTab) {
   const job = conJobs.find(j => j.id === jobId);
   if (!job) return;
   conCurrentJobId = jobId;
+  // Clear stale editing context so Smart Add targets the new job correctly
+  _editingGroupId = null;
+  _editingSubgroupId = null;
+  _editingSubSubgroupId = null;
 
   const fmt = v => '$' + Number(v||0).toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:0});
 
