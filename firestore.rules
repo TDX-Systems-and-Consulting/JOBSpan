@@ -323,10 +323,11 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // PlannerXD notification bridge — email-keyed
-    // PlannerXD authenticates against its own Firebase project so request.auth
-    // is null here. Allow read/update from any caller (email key is the scope).
-    match /plannerxd_notifications/{emailKey}/items/{itemId} {
+    // PlannerXD notification bridge — UID-keyed
+    // JOBSMETRIX writes to plannerxd_notifications/{ownerUid}/items
+    // PlannerXD reads/marks-read from the same path.
+    // UID in the path is the scope; open read/update, authenticated create.
+    match /plannerxd_notifications/{ownerUid}/items/{itemId} {
       allow read, update: if true;
       allow create: if signedIn() || request.auth == null;
     }
