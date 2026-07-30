@@ -9985,15 +9985,17 @@ function clockOut() {
   const now = new Date();
   const clockInTime = _clockedInEntry.clockInISO ? new Date(_clockedInEntry.clockInISO) : new Date(now - 3600000);
   const hours = Math.round((now - clockInTime) / 3600000 * 100) / 100;
+  const notes = document.getElementById('clockNotes');
+  const notesValue = notes ? notes.value.trim() : '';
 
   coll('timeentries').doc(_clockedInEntry.id).update({
     clockOut: firebase.firestore.FieldValue.serverTimestamp(),
     clockOutISO: now.toISOString(),
     hours,
+    notes: notesValue,
     updatedAt: firebase.firestore.FieldValue.serverTimestamp()
   }).then(() => {
     stopClockTicker();
-    const notes = document.getElementById('clockNotes');
     if (notes) notes.value = '';
   }).catch(e => alert('Error clocking out: ' + e.message));
 }
