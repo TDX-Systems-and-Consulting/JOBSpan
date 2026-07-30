@@ -17872,12 +17872,16 @@ const TIERED_BUNDLES = {
 };
 
 const ROOM_STRUCTURE = {
-  "Interior": {
+  "Whole House": {
     icon: "🏠",
     rooms: {
+      "Global": { icon:"📋", trades:["0200 Demolition","3100 Miscellaneous","0000 Uncategorized","1400 Drywall","2300 Painting","1700 Flooring","1000 Electrical","1100 Plumbing"] },
+      "Mechanicals": { icon:"⚙️", trades:["1200 Mechanical","1000 Electrical","1100 Plumbing","1300 Insulation","0600 Framing"] },
+      "Exterior": { icon:"🏗", trades:["2500 Decking","0600 Framing","1000 Electrical","2300 Painting","0900 Roofing","0800 Siding","1500 Doors & Windows","0500 Foundation","2800 Concrete","2600 Fencing","2900 Landscaping","1600 Garage"] },
+      "Basement": { icon:"⬇️", trades:["1700 Flooring","2300 Painting","1000 Electrical","1400 Drywall","1100 Plumbing","1200 Mechanical"] },
       "Entry": { icon:"🚪", trades:["1700 Flooring","2300 Painting","1000 Electrical","2100 Trimwork","1500 Doors & Windows"] },
-      "Living Room": { icon:"🛋", trades:["1700 Flooring","2300 Painting","1000 Electrical","1400 Drywall","2100 Trimwork","1500 Doors & Windows","2200 Specialty Finishes"] },
-      "Dining Room": { icon:"🍽", trades:["1700 Flooring","2300 Painting","1000 Electrical","2100 Trimwork"] },
+      "Dining room": { icon:"🍽", trades:["1700 Flooring","2300 Painting","1000 Electrical","2100 Trimwork"] },
+      "Living room": { icon:"🛋", trades:["1700 Flooring","2300 Painting","1000 Electrical","1400 Drywall","2100 Trimwork","1500 Doors & Windows","2200 Specialty Finishes"] },
       "Kitchen": { icon:"🍳", trades:["1900 Cabinetry","2000 Countertops","1100 Plumbing","1000 Electrical","1700 Flooring","1800 Tiling","2400 Appliances","2300 Painting","1400 Drywall"] },
       "Hallway": { icon:"🪜", trades:["1700 Flooring","2300 Painting","2100 Trimwork","1500 Doors & Windows","1000 Electrical"] },
       "Stairwell": { icon:"🪜", trades:["1700 Flooring","2300 Painting","2100 Trimwork","1000 Electrical"] },
@@ -17886,45 +17890,12 @@ const ROOM_STRUCTURE = {
       "Bedroom 3": { icon:"🛏", trades:["1700 Flooring","2300 Painting","1000 Electrical","1400 Drywall","2100 Trimwork","1500 Doors & Windows"] },
       "Bedroom 4": { icon:"🛏", trades:["1700 Flooring","2300 Painting","1000 Electrical","1400 Drywall","2100 Trimwork","1500 Doors & Windows"] },
       "Bedroom 5": { icon:"🛏", trades:["1700 Flooring","2300 Painting","1000 Electrical","1400 Drywall","2100 Trimwork","1500 Doors & Windows"] },
-      "Full Bath 1": { icon:"🚿", trades:["1100 Plumbing","1000 Electrical","1800 Tiling","1700 Flooring","1400 Drywall","2100 Trimwork","2300 Painting","2200 Specialty Finishes"] },
-      "Full Bath 2": { icon:"🚿", trades:["1100 Plumbing","1000 Electrical","1800 Tiling","1700 Flooring","1400 Drywall","2100 Trimwork","2300 Painting","2200 Specialty Finishes"] },
-      "Half Bath": { icon:"🚽", trades:["1100 Plumbing","1000 Electrical","1800 Tiling","1700 Flooring","1400 Drywall","2100 Trimwork","2300 Painting"] },
+      "Full bath 1": { icon:"🚿", trades:["1100 Plumbing","1000 Electrical","1800 Tiling","1700 Flooring","1400 Drywall","2100 Trimwork","2300 Painting","2200 Specialty Finishes"] },
+      "Full bath 2": { icon:"🚿", trades:["1100 Plumbing","1000 Electrical","1800 Tiling","1700 Flooring","1400 Drywall","2100 Trimwork","2300 Painting","2200 Specialty Finishes"] },
+      "Half bath": { icon:"🚽", trades:["1100 Plumbing","1000 Electrical","1800 Tiling","1700 Flooring","1400 Drywall","2100 Trimwork","2300 Painting"] },
       "Laundry": { icon:"🧺", trades:["1100 Plumbing","1000 Electrical","1700 Flooring","2400 Appliances","1400 Drywall"] },
-      "Bonus Room": { icon:"🛋", trades:["1700 Flooring","2300 Painting","1000 Electrical","1400 Drywall","2100 Trimwork"] },
-      "Basement": { icon:"⬇️", trades:["1700 Flooring","2300 Painting","1000 Electrical","1400 Drywall","1100 Plumbing","1200 Mechanical"] },
-      "Garage": { icon:"🚗", trades:["1400 Drywall","2300 Painting","1000 Electrical","1300 Insulation"] },
-      "Whole Interior": { icon:"🏡", trades:["0200 Demolition","1400 Drywall","2300 Painting","1700 Flooring","1000 Electrical","1100 Plumbing"] }
-    }
-  },
-  "Exterior": {
-    icon: "🏗",
-    rooms: {
-      "Deck / Porch": { icon:"🪵", trades:["2500 Decking","0600 Framing","1000 Electrical","2300 Painting"] },
-      "Roof": { icon:"🏚", trades:["0900 Roofing"] },
-      "Siding": { icon:"🧱", trades:["0800 Siding","2300 Painting"] },
-      "Windows & Doors": { icon:"🪟", trades:["1500 Doors & Windows"] },
-      "Foundation": { icon:"🏛", trades:["0500 Foundation","2800 Concrete"] },
-      "Fencing": { icon:"🚧", trades:["2600 Fencing"] },
-      "Landscaping": { icon:"🌳", trades:["2900 Landscaping","2800 Concrete"] },
-      "Garage (Exterior)": { icon:"🚗", trades:["1600 Garage","0800 Siding","0900 Roofing"] },
-      "Whole Exterior": { icon:"🏠", trades:["0800 Siding","0900 Roofing","2500 Decking","1500 Doors & Windows","2300 Painting"] }
-    }
-  },
-  "Mechanical / Systems": {
-    icon: "⚙️",
-    rooms: {
-      "HVAC": { icon:"❄️", trades:["1200 Mechanical"] },
-      "Electrical": { icon:"⚡", trades:["1000 Electrical"] },
-      "Plumbing": { icon:"🔧", trades:["1100 Plumbing"] },
-      "Insulation": { icon:"🧊", trades:["1300 Insulation"] },
-      "Framing / Structural": { icon:"🏗", trades:["0600 Framing"] }
-    }
-  },
-  "Demo / Cleanup": {
-    icon: "🗑",
-    rooms: {
-      "Demo / Trash Out": { icon:"🗑", trades:["0200 Demolition","0000 Uncategorized"] },
-      "Miscellaneous": { icon:"📦", trades:["3100 Miscellaneous"] }
+      "Bonus room": { icon:"🛋", trades:["1700 Flooring","2300 Painting","1000 Electrical","1400 Drywall","2100 Trimwork"] },
+      "Garage": { icon:"🚗", trades:["1400 Drywall","2300 Painting","1000 Electrical","1300 Insulation","1600 Garage","0900 Roofing"] }
     }
   }
 };
@@ -18537,26 +18508,8 @@ function _launchSmartAdd() {
   _wizardRoom = null;
   _wizardTrade = null;
   _wizardSelectedItems = new Set();
-  wizardRenderStep1();
+  wizardSelectCategory('Whole House');
   kOpen('smartAddModal');
-}
-
-function wizardRenderStep1() {
-  _wizardStep = 1;
-  const grid = document.getElementById('wizardCategoryGrid');
-  if (!grid) return;
-
-  grid.innerHTML = Object.entries(ROOM_STRUCTURE).map(([cat, data]) => {
-    const roomCount = Object.keys(data.rooms).length;
-    return `<div class="wizard-card" onclick="wizardSelectCategory('${cat}')">
-      <div class="wc-icon">${data.icon}</div>
-      <div class="wc-name">${cat}</div>
-      <div class="wc-count">${roomCount} areas</div>
-    </div>`;
-  }).join('');
-
-  wizardSetStep(1);
-  updateWizardBreadcrumb();
 }
 
 function wizardSelectCategory(cat) {
@@ -19407,7 +19360,9 @@ function wizardSetStep(step) {
     if (el) el.classList.toggle('active', i === step);
   }
   const backBtn = document.getElementById('wizardBackBtn');
-  if (backBtn) backBtn.style.display = step > 1 ? 'block' : 'none';
+  // Step 2 (room grid) is the effective root now that category selection
+  // is skipped (single "Whole House" category) — no back button there.
+  if (backBtn) backBtn.style.display = step > 2 ? 'block' : 'none';
   if (step < 4) {
     const footer = document.getElementById('wizardFooter');
     if (footer) { footer.innerHTML = ''; const cb = document.createElement('button'); cb.className='btn'; cb.textContent='Cancel'; cb.onclick=function(){kClose('smartAddModal');}; footer.appendChild(cb); }
@@ -19415,24 +19370,24 @@ function wizardSetStep(step) {
 }
 
 function wizardBack() {
-  if (_wizardStep === 2) wizardRenderStep1();
-  else if (_wizardStep === 3) wizardSelectCategory(_wizardCategory);
+  if (_wizardStep === 3) wizardSelectCategory(_wizardCategory);
   else if (_wizardStep === 4) wizardSelectRoom(_wizardRoom);
 }
 
 function wizardGoTo(step) {
-  if (step === 1) wizardRenderStep1();
+  if (step === 1) wizardSelectCategory('Whole House');
 }
 
 function updateWizardBreadcrumb() {
   const el = document.getElementById('wizardBreadcrumb');
   if (!el) return;
+  // Category crumb omitted — there's only one category ("Whole House"),
+  // so showing it adds noise without a real choice behind it.
   let crumbs = [{ label:'Start', step:1 }];
-  if (_wizardCategory) crumbs.push({ label:_wizardCategory, step:2 });
-  if (_wizardRoom) crumbs.push({ label:_wizardRoom, step:3 });
+  if (_wizardRoom) crumbs.push({ label:_wizardRoom, step:2 });
   if (_wizardTrade) {
     const tradeName = _wizardTrade.split(' ').slice(1).join(' ') || _wizardTrade;
-    crumbs.push({ label:tradeName, step:4 });
+    crumbs.push({ label:tradeName, step:3 });
   }
   el.innerHTML = crumbs.map((c, i) =>
     i < crumbs.length - 1
@@ -19442,9 +19397,8 @@ function updateWizardBreadcrumb() {
 }
 
 function wizardGoStep(idx) {
-  if (idx === 0) wizardRenderStep1();
-  else if (idx === 1 && _wizardCategory) wizardSelectCategory(_wizardCategory);
-  else if (idx === 2 && _wizardRoom) wizardSelectRoom(_wizardRoom);
+  if (idx === 0) wizardSelectCategory('Whole House');
+  else if (idx === 1 && _wizardRoom) wizardSelectRoom(_wizardRoom);
 }
 
 async function wizardAddToEstimate() {
