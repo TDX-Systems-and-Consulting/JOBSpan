@@ -264,18 +264,20 @@ service cloud.firestore {
           allow update: if false;
         }
         match /estimateGroups/{groupId} {
-          allow read: if inCompany(companyId);
-          allow write: if inCompany(companyId) && hasFullAccess();
+          allow read, write: if inCompany(companyId);
           match /items/{itemId} {
-            allow read: if inCompany(companyId);
-            allow write: if inCompany(companyId) && hasFullAccess();
+            allow read, write: if inCompany(companyId);
           }
           match /subgroups/{subId} {
-            allow read: if inCompany(companyId);
-            allow write: if inCompany(companyId) && hasFullAccess();
+            allow read, write: if inCompany(companyId);
             match /items/{itemId} {
-              allow read: if inCompany(companyId);
-              allow write: if inCompany(companyId) && hasFullAccess();
+              allow read, write: if inCompany(companyId);
+            }
+            match /subgroups/{subSubId} {
+              allow read, write: if inCompany(companyId);
+              match /items/{itemId} {
+                allow read, write: if inCompany(companyId);
+              }
             }
           }
         }
