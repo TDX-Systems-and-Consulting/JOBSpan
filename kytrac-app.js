@@ -17916,13 +17916,17 @@ const ROOM_STRUCTURE = {
     rooms: {
       "Global": { icon:"📋", phases:[
         { label:"Demo/Trash out", trade:"0200 Demolition" },
+        { label:"Doors/Windows", trade:"1500 Doors & Windows" },
+        { label:"Drywall", trade:"1400 Drywall" },
         { label:"Painting", trade:"2300 Painting" },
         { label:"Flooring", trade:"1700 Flooring" },
+        { label:"Trim", trade:"2100 Trimwork" },
+        { label:"Electrical Finishes", trade:"1000 Electrical" },
         { label:"Cleaning", trade:"0000 Uncategorized" },
         { label:"Misc. Expenses", trade:"3100 Miscellaneous" }
       ] },
       "Mechanicals": { icon:"⚙️", phases:[
-        { label:"Electric Panel/Riser", trade:"1000 Electrical" },
+        { label:"Electric", trade:"1000 Electrical" },
         { label:"HVAC", trade:"1200 Mechanical" },
         { label:"Drain stack(s)", trade:"1100 Plumbing" },
         { label:"Water heater", trade:"1100 Plumbing" }
@@ -18217,9 +18221,9 @@ const PHASE_ICONS = {
   "Framing":"🏗", "Kitchen Framing":"🏗", "Laundry Framing":"🏗",
   "Plumbing: rough":"🔧", "Plumbing: final":"🔧",
   "HVAC: Rough":"❄️", "HVAC: final":"❄️", "HVAC":"❄️",
-  "Electrical: rough":"⚡", "Electrical: final":"⚡", "Electric Panel/Riser":"⚡",
-  "Insulation":"🧊", "Drywall":"🧱", "Doors":"🚪", "Trim":"📏",
-  "Painting":"🎨", "Flooring":"🪵", "Cabinets":"🗄", "Appliances":"🍳",
+  "Electrical: rough":"⚡", "Electrical: final":"⚡", "Electric":"⚡", "Electrical Finishes":"💡",
+  "Insulation":"🧊", "Drywall":"🧱", "Doors":"🚪", "Windows":"🪟", "Doors/Windows":"🪟", "Trim":"📏",
+  "Painting":"🎨", "Flooring":"🪵", "Cabinets":"🗄", "Countertops":"🪨", "Appliances":"🍳",
   "Demo/Trash out":"🗑", "Cleaning":"🧹", "Misc. Expenses":"💰",
   "Drain stack(s)":"🚰", "Water heater":"🔥", "Roofing":"🏚",
   "Doors & Windows":"🪟", "Siding":"🧱", "Gutters & Down spouts":"🌧",
