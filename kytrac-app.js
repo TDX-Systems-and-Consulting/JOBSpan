@@ -19366,7 +19366,13 @@ function wizardToggleItem(name, el) {
 
 function wizardFilterItems() {
   const q = document.getElementById('wizardSearchInput')?.value.toLowerCase() || '';
-  const filtered = q ? _wizardCurrentItems.filter(i => i.name.toLowerCase().includes(q)) : _wizardCurrentItems;
+  const words = q.split(/\s+/).filter(Boolean);
+  const filtered = words.length
+    ? _wizardCurrentItems.filter(i => {
+        const name = i.name.toLowerCase();
+        return words.every(w => name.includes(w));
+      })
+    : _wizardCurrentItems;
   wizardRenderItems(filtered);
 }
 
