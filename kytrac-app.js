@@ -18790,7 +18790,7 @@ function wizardSelectCategory(cat) {
   if (!grid) return;
 
   grid.innerHTML = Object.entries(rooms).map(([room, data]) => {
-    const tradeCount = data.trades.length;
+    const tradeCount = data.phases.length;
     return `<div class="wizard-card" onclick="wizardSelectRoom('${room.replace(/'/g,"\'")}')">
       <div class="wc-icon">${data.icon}</div>
       <div class="wc-name">${room}</div>
