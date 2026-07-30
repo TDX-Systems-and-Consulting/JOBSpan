@@ -432,7 +432,7 @@ function ktRevealSignIn() {
 // Firebase config
 const CON_FIREBASE_CONFIG = {
   apiKey: "AIzaSyDoFC2N0rrgwO-vY8SCPb3J-jKgSLYn5BQ",
-  authDomain: "jobsmetrix.com",
+  authDomain: "kytrac-72d91.firebaseapp.com",
   projectId: "kytrac-72d91",
   storageBucket: "kytrac-72d91.firebasestorage.app",
   messagingSenderId: "1061786207687",
@@ -695,12 +695,6 @@ function conSignIn() {
 
   const provider = new firebase.auth.GoogleAuthProvider();
   provider.setCustomParameters({ prompt: 'select_account' });
-  // Mobile Safari blocks popups — use redirect instead
-  const isMobileSafari = /iP(ad|hone|od)/.test(navigator.userAgent) && /WebKit/.test(navigator.userAgent) && !/CriOS/.test(navigator.userAgent);
-  if (isMobileSafari) {
-    conAuth.signInWithRedirect(provider);
-    return;
-  }
   conAuth.signInWithPopup(provider).catch(e => {
     window._signingIn = false;
     if (btn) { btn.textContent = 'Sign in with Google'; btn.disabled = false; }
@@ -5705,13 +5699,6 @@ function conInitFirebase() {
     conAuth = firebase.auth();
     conFunctions = firebase.functions();
     conFirebaseReady = true;
-
-    // Handle redirect result for mobile Safari
-    conAuth.getRedirectResult().then(result => {
-      if (result && result.user) {
-        // onAuthStateChanged will handle the login flow
-      }
-    }).catch(() => {});
 
     // Safety timeout — reveal sign-in button after 5s regardless
     setTimeout(() => { if (!conCurrentUser) ktRevealSignIn(); }, 5000);
