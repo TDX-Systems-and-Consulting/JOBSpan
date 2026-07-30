@@ -5683,8 +5683,12 @@ window.openLightbox = openLightbox;
 window.closeLightbox = closeLightbox;
 
 
-// Auto-load Firebase immediately on page open
-conLoadFirebase();
+// Firebase load is triggered once, at Boot (bottom of file) — do not call
+// conLoadFirebase() here too. It was previously called both here and at
+// Boot, which raced two concurrent SDK script-injection chains (visible as
+// "Firebase is already defined in the global scope" in console), leading to
+// an auth/Firestore instance mismatch and intermittent silent permission-
+// denied failures after a successful login (e.g. Jason Hudson, 7/30/26).
 
 // Patch conInitFirebase to use ktRevealSignIn and new auth wall IDs
 const _origConInitFirebase = conInitFirebase;
@@ -9056,6 +9060,18 @@ function resolveCompany(user, callback) {
 
           // 3. No company found — allowlisted domains may create one;
           // anyone else hits the access-denied wall instead of onboarding.
+          if (canCreateCompany(email)) {
+            showCompanyOnboarding(user, callback);
+          } else {
+            showAccessDenied(user);
+          }
+        })
+        .catch(e => {
+          // Previously unguarded — a denied/failed query here silently hung
+          // the login screen forever with no error shown (root-caused
+          // 7/30/26). Surface it and fall through the same way the outer
+          // catch below does, instead of leaving the user stuck.
+          console.error('resolveCompany memberEmails lookup error:', e);
           if (canCreateCompany(email)) {
             showCompanyOnboarding(user, callback);
           } else {
