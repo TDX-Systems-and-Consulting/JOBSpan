@@ -432,7 +432,7 @@ function ktRevealSignIn() {
 // Firebase config
 const CON_FIREBASE_CONFIG = {
   apiKey: "AIzaSyDoFC2N0rrgwO-vY8SCPb3J-jKgSLYn5BQ",
-  authDomain: "kytrac-72d91.firebaseapp.com",
+  authDomain: "jobsmetrix.com",
   projectId: "kytrac-72d91",
   storageBucket: "kytrac-72d91.firebasestorage.app",
   messagingSenderId: "1061786207687",
