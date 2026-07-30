@@ -9996,6 +9996,21 @@ function clockOut() {
     updatedAt: firebase.firestore.FieldValue.serverTimestamp()
   }).then(() => {
     stopClockTicker();
+    // A clock-out note is field-crew activity on the job same as a
+    // manually-added Daily Log — push it into that same collection so it
+    // shows up in the Daily Logs tab/feed and counts toward "logged
+    // today" staleness checks, not just the Time Log table.
+    if (notesValue && _clockedInEntry.jobId) {
+      coll('jobs').doc(_clockedInEntry.jobId).collection('logs').add(subDoc({
+        date: _clockedInEntry.date || now.toISOString().split('T')[0],
+        weather: '',
+        crew: '',
+        notes: notesValue,
+        issues: '',
+        createdBy: conCurrentUser ? (conCurrentUser.displayName || conCurrentUser.email) : 'unknown',
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      })).catch(() => {});
+    }
     if (notes) notes.value = '';
   }).catch(e => alert('Error clocking out: ' + e.message));
 }
