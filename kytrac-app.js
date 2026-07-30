@@ -2181,8 +2181,11 @@ function syncJobEstimateCost(jobId, opts) {
           });
         }
       }
-      if (itemCount === 0) return null; // no estimate → leave manual estCost untouched
-
+      // Empty estimate syncs to 0 too — previously this left a stale estCost
+      // in place (e.g. an old imported placeholder), which showed up as a
+      // real-looking Cost to Complete / Projected Profit on the financial
+      // bar even though the Estimate tab itself was genuinely empty (0 line
+      // items). The financial bar and the estimate tree should always agree.
       const rounded = Math.round(totalCost);
       const job = conJobs.find(j => j.id === jobId);
       const current = job ? (job.estCost||0) : null;
@@ -2203,7 +2206,7 @@ function syncCurrentJobEstimateCost() {
   if (btn) { btn.disabled = true; btn.textContent = '⟳ Syncing…'; }
   syncJobEstimateCost(jobId).then(cost => {
     if (btn) { btn.disabled = false; btn.textContent = '⟳ Sync from Estimate'; }
-    if (cost === null) { alert('No estimate line items found on this job yet. Add items in the Estimate tab first.'); return; }
+    if (cost === null) { alert('Could not sync — error reading the estimate. Try again in a moment.'); return; }
     // Refresh the open dashboard financials
     const job = conJobs.find(j => j.id === jobId);
     if (job) refreshJobFinancials(job);
