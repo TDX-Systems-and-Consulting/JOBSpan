@@ -38,15 +38,15 @@ service cloud.firestore {
     // in addition to the claim check.
     match /companies/{companyId} {
       allow read: if signedIn() && (
-        resource.data.ownerEmail == myEmail() ||
-        (resource.data.memberEmails is list && myEmail() in resource.data.memberEmails) ||
+        resource.data.ownerEmail == myEmail().lower() ||
+        (resource.data.memberEmails is list && myEmail().lower() in resource.data.memberEmails) ||
         inCompany(companyId)
       );
       // Onboarding: a signed-in user creating their own new company —
       // restricted to approved business domains so stray Google accounts
       // can't spin up companies (real enforcement; the client-side check
       // in resolveCompany is just UX).
-      allow create: if allowedSignupDomain() && request.resource.data.ownerEmail == myEmail();
+      allow create: if allowedSignupDomain() && request.resource.data.ownerEmail == myEmail().lower();
       // Updates (memberEmails arrayUnion/arrayRemove from Team Management,
       // plan changes, etc.) restricted to that company's own full-access users.
       allow update: if inCompany(companyId) && hasFullAccess();
