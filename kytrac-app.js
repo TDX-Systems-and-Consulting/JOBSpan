@@ -12459,8 +12459,8 @@ function renderPortalProposal(prop, jobId) {
         <canvas id="portalSigCanvas" class="portal-sig-canvas"></canvas>
         <div style="margin-top:8px;display:flex;gap:10px;flex-wrap:wrap">
           <button class="btn" style="padding:6px 14px;font-size:.8rem" onclick="clearPortalSignature()">Clear</button>
-          <button class="btn-amber" style="padding:8px 18px;font-size:.85rem" onclick="submitPortalSignature('${prop.id}','${jobId}','approved')">✓ Approve &amp; Sign</button>
-          <button class="btn" style="padding:8px 18px;font-size:.85rem;color:#ef5350" onclick="submitPortalSignature('${prop.id}','${jobId}','declined')">Decline</button>
+          <button id="portalSignApproveBtn" class="btn-amber" style="padding:8px 18px;font-size:.85rem" onclick="submitPortalSignature('${prop.id}','${jobId}','approved')">✓ Approve &amp; Sign</button>
+          <button id="portalSignDeclineBtn" class="btn" style="padding:8px 18px;font-size:.85rem;color:#ef5350" onclick="submitPortalSignature('${prop.id}','${jobId}','declined')">Decline</button>
         </div>
       </div>`;
     initPortalSignaturePad();
@@ -12530,13 +12530,30 @@ window.clearPortalSignature = clearPortalSignature;
 // portal visitor to update ONLY status/signature fields on a proposal doc
 // matching their portal token — that rule needs to be added in the
 // Firebase console; it's not something this environment can deploy.
+let _portalSigSubmitting = false;
 function submitPortalSignature(proposalId, jobId, action) {
+  // Guard against double-click / slow-network double-tap re-firing this
+  // whole handler — each run independently creates a document, activity
+  // log entry, and "Schedule job" to-do, so a double-submit produced
+  // duplicates of all three (root-caused 7/30/26 via duplicate to-dos).
+  if (_portalSigSubmitting) return;
+  _portalSigSubmitting = true;
+  const approveBtn = document.getElementById('portalSignApproveBtn');
+  const declineBtn = document.getElementById('portalSignDeclineBtn');
+  if (approveBtn) approveBtn.disabled = true;
+  if (declineBtn) declineBtn.disabled = true;
+  const _releaseSigGuard = () => {
+    _portalSigSubmitting = false;
+    if (approveBtn) approveBtn.disabled = false;
+    if (declineBtn) declineBtn.disabled = false;
+  };
+
   const nameEl = document.getElementById('portalSigName');
   const name = nameEl ? nameEl.value.trim() : '';
 
   if (action === 'approved') {
-    if (!name) { alert('Please type your full name before signing.'); return; }
-    if (!_portalSigHasStroke) { alert('Please sign in the box before approving.'); return; }
+    if (!name) { alert('Please type your full name before signing.'); _releaseSigGuard(); return; }
+    if (!_portalSigHasStroke) { alert('Please sign in the box before approving.'); _releaseSigGuard(); return; }
     const canvas = document.getElementById('portalSigCanvas');
     const dataUrl = canvas.toDataURL('image/png');
     const update = {
@@ -12648,8 +12665,9 @@ function submitPortalSignature(proposalId, jobId, action) {
                 }).catch(()=>{});
             }).catch(()=>{});
         } catch(e) {}
+        _releaseSigGuard();
       })
-      .catch(e => alert('Error submitting signature: ' + e.message));
+      .catch(e => { alert('Error submitting signature: ' + e.message); _releaseSigGuard(); });
   } else {
     const reason = prompt('Optional: let us know why, so we can follow up (or leave blank).') || '';
     _portalProposalColl(jobId).doc(proposalId).update({
@@ -12662,8 +12680,9 @@ function submitPortalSignature(proposalId, jobId, action) {
         _portalLatestProposal.status = 'declined';
         _portalLatestProposal.declineReason = reason;
         renderPortalProposal(_portalLatestProposal, jobId);
+        _releaseSigGuard();
       })
-      .catch(e => alert('Error submitting response: ' + e.message));
+      .catch(e => { alert('Error submitting response: ' + e.message); _releaseSigGuard(); });
   }
 }
 window.submitPortalSignature = submitPortalSignature;
