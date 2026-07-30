@@ -698,15 +698,9 @@ function conSignIn() {
   conAuth.signInWithPopup(provider).catch(e => {
     window._signingIn = false;
     if (btn) { btn.textContent = 'Sign in with Google'; btn.disabled = false; }
-    // COOP blocks popup on some browsers — fall back to redirect
-    if (e.code === 'auth/popup-closed-by-user' ||
-        e.code === 'auth/cancelled-popup-request' ||
-        e.message?.includes('Cross-Origin') ||
-        e.message?.includes('channel closed')) {
-      conAuth.signInWithRedirect(provider);
-      return;
+    if (e.code !== 'auth/popup-closed-by-user' && e.code !== 'auth/cancelled-popup-request') {
+      alert('Sign-in failed: ' + e.message);
     }
-    if (e.code !== 'auth/popup-closed-by-user') alert('Sign-in failed: ' + e.message);
   });
 }
 
@@ -5706,8 +5700,8 @@ function conInitFirebase() {
     conFunctions = firebase.functions();
     conFirebaseReady = true;
 
-    // Handle redirect result (fallback from popup COOP failure)
-    conAuth.getRedirectResult().catch(() => {});
+    // Safety timeout — reveal sign-in button after 5s regardless
+    setTimeout(() => { if (!conCurrentUser) ktRevealSignIn(); }, 5000);
 
     // Lazy-load Firebase Storage after auth is ready (doesn't block init)
     const storageScript = document.createElement('script');
