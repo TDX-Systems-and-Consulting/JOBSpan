@@ -17875,35 +17875,304 @@ const ROOM_STRUCTURE = {
   "Whole House": {
     icon: "🏠",
     rooms: {
-      "Global": { icon:"📋", trades:["0200 Demolition","3100 Miscellaneous","0000 Uncategorized","1400 Drywall","2300 Painting","1700 Flooring","1000 Electrical","1100 Plumbing"] },
-      "Mechanicals": { icon:"⚙️", trades:["1200 Mechanical","1000 Electrical","1100 Plumbing","1300 Insulation","0600 Framing"] },
-      "Exterior": { icon:"🏗", trades:["2500 Decking","0600 Framing","1000 Electrical","2300 Painting","0900 Roofing","0800 Siding","1500 Doors & Windows","0500 Foundation","2800 Concrete","2600 Fencing","2900 Landscaping","1600 Garage"] },
-      "Basement": { icon:"⬇️", trades:["1700 Flooring","2300 Painting","1000 Electrical","1400 Drywall","1100 Plumbing","1200 Mechanical"] },
-      "Entry": { icon:"🚪", trades:["1700 Flooring","2300 Painting","1000 Electrical","2100 Trimwork","1500 Doors & Windows"] },
-      "Dining room": { icon:"🍽", trades:["1700 Flooring","2300 Painting","1000 Electrical","2100 Trimwork"] },
-      "Living room": { icon:"🛋", trades:["1700 Flooring","2300 Painting","1000 Electrical","1400 Drywall","2100 Trimwork","1500 Doors & Windows","2200 Specialty Finishes"] },
-      "Kitchen": { icon:"🍳", trades:["1900 Cabinetry","2000 Countertops","1100 Plumbing","1000 Electrical","1700 Flooring","1800 Tiling","2400 Appliances","2300 Painting","1400 Drywall"] },
-      "Hallway": { icon:"🪜", trades:["1700 Flooring","2300 Painting","2100 Trimwork","1500 Doors & Windows","1000 Electrical"] },
-      "Stairwell": { icon:"🪜", trades:["1700 Flooring","2300 Painting","2100 Trimwork","1000 Electrical"] },
-      "Bedroom 1": { icon:"🛏", trades:["1700 Flooring","2300 Painting","1000 Electrical","1400 Drywall","2100 Trimwork","1500 Doors & Windows"] },
-      "Bedroom 2": { icon:"🛏", trades:["1700 Flooring","2300 Painting","1000 Electrical","1400 Drywall","2100 Trimwork","1500 Doors & Windows"] },
-      "Bedroom 3": { icon:"🛏", trades:["1700 Flooring","2300 Painting","1000 Electrical","1400 Drywall","2100 Trimwork","1500 Doors & Windows"] },
-      "Bedroom 4": { icon:"🛏", trades:["1700 Flooring","2300 Painting","1000 Electrical","1400 Drywall","2100 Trimwork","1500 Doors & Windows"] },
-      "Bedroom 5": { icon:"🛏", trades:["1700 Flooring","2300 Painting","1000 Electrical","1400 Drywall","2100 Trimwork","1500 Doors & Windows"] },
-      "Full bath 1": { icon:"🚿", trades:["1100 Plumbing","1000 Electrical","1800 Tiling","1700 Flooring","1400 Drywall","2100 Trimwork","2300 Painting","2200 Specialty Finishes"] },
-      "Full bath 2": { icon:"🚿", trades:["1100 Plumbing","1000 Electrical","1800 Tiling","1700 Flooring","1400 Drywall","2100 Trimwork","2300 Painting","2200 Specialty Finishes"] },
-      "Half bath": { icon:"🚽", trades:["1100 Plumbing","1000 Electrical","1800 Tiling","1700 Flooring","1400 Drywall","2100 Trimwork","2300 Painting"] },
-      "Laundry": { icon:"🧺", trades:["1100 Plumbing","1000 Electrical","1700 Flooring","2400 Appliances","1400 Drywall"] },
-      "Bonus room": { icon:"🛋", trades:["1700 Flooring","2300 Painting","1000 Electrical","1400 Drywall","2100 Trimwork"] },
-      "Garage": { icon:"🚗", trades:["1400 Drywall","2300 Painting","1000 Electrical","1300 Insulation","1600 Garage","0900 Roofing"] }
+      "Global": { icon:"📋", phases:[
+        { label:"Demo/Trash out", trade:"0200 Demolition" },
+        { label:"Painting", trade:"2300 Painting" },
+        { label:"Flooring", trade:"1700 Flooring" },
+        { label:"Cleaning", trade:"0000 Uncategorized" },
+        { label:"Misc. Expenses", trade:"3100 Miscellaneous" }
+      ] },
+      "Mechanicals": { icon:"⚙️", phases:[
+        { label:"Electric Panel/Riser", trade:"1000 Electrical" },
+        { label:"HVAC", trade:"1200 Mechanical" },
+        { label:"Drain stack(s)", trade:"1100 Plumbing" },
+        { label:"Water heater", trade:"1100 Plumbing" }
+      ] },
+      "Exterior": { icon:"🏗", phases:[
+        { label:"Roofing", trade:"0900 Roofing" },
+        { label:"Doors & Windows", trade:"1500 Doors & Windows" },
+        { label:"Siding", trade:"0800 Siding" },
+        { label:"Gutters & Down spouts", trade:"0900 Roofing" },
+        { label:"Flatwork", trade:"2800 Concrete" },
+        { label:"Landscaping", trade:"2900 Landscaping" }
+      ] },
+      "Basement": { icon:"⬇️", phases:[
+        { label:"Framing", trade:"0600 Framing" },
+        { label:"Plumbing: rough", trade:"1100 Plumbing" },
+        { label:"HVAC: Rough", trade:"1200 Mechanical" },
+        { label:"Electrical: rough", trade:"1000 Electrical" },
+        { label:"Insulation", trade:"1300 Insulation" },
+        { label:"Drywall", trade:"1400 Drywall" },
+        { label:"Doors", trade:"1500 Doors & Windows" },
+        { label:"Trim", trade:"2100 Trimwork" },
+        { label:"Painting", trade:"2300 Painting" },
+        { label:"Flooring", trade:"1700 Flooring" },
+        { label:"Plumbing: final", trade:"1100 Plumbing" },
+        { label:"HVAC: final", trade:"1200 Mechanical" },
+        { label:"Electrical: final", trade:"1000 Electrical" }
+      ] },
+      "Entry": { icon:"🚪", phases:[
+        { label:"Framing", trade:"0600 Framing" },
+        { label:"HVAC: Rough", trade:"1200 Mechanical" },
+        { label:"Electrical: rough", trade:"1000 Electrical" },
+        { label:"Insulation", trade:"1300 Insulation" },
+        { label:"Drywall", trade:"1400 Drywall" },
+        { label:"Doors", trade:"1500 Doors & Windows" },
+        { label:"Trim", trade:"2100 Trimwork" },
+        { label:"Painting", trade:"2300 Painting" },
+        { label:"Flooring", trade:"1700 Flooring" },
+        { label:"HVAC: final", trade:"1200 Mechanical" },
+        { label:"Electrical: final", trade:"1000 Electrical" }
+      ] },
+      "Dining room": { icon:"🍽", phases:[
+        { label:"Framing", trade:"0600 Framing" },
+        { label:"Electrical: rough", trade:"1000 Electrical" },
+        { label:"HVAC: Rough", trade:"1200 Mechanical" },
+        { label:"Insulation", trade:"1300 Insulation" },
+        { label:"Drywall", trade:"1400 Drywall" },
+        { label:"Doors", trade:"1500 Doors & Windows" },
+        { label:"Trim", trade:"2100 Trimwork" },
+        { label:"Painting", trade:"2300 Painting" },
+        { label:"Flooring", trade:"1700 Flooring" },
+        { label:"HVAC: final", trade:"1200 Mechanical" },
+        { label:"Electrical: final", trade:"1000 Electrical" }
+      ] },
+      "Living room": { icon:"🛋", phases:[
+        { label:"Framing", trade:"0600 Framing" },
+        { label:"HVAC: Rough", trade:"1200 Mechanical" },
+        { label:"Electrical: rough", trade:"1000 Electrical" },
+        { label:"Insulation", trade:"1300 Insulation" },
+        { label:"Drywall", trade:"1400 Drywall" },
+        { label:"Doors", trade:"1500 Doors & Windows" },
+        { label:"Trim", trade:"2100 Trimwork" },
+        { label:"Painting", trade:"2300 Painting" },
+        { label:"Flooring", trade:"1700 Flooring" },
+        { label:"HVAC: final", trade:"1200 Mechanical" },
+        { label:"Electrical: final", trade:"1000 Electrical" }
+      ] },
+      "Kitchen": { icon:"🍳", phases:[
+        { label:"Kitchen Framing", trade:"0600 Framing" },
+        { label:"Electrical: rough", trade:"1000 Electrical" },
+        { label:"HVAC: Rough", trade:"1200 Mechanical" },
+        { label:"Plumbing: rough", trade:"1100 Plumbing" },
+        { label:"Insulation", trade:"1300 Insulation" },
+        { label:"Drywall", trade:"1400 Drywall" },
+        { label:"Doors", trade:"1500 Doors & Windows" },
+        { label:"Trim", trade:"2100 Trimwork" },
+        { label:"Painting", trade:"2300 Painting" },
+        { label:"Flooring", trade:"1700 Flooring" },
+        { label:"Cabinets", trade:"1900 Cabinetry" },
+        { label:"Plumbing: final", trade:"1100 Plumbing" },
+        { label:"HVAC: final", trade:"1200 Mechanical" },
+        { label:"Electrical: final", trade:"1000 Electrical" },
+        { label:"Appliances", trade:"2400 Appliances" }
+      ] },
+      "Hallway": { icon:"🪜", phases:[
+        { label:"Framing", trade:"0600 Framing" },
+        { label:"HVAC: Rough", trade:"1200 Mechanical" },
+        { label:"Electrical: rough", trade:"1000 Electrical" },
+        { label:"Insulation", trade:"1300 Insulation" },
+        { label:"Drywall", trade:"1400 Drywall" },
+        { label:"Doors", trade:"1500 Doors & Windows" },
+        { label:"Trim", trade:"2100 Trimwork" },
+        { label:"Painting", trade:"2300 Painting" },
+        { label:"Flooring", trade:"1700 Flooring" },
+        { label:"HVAC: final", trade:"1200 Mechanical" },
+        { label:"Electrical: final", trade:"1000 Electrical" }
+      ] },
+      "Stairwell": { icon:"🪜", phases:[
+        { label:"Framing", trade:"0600 Framing" },
+        { label:"HVAC: Rough", trade:"1200 Mechanical" },
+        { label:"Electrical: rough", trade:"1000 Electrical" },
+        { label:"Insulation", trade:"1300 Insulation" },
+        { label:"Drywall", trade:"1400 Drywall" },
+        { label:"Doors", trade:"1500 Doors & Windows" },
+        { label:"Trim", trade:"2100 Trimwork" },
+        { label:"Painting", trade:"2300 Painting" },
+        { label:"Flooring", trade:"1700 Flooring" },
+        { label:"HVAC: final", trade:"1200 Mechanical" },
+        { label:"Electrical: final", trade:"1000 Electrical" }
+      ] },
+      "Bedroom 1": { icon:"🛏", phases:[
+        { label:"Framing", trade:"0600 Framing" },
+        { label:"HVAC: Rough", trade:"1200 Mechanical" },
+        { label:"Electrical: rough", trade:"1000 Electrical" },
+        { label:"Insulation", trade:"1300 Insulation" },
+        { label:"Drywall", trade:"1400 Drywall" },
+        { label:"Doors", trade:"1500 Doors & Windows" },
+        { label:"Trim", trade:"2100 Trimwork" },
+        { label:"Painting", trade:"2300 Painting" },
+        { label:"Flooring", trade:"1700 Flooring" },
+        { label:"HVAC: final", trade:"1200 Mechanical" },
+        { label:"Electrical: final", trade:"1000 Electrical" }
+      ] },
+      "Bedroom 2": { icon:"🛏", phases:[
+        { label:"Framing", trade:"0600 Framing" },
+        { label:"HVAC: Rough", trade:"1200 Mechanical" },
+        { label:"Electrical: rough", trade:"1000 Electrical" },
+        { label:"Insulation", trade:"1300 Insulation" },
+        { label:"Drywall", trade:"1400 Drywall" },
+        { label:"Doors", trade:"1500 Doors & Windows" },
+        { label:"Trim", trade:"2100 Trimwork" },
+        { label:"Painting", trade:"2300 Painting" },
+        { label:"Flooring", trade:"1700 Flooring" },
+        { label:"HVAC: final", trade:"1200 Mechanical" },
+        { label:"Electrical: final", trade:"1000 Electrical" }
+      ] },
+      "Bedroom 3": { icon:"🛏", phases:[
+        { label:"Framing", trade:"0600 Framing" },
+        { label:"HVAC: Rough", trade:"1200 Mechanical" },
+        { label:"Electrical: rough", trade:"1000 Electrical" },
+        { label:"Insulation", trade:"1300 Insulation" },
+        { label:"Drywall", trade:"1400 Drywall" },
+        { label:"Doors", trade:"1500 Doors & Windows" },
+        { label:"Trim", trade:"2100 Trimwork" },
+        { label:"Painting", trade:"2300 Painting" },
+        { label:"Flooring", trade:"1700 Flooring" },
+        { label:"HVAC: final", trade:"1200 Mechanical" },
+        { label:"Electrical: final", trade:"1000 Electrical" }
+      ] },
+      "Bedroom 4": { icon:"🛏", phases:[
+        { label:"Framing", trade:"0600 Framing" },
+        { label:"HVAC: Rough", trade:"1200 Mechanical" },
+        { label:"Electrical: rough", trade:"1000 Electrical" },
+        { label:"Insulation", trade:"1300 Insulation" },
+        { label:"Drywall", trade:"1400 Drywall" },
+        { label:"Doors", trade:"1500 Doors & Windows" },
+        { label:"Trim", trade:"2100 Trimwork" },
+        { label:"Painting", trade:"2300 Painting" },
+        { label:"Flooring", trade:"1700 Flooring" },
+        { label:"HVAC: final", trade:"1200 Mechanical" },
+        { label:"Electrical: final", trade:"1000 Electrical" }
+      ] },
+      "Bedroom 5": { icon:"🛏", phases:[
+        { label:"Framing", trade:"0600 Framing" },
+        { label:"HVAC: Rough", trade:"1200 Mechanical" },
+        { label:"Electrical: rough", trade:"1000 Electrical" },
+        { label:"Insulation", trade:"1300 Insulation" },
+        { label:"Drywall", trade:"1400 Drywall" },
+        { label:"Doors", trade:"1500 Doors & Windows" },
+        { label:"Trim", trade:"2100 Trimwork" },
+        { label:"Painting", trade:"2300 Painting" },
+        { label:"Flooring", trade:"1700 Flooring" },
+        { label:"HVAC: final", trade:"1200 Mechanical" },
+        { label:"Electrical: final", trade:"1000 Electrical" }
+      ] },
+      "Full bath 1": { icon:"🚿", phases:[
+        { label:"Framing", trade:"0600 Framing" },
+        { label:"Plumbing: rough", trade:"1100 Plumbing" },
+        { label:"HVAC: Rough", trade:"1200 Mechanical" },
+        { label:"Electrical: rough", trade:"1000 Electrical" },
+        { label:"Insulation", trade:"1300 Insulation" },
+        { label:"Drywall", trade:"1400 Drywall" },
+        { label:"Doors", trade:"1500 Doors & Windows" },
+        { label:"Trim", trade:"2100 Trimwork" },
+        { label:"Painting", trade:"2300 Painting" },
+        { label:"Flooring", trade:"1700 Flooring" },
+        { label:"Plumbing: final", trade:"1100 Plumbing" },
+        { label:"HVAC: final", trade:"1200 Mechanical" },
+        { label:"Electrical: final", trade:"1000 Electrical" }
+      ] },
+      "Full bath 2": { icon:"🚿", phases:[
+        { label:"Framing", trade:"0600 Framing" },
+        { label:"Plumbing: rough", trade:"1100 Plumbing" },
+        { label:"HVAC: Rough", trade:"1200 Mechanical" },
+        { label:"Electrical: rough", trade:"1000 Electrical" },
+        { label:"Insulation", trade:"1300 Insulation" },
+        { label:"Drywall", trade:"1400 Drywall" },
+        { label:"Doors", trade:"1500 Doors & Windows" },
+        { label:"Trim", trade:"2100 Trimwork" },
+        { label:"Painting", trade:"2300 Painting" },
+        { label:"Flooring", trade:"1700 Flooring" },
+        { label:"Plumbing: final", trade:"1100 Plumbing" },
+        { label:"HVAC: final", trade:"1200 Mechanical" },
+        { label:"Electrical: final", trade:"1000 Electrical" }
+      ] },
+      "Half bath": { icon:"🚽", phases:[
+        { label:"Framing", trade:"0600 Framing" },
+        { label:"Plumbing: rough", trade:"1100 Plumbing" },
+        { label:"HVAC: Rough", trade:"1200 Mechanical" },
+        { label:"Electrical: rough", trade:"1000 Electrical" },
+        { label:"Insulation", trade:"1300 Insulation" },
+        { label:"Drywall", trade:"1400 Drywall" },
+        { label:"Doors", trade:"1500 Doors & Windows" },
+        { label:"Trim", trade:"2100 Trimwork" },
+        { label:"Painting", trade:"2300 Painting" },
+        { label:"Flooring", trade:"1700 Flooring" },
+        { label:"Plumbing: final", trade:"1100 Plumbing" },
+        { label:"HVAC: final", trade:"1200 Mechanical" },
+        { label:"Electrical: final", trade:"1000 Electrical" }
+      ] },
+      "Laundry": { icon:"🧺", phases:[
+        { label:"Laundry Framing", trade:"0600 Framing" },
+        { label:"Electrical: rough", trade:"1000 Electrical" },
+        { label:"HVAC: Rough", trade:"1200 Mechanical" },
+        { label:"Plumbing: rough", trade:"1100 Plumbing" },
+        { label:"Insulation", trade:"1300 Insulation" },
+        { label:"Drywall", trade:"1400 Drywall" },
+        { label:"Doors", trade:"1500 Doors & Windows" },
+        { label:"Trim", trade:"2100 Trimwork" },
+        { label:"Painting", trade:"2300 Painting" },
+        { label:"Flooring", trade:"1700 Flooring" },
+        { label:"Cabinets", trade:"1900 Cabinetry" },
+        { label:"Plumbing: final", trade:"1100 Plumbing" },
+        { label:"HVAC: final", trade:"1200 Mechanical" },
+        { label:"Electrical: final", trade:"1000 Electrical" },
+        { label:"Appliances", trade:"2400 Appliances" }
+      ] },
+      "Bonus room": { icon:"🛋", phases:[
+        { label:"Framing", trade:"0600 Framing" },
+        { label:"HVAC: Rough", trade:"1200 Mechanical" },
+        { label:"Electrical: rough", trade:"1000 Electrical" },
+        { label:"Insulation", trade:"1300 Insulation" },
+        { label:"Drywall", trade:"1400 Drywall" },
+        { label:"Doors", trade:"1500 Doors & Windows" },
+        { label:"Trim", trade:"2100 Trimwork" },
+        { label:"Painting", trade:"2300 Painting" },
+        { label:"Flooring", trade:"1700 Flooring" },
+        { label:"HVAC: final", trade:"1200 Mechanical" },
+        { label:"Electrical: final", trade:"1000 Electrical" }
+      ] },
+      "Garage": { icon:"🚗", phases:[
+        { label:"Framing", trade:"0600 Framing" },
+        { label:"Plumbing: rough", trade:"1100 Plumbing" },
+        { label:"HVAC: Rough", trade:"1200 Mechanical" },
+        { label:"Electrical: rough", trade:"1000 Electrical" },
+        { label:"Insulation", trade:"1300 Insulation" },
+        { label:"Drywall", trade:"1400 Drywall" },
+        { label:"Doors", trade:"1500 Doors & Windows" },
+        { label:"Trim", trade:"2100 Trimwork" },
+        { label:"Painting", trade:"2300 Painting" },
+        { label:"Flooring", trade:"1700 Flooring" },
+        { label:"Plumbing: final", trade:"1100 Plumbing" },
+        { label:"HVAC: final", trade:"1200 Mechanical" },
+        { label:"Electrical: final", trade:"1000 Electrical" }
+      ] }
     }
   }
+};
+
+// Icons for the phase grid (step 3) — keyed by exact phase label since
+// several labels (rough vs final) share a trade code but need distinct
+// display, and a couple of rooms use custom framing labels.
+const PHASE_ICONS = {
+  "Framing":"🏗", "Kitchen Framing":"🏗", "Laundry Framing":"🏗",
+  "Plumbing: rough":"🔧", "Plumbing: final":"🔧",
+  "HVAC: Rough":"❄️", "HVAC: final":"❄️", "HVAC":"❄️",
+  "Electrical: rough":"⚡", "Electrical: final":"⚡", "Electric Panel/Riser":"⚡",
+  "Insulation":"🧊", "Drywall":"🧱", "Doors":"🚪", "Trim":"📏",
+  "Painting":"🎨", "Flooring":"🪵", "Cabinets":"🗄", "Appliances":"🍳",
+  "Demo/Trash out":"🗑", "Cleaning":"🧹", "Misc. Expenses":"💰",
+  "Drain stack(s)":"🚰", "Water heater":"🔥", "Roofing":"🏚",
+  "Doors & Windows":"🪟", "Siding":"🧱", "Gutters & Down spouts":"🌧",
+  "Flatwork":"🏛", "Landscaping":"🌳"
 };
 
 let _wizardStep = 1;
 let _wizardCategory = null;
 let _wizardRoom = null;
 let _wizardTrade = null;
+let _wizardPhaseLabel = null;
 let _wizardSelectedItems = new Set();
 let _wizardCurrentItems = [];
 
@@ -18507,6 +18776,7 @@ function _launchSmartAdd() {
   _wizardCategory = null;
   _wizardRoom = null;
   _wizardTrade = null;
+  _wizardPhaseLabel = null;
   _wizardSelectedItems = new Set();
   wizardSelectCategory('Whole House');
   kOpen('smartAddModal');
@@ -18535,41 +18805,29 @@ function wizardSelectCategory(cat) {
 function wizardSelectRoom(room) {
   _wizardRoom = room;
   _wizardStep = 3;
-  const trades = ROOM_STRUCTURE[_wizardCategory]?.rooms[room]?.trades || [];
+  const phases = ROOM_STRUCTURE[_wizardCategory]?.rooms[room]?.phases || [];
   const grid = document.getElementById('wizardTradeGrid');
   if (!grid) return;
 
-  const tradeNames = {
-    '0000 Uncategorized':'Misc','0200 Demolition':'Demo','0600 Framing':'Framing',
-    '0800 Siding':'Siding','0900 Roofing':'Roofing','1000 Electrical':'Electrical',
-    '1100 Plumbing':'Plumbing','1200 Mechanical':'HVAC','1300 Insulation':'Insulation',
-    '1400 Drywall':'Drywall','1500 Doors & Windows':'Doors/Windows','1600 Garage':'Garage',
-    '1700 Flooring':'Flooring','1800 Tiling':'Tiling','1900 Cabinetry':'Cabinetry',
-    '2000 Countertops':'Countertops','2100 Trimwork':'Trimwork','2200 Specialty Finishes':'Finishes',
-    '2300 Painting':'Painting','2400 Appliances':'Appliances','2500 Decking':'Decking',
-    '2600 Fencing':'Fencing','2800 Concrete':'Concrete','2900 Landscaping':'Landscape',
-    '3100 Miscellaneous':'Misc'
-  };
-
-  const tradeIcons = {
-    'Electrical':'⚡','Plumbing':'🔧','HVAC':'❄️','Flooring':'🪵','Tiling':'🔲',
-    'Painting':'🎨','Cabinetry':'🗄','Appliances':'🍳','Decking':'🪵','Roofing':'🏚',
-    'Siding':'🧱','Drywall':'🧱','Insulation':'🧊','Framing':'🏗','Doors/Windows':'🪟',
-    'Countertops':'🪨','Trimwork':'📏','Finishes':'✨','Demo':'🗑','Misc':'📦',
-    'Concrete':'🏛','Landscape':'🌳','Fencing':'🚧','Garage':'🚗'
-  };
-
-  grid.innerHTML = trades.map(trade => {
-    const name = tradeNames[trade] || trade;
-    const icon = tradeIcons[name] || '🔨';
-    const items = CATALOG_DATA[trade] || [];
-    return `<div class="wizard-trade-btn" onclick="wizardSelectTrade('${trade.replace(/'/g,"\'")}')">
-      ${icon} ${name}<div style="font-size:.68rem;color:var(--muted);font-weight:400;margin-top:2px">${items.length} items</div>
+  grid.innerHTML = phases.map(phase => {
+    const icon = PHASE_ICONS[phase.label] || '🔨';
+    const items = CATALOG_DATA[phase.trade] || [];
+    return `<div class="wizard-trade-btn" onclick="wizardSelectPhase('${phase.label.replace(/'/g,"\'")}','${phase.trade.replace(/'/g,"\'")}')">
+      ${icon} ${esc(phase.label)}<div style="font-size:.68rem;color:var(--muted);font-weight:400;margin-top:2px">${items.length} items</div>
     </div>`;
   }).join('');
 
   wizardSetStep(3);
   updateWizardBreadcrumb();
+}
+
+// Wraps wizardSelectTrade() to also remember the exact phase label
+// (e.g. "Electrical: rough" vs "Electrical: final") separately from the
+// underlying catalog trade code, since two phases in the same room can
+// share a trade code but need distinct breadcrumb/subgroup naming.
+function wizardSelectPhase(label, trade) {
+  _wizardPhaseLabel = label;
+  wizardSelectTrade(trade);
 }
 
 function wizardSelectTrade(trade) {
@@ -18903,7 +19161,7 @@ async function wizardAddBundleToEstimate() {
     // (Feature) based on trade context — same pattern as wizardAddToEstimate,
     // so bundle-added items land in the same tree the Board/Estimate views read.
     const roomName = _wizardRoom || _wizardCategory;
-    const tradeName = (_wizardTrade || '').split(' ').slice(1).join(' ') || 'General';
+    const tradeName = _wizardPhaseLabel || (_wizardTrade || '').split(' ').slice(1).join(' ') || 'General';
 
     let group = estGroups.find(g => g.name.toLowerCase() === roomName.toLowerCase());
     if (!group) {
@@ -19386,7 +19644,7 @@ function updateWizardBreadcrumb() {
   let crumbs = [{ label:'Start', step:1 }];
   if (_wizardRoom) crumbs.push({ label:_wizardRoom, step:2 });
   if (_wizardTrade) {
-    const tradeName = _wizardTrade.split(' ').slice(1).join(' ') || _wizardTrade;
+    const tradeName = _wizardPhaseLabel || _wizardTrade.split(' ').slice(1).join(' ') || _wizardTrade;
     crumbs.push({ label:tradeName, step:3 });
   }
   el.innerHTML = crumbs.map((c, i) =>
@@ -19413,7 +19671,7 @@ async function wizardAddToEstimate() {
   let groupId = null;
   let subgroupId = null;
   const roomName = _wizardRoom || _wizardCategory;
-  const tradeName = (_wizardTrade || '').split(' ').slice(1).join(' ') || 'General';
+  const tradeName = _wizardPhaseLabel || (_wizardTrade || '').split(' ').slice(1).join(' ') || 'General';
 
   // Find existing group matching room name
   let group = estGroups.find(g => g.name.toLowerCase() === roomName.toLowerCase());
