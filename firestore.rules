@@ -39,7 +39,7 @@ service cloud.firestore {
     match /companies/{companyId} {
       allow read: if signedIn() && (
         resource.data.ownerEmail == myEmail().lower() ||
-        (resource.data.memberEmails is list && myEmail().lower() in resource.data.memberEmails) ||
+        myEmail().lower() in resource.data.memberEmails ||
         inCompany(companyId)
       );
       // Onboarding: a signed-in user creating their own new company —
