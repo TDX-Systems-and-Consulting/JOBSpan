@@ -4087,12 +4087,18 @@
 
       <!-- FILES TAB -->
       <div id="detailDocuments" style="display:none">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;gap:8px;flex-wrap:wrap">
           <div style="font-weight:800">Photos & Files</div>
-          <label style="cursor:pointer;background:#d97706;color:#fff;padding:8px 16px;border-radius:10px;font-size:.84rem;font-weight:700">
-            📷 Upload Photos
-            <input type="file" multiple accept="image/*,.pdf,.doc,.docx" style="display:none" onchange="uploadJobFiles(this)">
-          </label>
+          <div style="display:flex;gap:8px">
+            <label style="cursor:pointer;background:#d97706;color:#fff;padding:8px 16px;border-radius:10px;font-size:.84rem;font-weight:700">
+              📸 Take Photo
+              <input type="file" accept="image/*" capture="environment" style="display:none" onchange="uploadJobFiles(this)">
+            </label>
+            <label style="cursor:pointer;background:rgba(217,119,6,.12);border:1px solid rgba(217,119,6,.3);color:var(--amber);padding:8px 16px;border-radius:10px;font-size:.84rem;font-weight:700">
+              📁 Upload Photos/Files
+              <input type="file" multiple accept="image/*,.pdf,.doc,.docx" style="display:none" onchange="uploadJobFiles(this)">
+            </label>
+          </div>
         </div>
         <div id="detailFilesList" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px">
           <div class="small muted" style="text-align:center;padding:20px;grid-column:1/-1">No files yet</div>
@@ -4257,6 +4263,6 @@
   </div>
 </div>
 
-<script src="kytrac-app.js?v=202607311359"></script>
+<script src="kytrac-app.js?v=202607311404"></script>
 </body>
 </html>

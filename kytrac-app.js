@@ -4174,7 +4174,7 @@ function commitJobStatusChange(newStatus) {
 window.commitJobStatusChange = commitJobStatusChange;
 
 function switchDetailTab(tab, btn) {
-  const allTabs = ['dashboard','financials','estimate','changeorders','subs','phases','logs','invoices','documents','activity','retrospective','todos','selections','specifications','plans','messages','reports'];
+  const allTabs = ['dashboard','financials','estimate','changeorders','subs','phases','logs','invoices','documents','activity','retrospective','todos','selections','specifications','plans','messages','reports','jobnotes'];
   allTabs.forEach(t => {
     const key = 'detail' + t.charAt(0).toUpperCase() + t.slice(1);
     const el = document.getElementById(key);
