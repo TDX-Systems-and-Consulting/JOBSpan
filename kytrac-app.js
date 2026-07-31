@@ -11277,6 +11277,12 @@ function deleteDoc(id) {
       allDocuments = allDocuments.filter(d => d.id !== id);
       renderDocuments();
       renderDocStats();
+      // The job-detail Files/Photos tab (detailFilesList) renders from
+      // this same cached array via renderJobDocList(), but was never
+      // being told to refresh after a delete — only the standalone
+      // Documents page was. Left the deleted photo visibly in place
+      // until a full page reload.
+      if (conCurrentJobId) renderJobDocList(allDocuments.filter(d => d.jobId === conCurrentJobId));
     })
     .catch(e => alert('Error: ' + e.message));
 }
