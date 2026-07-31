@@ -17243,23 +17243,23 @@ const TIERED_BUNDLES = {
     {
       name: 'Wall/Ceiling Paint — 2 Coat (per sqft)',
       icon: '🎨',
-      desc: 'Materials + labor per sqft, 2 coats — matches the real job template approach of applying the 1-coat rate twice, not the separate hourly-rate "2 coats" catalog item which uses an incompatible pricing shape',
+      desc: 'Materials + labor per sqft, 2 coats — rates verified directly against a real signed estimate (Global > Painting > Paint 2 coat per sqft, 1,350 sqft, $6,826.27/$7,997.34 total). No grade split exists for this line in real usage — unlike the 1-coat version, it is one flat rate.',
       tiers: {
-        low: { label: 'Standard Grade', priceRange: '$1.50/sqft + $6.90 labor/sqft', lines: [
-          { desc: 'Paint (2 coat, standard grade)', qty: 1, unitCost: 1.20, unitPrice: 1.50, unit: 'sqft', type: 'material' },
-          { desc: 'Paint Labor (2 coat, standard grade)', qty: 1, unitCost: 6.00, unitPrice: 6.90, unit: 'sqft', type: 'labor' },
-          { desc: "3M ScotchBlue 1.88 in. x 60 yds. Original Multi-Surface Painter's Tape (6-Pack)", qty: 1/1000, unitCost: 39.48, unitPrice: 49.35, unit: 'sqft', type: 'material' },
-          { desc: '35 in. x 200 ft. Builders Paper', qty: 1/1500, unitCost: 18.98, unitPrice: 23.725, unit: 'sqft', type: 'material' },
-          { desc: '9 in. x 3/8 in. High-Density Polyester Knit Paint Roller Cover (3-Pack)', qty: 1/800, unitCost: 8.48, unitPrice: 10.6, unit: 'sqft', type: 'material' },
-          { desc: 'Premium 2 in. Polyester Trylon Thin Angled Sash Paint Brush', qty: 1/2000, unitCost: 9.33, unitPrice: 11.663, unit: 'sqft', type: 'material' },
-        ]},
-        high: { label: 'High Grade', priceRange: '$4.50/sqft + $10.36 labor/sqft', lines: [
-          { desc: 'Paint (2 coat, high grade)', qty: 1, unitCost: 3.60, unitPrice: 4.50, unit: 'sqft', type: 'material' },
-          { desc: 'Paint Labor (2 coat, high grade)', qty: 1, unitCost: 9.00, unitPrice: 10.36, unit: 'sqft', type: 'labor' },
-          { desc: "3M ScotchBlue 1.88 in. x 60 yds. Original Multi-Surface Painter's Tape (6-Pack)", qty: 1/1000, unitCost: 39.48, unitPrice: 49.35, unit: 'sqft', type: 'material' },
-          { desc: '35 in. x 200 ft. Builders Paper', qty: 1/1500, unitCost: 18.98, unitPrice: 23.725, unit: 'sqft', type: 'material' },
-          { desc: '9 in. x 3/8 in. High-Density Polyester Knit Paint Roller Cover (3-Pack)', qty: 1/800, unitCost: 8.48, unitPrice: 10.6, unit: 'sqft', type: 'material' },
-          { desc: 'Premium 2 in. Polyester Trylon Thin Angled Sash Paint Brush', qty: 1/2000, unitCost: 9.33, unitPrice: 11.663, unit: 'sqft', type: 'material' },
+        low: { label: 'Standard Rate', priceRange: '$1.00/sqft + $4.60 labor/sqft', lines: [
+          { desc: 'Paint/sqft - 2 coat', qty: 1, unitCost: 1.00, unitPrice: 1.25, unit: 'sqft', type: 'material' },
+          { desc: 'Paint Labor for 2 coat per sq ft', qty: 1, unitCost: 4.00, unitPrice: 4.60, unit: 'sqft', type: 'labor' },
+          // Consumables below are a flat qty of 1 each per job in the real
+          // estimate (verified at 1,350 sqft), not scaled per sqft like the
+          // 1-coat tier assumes — 1/1350 reproduces that exactly at this
+          // job's size. This is the one real data point available; if a
+          // very different job size shows these should stay closer to
+          // flat instead of scaling linearly, flag it and this can be
+          // reworked (the current bundle mechanic can only apply one
+          // uniform per-sqft scale factor to every line in a tier).
+          { desc: "3M ScotchBlue 1.88 in. x 60 yds. Original Multi-Surface Painter's Tape (6-Pack)", qty: 1/1350, unitCost: 39.48, unitPrice: 49.35, unit: 'sqft', type: 'material' },
+          { desc: '35 in. x 200 ft. Builders Paper', qty: 1/1350, unitCost: 18.98, unitPrice: 23.725, unit: 'sqft', type: 'material' },
+          { desc: '9 in. x 3/8 in. High-Density Polyester Knit Paint Roller Cover (3-Pack)', qty: 1/1350, unitCost: 8.48, unitPrice: 10.6, unit: 'sqft', type: 'material' },
+          { desc: 'Premium 2 in. Polyester Trylon Thin Angled Sash Paint Brush', qty: 1/1350, unitCost: 9.33, unitPrice: 11.663, unit: 'sqft', type: 'material' },
         ]},
       }
     },
