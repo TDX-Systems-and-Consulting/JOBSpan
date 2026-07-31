@@ -1048,8 +1048,8 @@ exports.createStripePaymentLink = functions.https.onCall(async (data, context) =
       // Metadata is how the webhook finds its way back to the right
       // invoice doc - Stripe echoes this back untouched on every event.
       metadata: { companyId, jobId, invoiceId },
-      success_url: 'https://jobsmetrix.com/pay-success.html?invoice=' + invoiceId,
-      cancel_url: 'https://jobsmetrix.com/pay-cancelled.html?invoice=' + invoiceId,
+      success_url: 'https://jobsmetrix.com/?paid=1&invoice=' + invoiceId,
+      cancel_url: 'https://jobsmetrix.com/?paid=0&invoice=' + invoiceId,
     });
 
     await invRef.update({
