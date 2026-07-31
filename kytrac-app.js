@@ -19001,7 +19001,9 @@ function wizardRenderBundleTasks(trade, bundles) {
     ).join('') +
     '<button onclick="wizardSelectTradeFallback(\'' + trade.replace(/'/g,"\\'") + '\')" ' +
     'style="width:100%;margin-top:4px;padding:10px;background:transparent;border:1px dashed rgba(110,145,210,.2);border-radius:10px;color:var(--muted);font-size:.82rem;cursor:pointer">' +
-    '📦 Browse individual catalog items instead</button>';
+    '📦 Browse individual catalog items instead</button>' +
+    '<button onclick="wizardAddCustomItem()" style="width:100%;margin-top:10px;padding:10px;background:transparent;border:1px dashed rgba(110,145,210,.25);border-radius:10px;color:var(--muted);font-size:.82rem;cursor:pointer">' +
+    '✏️ Not in the catalog? Add a one-off item (per hour, per job, per sqft, etc.)</button>';
 
   const footer = document.getElementById('wizardFooter');
   if (footer) footer.innerHTML = '<button class="btn" onclick="kClose(\'smartAddModal\')">Cancel</button>';
@@ -19636,8 +19638,11 @@ function wizardRenderItems(items) {
   const el = document.getElementById('wizardItemList');
   if (!el) return;
 
+  const customBtn = '<button onclick="wizardAddCustomItem()" style="width:100%;margin-top:10px;padding:10px;background:transparent;border:1px dashed rgba(110,145,210,.25);border-radius:10px;color:var(--muted);font-size:.82rem;cursor:pointer">' +
+    '✏️ Not in the catalog? Add a one-off item (per hour, per job, per sqft, etc.)</button>';
+
   if (!items.length) {
-    el.innerHTML = '<div class="small muted" style="text-align:center;padding:20px">No items found</div>';
+    el.innerHTML = '<div class="small muted" style="text-align:center;padding:20px">No items found</div>' + customBtn;
     return;
   }
 
@@ -19657,7 +19662,7 @@ function wizardRenderItems(items) {
       </div>
       <div class="wizard-item-price">${totalPrice>0?'$'+totalPrice.toFixed(2):''}</div>
     </div>`;
-  }).join('');
+  }).join('') + customBtn;
 
   updateWizardSelCount();
 }
@@ -19873,6 +19878,27 @@ window.wizardClearAll = wizardClearAll;
 window.wizardBack = wizardBack;
 window.wizardGoTo = wizardGoTo;
 window.wizardGoStep = wizardGoStep;
+// One-off items that don't fit the catalog (flat fees, vendor bids,
+// custom quotes) shouldn't force a fake per-sqft/per-unit catalog rate
+// just to be addable from Smart Add. This reuses the existing manual
+// Add Line Item modal (same one the Estimate tab's own +Item button
+// opens), pre-scoped to whichever room/phase is currently being
+// browsed, so the item lands in the right spot in the tree without
+// making the user re-navigate the group/subgroup dropdowns by hand.
+function wizardAddCustomItem() {
+  const roomName = _wizardRoom || _wizardCategory;
+  const phaseName = _wizardPhaseLabel || (_wizardTrade || '').split(' ').slice(1).join(' ') || '';
+  let groupId = null, subgroupId = null;
+  const group = estGroups.find(g => g.name.toLowerCase() === (roomName || '').toLowerCase());
+  if (group) {
+    groupId = group.id;
+    const sub = group.subgroups?.find(s => s.name.toLowerCase() === phaseName.toLowerCase());
+    if (sub) subgroupId = sub.id;
+  }
+  kClose('smartAddModal');
+  openAddEstItemModal(null, groupId, subgroupId, null);
+}
+window.wizardAddCustomItem = wizardAddCustomItem;
 window.wizardAddToEstimate = wizardAddToEstimate;
 
 // ════════════════════════════════════════════════════
