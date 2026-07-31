@@ -19120,7 +19120,9 @@ function wizardRenderTierSelect() {
         ).join('') + '</div></div>';
     }).join('') +
     '<button onclick="wizardRenderBundleTasks(_wizardTrade, TIERED_BUNDLES[_wizardTrade]||[])" ' +
-    'style="background:none;border:none;color:var(--muted);font-size:.8rem;cursor:pointer;margin-top:6px">← Back to bundles</button>';
+    'style="background:none;border:none;color:var(--muted);font-size:.8rem;cursor:pointer;margin-top:6px">← Back to bundles</button>' +
+    '<button onclick="wizardAddCustomItem()" style="width:100%;margin-top:10px;padding:10px;background:transparent;border:1px dashed rgba(110,145,210,.25);border-radius:10px;color:var(--muted);font-size:.82rem;cursor:pointer">' +
+    '✏️ Not in the catalog? Add a one-off item (per hour, per job, per sqft, etc.)</button>';
 
   const footer = document.getElementById('wizardFooter');
   if (footer) footer.innerHTML = '<button class="btn" onclick="kClose(\'smartAddModal\')">Cancel</button>';
@@ -19189,7 +19191,9 @@ function wizardRenderQtySelect() {
     '<div style="display:flex;justify-content:space-between;margin-top:8px;font-weight:900;font-size:.95rem">' +
     '<span style="color:#eaf0fb">Bundle Total</span><span style="color:var(--amber)" id="wizBundleTotalDisplay">$' + baseTotal.toFixed(2) + '</span></div></div>' +
     qtyStepHtml +
-    '<button onclick="wizardRenderTierSelect()" style="background:none;border:none;color:var(--muted);font-size:.8rem;cursor:pointer">← Back to tier select</button>';
+    '<button onclick="wizardRenderTierSelect()" style="background:none;border:none;color:var(--muted);font-size:.8rem;cursor:pointer">← Back to tier select</button>' +
+    '<button onclick="wizardAddCustomItem()" style="width:100%;margin-top:10px;padding:10px;background:transparent;border:1px dashed rgba(110,145,210,.25);border-radius:10px;color:var(--muted);font-size:.82rem;cursor:pointer">' +
+    '✏️ Not in the catalog? Add a one-off item (per hour, per job, per sqft, etc.)</button>';
 
   const footer = document.getElementById('wizardFooter');
   if (footer) footer.innerHTML =
