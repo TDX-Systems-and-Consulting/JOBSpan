@@ -12745,7 +12745,7 @@ They can view their project status, schedule, daily updates, and invoices — no
       <div style="font-size:.84rem;color:var(--muted);margin-bottom:16px">Send this link to your customer. They can view their project — no login needed.</div>
       <div style="background:rgba(8,18,36,.8);border:1px solid var(--amber-border);border-radius:10px;padding:12px 14px;margin-bottom:16px;word-break:break-all;font-size:.78rem;color:var(--amber);font-family:monospace">${esc(url)}</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <button onclick="navigator.clipboard.writeText('${url.replace(/'/g,"\'")}').then(()=>{this.textContent='✓ Copied!';setTimeout(()=>this.textContent='📋 Copy Link',2000)})" class="btn-amber" style="flex:1">📋 Copy Link</button>
+        <button onclick="navigator.clipboard.writeText('${url.replace(/'/g,"\\'")}').then(()=>{this.textContent='✓ Copied!';setTimeout(()=>this.textContent='📋 Copy Link',2000)})" class="btn-amber" style="flex:1">📋 Copy Link</button>
         <a href="mailto:?subject=Your Project Portal&body=View your project here: ${encodeURIComponent(url)}" class="btn" style="flex:1;text-align:center;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:6px">✉️ Email Link</a>
         <button onclick="this.closest('div[style*=fixed]').remove()" class="btn" style="flex:1">Close</button>
       </div>
@@ -18853,7 +18853,7 @@ function wizardSelectCategory(cat) {
 
   grid.innerHTML = Object.entries(rooms).map(([room, data]) => {
     const tradeCount = data.phases.length;
-    return `<div class="wizard-card" onclick="wizardSelectRoom('${room.replace(/'/g,"\'")}')">
+    return `<div class="wizard-card" onclick="wizardSelectRoom('${room.replace(/'/g,"\\'")}')">
       <div class="wc-icon">${data.icon}</div>
       <div class="wc-name">${room}</div>
       <div class="wc-count">${tradeCount} trade${tradeCount!==1?'s':''}</div>
@@ -18874,7 +18874,7 @@ function wizardSelectRoom(room) {
   grid.innerHTML = phases.map(phase => {
     const icon = PHASE_ICONS[phase.label] || '🔨';
     const items = CATALOG_DATA[phase.trade] || [];
-    return `<div class="wizard-trade-btn" onclick="wizardSelectPhase('${phase.label.replace(/'/g,"\'")}','${phase.trade.replace(/'/g,"\'")}')">
+    return `<div class="wizard-trade-btn" onclick="wizardSelectPhase('${phase.label.replace(/'/g,"\\'")}','${phase.trade.replace(/'/g,"\\'")}')">
       ${icon} ${esc(phase.label)}<div style="font-size:.68rem;color:var(--muted);font-weight:400;margin-top:2px">${items.length} items</div>
     </div>`;
   }).join('');
@@ -19618,7 +19618,7 @@ function wizardRenderItems(items) {
     const matPrice = item.materials?.unitPrice || 0;
     const labPrice = item.labor?.unitPrice || 0;
     const totalPrice = matPrice + labPrice;
-    return `<div class="wizard-item ${isSelected?'selected':''}" onclick="wizardToggleItem('${item.name.replace(/'/g,"\'")}',this)">
+    return `<div class="wizard-item ${isSelected?'selected':''}" onclick="wizardToggleItem('${item.name.replace(/'/g,"\\'")}',this)">
       <div class="wizard-item-check">${isSelected?'✓':''}</div>
       <div class="wizard-item-info">
         <div class="wizard-item-name">${esc(item.name)}</div>
@@ -19836,6 +19836,7 @@ async function wizardAddToEstimate() {
 window.openSmartAdd = openSmartAdd;
 window.wizardSelectCategory = wizardSelectCategory;
 window.wizardSelectRoom = wizardSelectRoom;
+window.wizardSelectPhase = wizardSelectPhase;
 window.wizardSelectTrade = wizardSelectTrade;
 window.wizardToggleItem = wizardToggleItem;
 window.wizardFilterItems = wizardFilterItems;
