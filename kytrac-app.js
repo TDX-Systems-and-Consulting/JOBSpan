@@ -8168,6 +8168,11 @@ function conLoadJobs() {
     conRenderList();
     conRenderStats();
     conRenderSchedule();
+    // Jobs page has its own separate Kanban render (renderJobsBoard),
+    // distinct from the Home dashboard board above — was missing from
+    // this refresh entirely, so deleting/archiving a job while on the
+    // Jobs page left a stale card until a manual page refresh.
+    if (typeof renderJobsBoard === 'function' && _jobsView === 'kanban') renderJobsBoard();
     loadAllCOTotals();
     loadCatalog();
     loadAllInvoices();
