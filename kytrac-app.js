@@ -18924,8 +18924,13 @@ function wizardSelectRoom(room) {
 // underlying catalog trade code, since two phases in the same room can
 // share a trade code but need distinct breadcrumb/subgroup naming.
 function wizardSelectPhase(label, trade) {
-  _wizardPhaseLabel = label;
-  wizardSelectTrade(trade);
+  try {
+    _wizardPhaseLabel = label;
+    wizardSelectTrade(trade);
+  } catch (e) {
+    console.error('wizardSelectPhase failed:', label, trade, e);
+    alert('Smart Add error on "' + label + '": ' + e.message + '\n\nPlease screenshot this and send it over.');
+  }
 }
 
 function wizardSelectTrade(trade) {
