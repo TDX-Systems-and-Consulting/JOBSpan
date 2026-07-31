@@ -19021,8 +19021,7 @@ function wizardRenderBundleTasks(trade, bundles) {
     '<button onclick="wizardSelectTradeFallback(\'' + trade.replace(/'/g,"\\'") + '\')" ' +
     'style="width:100%;margin-top:4px;padding:10px;background:transparent;border:1px dashed rgba(110,145,210,.2);border-radius:10px;color:var(--muted);font-size:.82rem;cursor:pointer">' +
     '📦 Browse individual catalog items instead</button>' +
-    '<button onclick="wizardAddCustomItem()" style="width:100%;margin-top:10px;padding:10px;background:transparent;border:1px dashed rgba(110,145,210,.25);border-radius:10px;color:var(--muted);font-size:.82rem;cursor:pointer">' +
-    '✏️ Not in the catalog? Add a one-off item (per hour, per job, per sqft, etc.)</button>';
+    wizardCustomItemCardHtml();
 
   const footer = document.getElementById('wizardFooter');
   if (footer) footer.innerHTML = '<button class="btn" onclick="kClose(\'smartAddModal\')">Cancel</button>';
@@ -19146,8 +19145,7 @@ function wizardRenderTierSelect() {
     }).join('') +
     '<button onclick="wizardRenderBundleTasks(_wizardTrade, TIERED_BUNDLES[_wizardTrade]||[])" ' +
     'style="background:none;border:none;color:var(--muted);font-size:.8rem;cursor:pointer;margin-top:6px">← Back to bundles</button>' +
-    '<button onclick="wizardAddCustomItem()" style="width:100%;margin-top:10px;padding:10px;background:transparent;border:1px dashed rgba(110,145,210,.25);border-radius:10px;color:var(--muted);font-size:.82rem;cursor:pointer">' +
-    '✏️ Not in the catalog? Add a one-off item (per hour, per job, per sqft, etc.)</button>';
+    wizardCustomItemCardHtml();
 
   const footer = document.getElementById('wizardFooter');
   if (footer) footer.innerHTML = '<button class="btn" onclick="kClose(\'smartAddModal\')">Cancel</button>';
@@ -19219,8 +19217,7 @@ function wizardRenderQtySelect() {
     '<span style="color:#eaf0fb">Bundle Total</span><span style="color:var(--amber)" id="wizBundleTotalDisplay">$' + baseTotal.toFixed(2) + '</span></div></div>' +
     qtyStepHtml +
     '<button onclick="wizardRenderTierSelect()" style="background:none;border:none;color:var(--muted);font-size:.8rem;cursor:pointer">← Back to tier select</button>' +
-    '<button onclick="wizardAddCustomItem()" style="width:100%;margin-top:10px;padding:10px;background:transparent;border:1px dashed rgba(110,145,210,.25);border-radius:10px;color:var(--muted);font-size:.82rem;cursor:pointer">' +
-    '✏️ Not in the catalog? Add a one-off item (per hour, per job, per sqft, etc.)</button>';
+    wizardCustomItemCardHtml();
 
   const footer = document.getElementById('wizardFooter');
   if (footer) footer.innerHTML =
@@ -19671,8 +19668,7 @@ function wizardRenderItems(items) {
   const el = document.getElementById('wizardItemList');
   if (!el) return;
 
-  const customBtn = '<button onclick="wizardAddCustomItem()" style="width:100%;margin-top:10px;padding:10px;background:transparent;border:1px dashed rgba(110,145,210,.25);border-radius:10px;color:var(--muted);font-size:.82rem;cursor:pointer">' +
-    '✏️ Not in the catalog? Add a one-off item (per hour, per job, per sqft, etc.)</button>';
+  const customBtn = wizardCustomItemCardHtml();
 
   if (!items.length) {
     el.innerHTML = '<div class="small muted" style="text-align:center;padding:20px">No items found</div>' + customBtn;
@@ -19918,6 +19914,21 @@ window.wizardGoStep = wizardGoStep;
 // opens), pre-scoped to whichever room/phase is currently being
 // browsed, so the item lands in the right spot in the tree without
 // making the user re-navigate the group/subgroup dropdowns by hand.
+// Full-sized card for the custom/one-off item option — same visual weight
+// as tier/bundle cards (not a small dashed text link) so it reads as a
+// real 4th option, not an afterthought easy to miss while scrolling.
+function wizardCustomItemCardHtml() {
+  return '<div onclick="wizardAddCustomItem()" ' +
+    'style="border:2px solid rgba(110,145,210,.35);border-radius:14px;padding:14px 16px;margin-top:10px;margin-bottom:10px;cursor:pointer;background:rgba(110,145,210,.07)" ' +
+    'onmouseover="this.style.borderColor=\'rgba(110,145,210,.7)\'" ' +
+    'onmouseout="this.style.borderColor=\'rgba(110,145,210,.35)\'">' +
+    '<div style="display:flex;align-items:center;gap:10px">' +
+    '<div style="font-size:1.4rem">✏️</div>' +
+    '<div><div style="font-weight:800;font-size:.95rem;color:#eaf0fb">Custom / One-off Item</div>' +
+    '<div style="font-size:.76rem;color:var(--muted);margin-top:2px">Not in the catalog? Add your own — per hour, per job, per sqft, flat fee, anything.</div></div>' +
+    '</div></div>';
+}
+
 function wizardAddCustomItem() {
   const roomName = _wizardRoom || _wizardCategory;
   const phaseName = _wizardPhaseLabel || (_wizardTrade || '').split(' ').slice(1).join(' ') || '';
