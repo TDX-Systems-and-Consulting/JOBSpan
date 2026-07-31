@@ -3896,25 +3896,12 @@
             <div class="est-kpi"><div class="est-kpi-val" id="estKpiItems" style="color:#93c5fd">0</div><div class="est-kpi-label">Line Items</div></div>
           </div>
 
-          <!-- Labor Burden basis: true labor cost = crew × days × 8hrs × burden rate.
-               Applying rewrites labor line unitCosts (price untouched) so
-               profit/margin everywhere reflect real crew cost, not billing-derived rates. -->
-          <div style="background:rgba(52,211,153,.05);border:1px solid rgba(52,211,153,.25);border-radius:14px;padding:14px 16px;margin-bottom:16px">
-            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
-              <div style="font-weight:800;font-size:.85rem;color:#34d399">👷 Labor Burden (true crew cost)</div>
-              <div style="font-size:.72rem;color:var(--muted)" id="laborBurdenRateLabel"></div>
-            </div>
-            <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-top:10px">
-              <div><label class="small muted" style="display:block;margin-bottom:4px">Crew size</label>
-                <input id="burdenCrewSize" type="number" min="1" step="1" placeholder="3" style="width:90px" oninput="updateBurdenPreview()" /></div>
-              <div><label class="small muted" style="display:block;margin-bottom:4px">Hours</label>
-                <input id="burdenDays" type="number" min="0" step="0.5" placeholder="12" style="width:90px" oninput="updateBurdenPreview()" /></div>
-              <div style="flex:1;min-width:140px"><div class="small muted" style="margin-bottom:4px">True labor cost</div>
-                <div id="burdenTotalPreview" style="font-weight:900;font-size:1.1rem;color:#34d399">—</div></div>
-              <button class="btn-amber" onclick="applyLaborBurden()" style="font-size:.82rem">Apply to Labor Costs</button>
-            </div>
-            <div id="burdenStatus" style="font-size:.74rem;color:var(--muted);margin-top:8px"></div>
-          </div>
+          <!-- Labor Burden widget moved to the Retrospective tab -- see
+               detailRetrospective below, right above Estimate vs. Actual
+               Labor, which is what it actually feeds. Estimate tab is for
+               building the customer quote; true crew cost tracking
+               belongs with the actual-cost reconciliation, not here. -->
+
           <!-- Toolbar -->
           <!-- Smart Add Banner -->
           <button onclick="openSmartAdd()" style="width:100%;margin-bottom:10px;padding:12px;border-radius:12px;border:1.5px solid rgba(217,119,6,.5);background:linear-gradient(135deg,rgba(217,119,6,.15),rgba(217,119,6,.05));color:var(--amber);font-size:.9rem;font-weight:800;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px">
@@ -4109,6 +4096,29 @@
 
       <!-- RETROSPECTIVE TAB -->
       <div id="detailRetrospective" style="display:none">
+
+        <!-- Labor Burden basis: true labor cost = crew × days × 8hrs × burden rate.
+             Applying rewrites labor line unitCosts (price untouched) so
+             profit/margin everywhere reflect real crew cost, not billing-derived rates.
+             Moved here from the Estimate tab -- this is the input that feeds
+             the Estimate vs. Actual Labor comparison right below, so it
+             belongs with actual-cost tracking, not the customer quote. -->
+        <div style="background:rgba(52,211,153,.05);border:1px solid rgba(52,211,153,.25);border-radius:14px;padding:14px 16px;margin-bottom:16px">
+          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+            <div style="font-weight:800;font-size:.85rem;color:#34d399">👷 Labor Burden (true crew cost)</div>
+            <div style="font-size:.72rem;color:var(--muted)" id="laborBurdenRateLabel"></div>
+          </div>
+          <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-top:10px">
+            <div><label class="small muted" style="display:block;margin-bottom:4px">Crew size</label>
+              <input id="burdenCrewSize" type="number" min="1" step="1" placeholder="3" style="width:90px" oninput="updateBurdenPreview()" /></div>
+            <div><label class="small muted" style="display:block;margin-bottom:4px">Hours</label>
+              <input id="burdenDays" type="number" min="0" step="0.5" placeholder="12" style="width:90px" oninput="updateBurdenPreview()" /></div>
+            <div style="flex:1;min-width:140px"><div class="small muted" style="margin-bottom:4px">True labor cost</div>
+              <div id="burdenTotalPreview" style="font-weight:900;font-size:1.1rem;color:#34d399">—</div></div>
+            <button class="btn-amber" onclick="applyLaborBurden()" style="font-size:.82rem">Apply to Labor Costs</button>
+          </div>
+          <div id="burdenStatus" style="font-size:.74rem;color:var(--muted);margin-top:8px"></div>
+        </div>
 
         <!-- Estimate vs. Actual Labor -->
         <div class="kt-card" style="padding:20px;margin-bottom:16px">
