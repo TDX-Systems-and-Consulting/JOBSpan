@@ -18937,7 +18937,14 @@ function wizardSelectTrade(trade) {
   // Check if this trade has tiered bundles
   const bundles = TIERED_BUNDLES[trade] || [];
 
-  if (bundles.length > 0) {
+  if (bundles.length === 1) {
+    // Only one bundle exists for this trade — showing a list with a
+    // single option to tap is pointless friction. Go straight to it,
+    // same principle already used elsewhere (e.g. Toilet Replacement
+    // skips the grade question for Round since there's only one real
+    // product).
+    wizardSelectBundle(bundles[0].name);
+  } else if (bundles.length > 1) {
     // Step 4: Show bundle tasks for this trade
     wizardRenderBundleTasks(trade, bundles);
   } else {
