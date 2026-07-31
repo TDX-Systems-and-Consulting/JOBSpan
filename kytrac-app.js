@@ -19056,6 +19056,10 @@ window.wizardSelectBundle = wizardSelectBundle;
 function wizardRenderShapeSelect() {
   const itemListEl = document.getElementById('wizardItemList');
   if (!itemListEl || !_wizardBundle) return;
+  wizardSetStep(4);
+  updateWizardBreadcrumb();
+  const searchRow = document.getElementById('wizardSearchRow');
+  if (searchRow) searchRow.style.display = 'none';
 
   itemListEl.innerHTML =
     '<div style="text-align:center;margin-bottom:16px">' +
@@ -19090,6 +19094,10 @@ window.wizardSelectShape = wizardSelectShape;
 function wizardRenderTierSelect() {
   const itemListEl = document.getElementById('wizardItemList');
   if (!itemListEl || !_wizardBundle) return;
+  wizardSetStep(4);
+  updateWizardBreadcrumb();
+  const searchRow = document.getElementById('wizardSearchRow');
+  if (searchRow) searchRow.style.display = 'none';
 
   let tiers = _wizardBundle.tiers;
   // For Toilet Replacement, Oblong only has real Medium/High products —
@@ -19168,6 +19176,8 @@ function wizardRenderQtySelect() {
   if (!_wizardBundle || !_wizardTier) return;
   const itemListEl = document.getElementById('wizardItemList');
   if (!itemListEl) return;
+  wizardSetStep(4);
+  updateWizardBreadcrumb();
 
   const tier = _wizardBundle.tiers[_wizardTier];
   const tierColors = { low: '#34d399', med: '#f59e0b', high: '#ef4444' };
