@@ -8218,12 +8218,27 @@ async function emailInvoiceToCustomer(jobId, invId) {
   } catch(e) {}
   if (!inv) { alert('Invoice not found.'); return; }
 
+  // Generate a fresh Stripe payment link for whatever balance remains,
+  // so the emailed link is always current. Falls back silently to
+  // whatever paymentLink/qbPaymentLink already exists if Stripe isn't
+  // configured yet, or if the invoice has no remaining balance (already
+  // paid) — never blocks sending the invoice itself.
+  try {
+    if (conFunctions && (inv.total || 0) > (inv.amtPaid || 0)) {
+      const createLink = conFunctions.httpsCallable('createStripePaymentLink');
+      const result = await createLink({ companyId: currentCompanyId, jobId, invoiceId: invId });
+      if (result.data?.url) inv.paymentLink = result.data.url;
+    }
+  } catch (e) {
+    console.warn('Stripe payment link not generated (falling back to existing link):', e.message);
+  }
+
   const customerEmail = job.email || job.clientEmail || '';
   const customerName = job.client || 'Customer';
   const invNum = inv.number || 'Invoice';
   const total = (inv.total || 0).toLocaleString(undefined, {minimumFractionDigits:2});
   const due = inv.dueDate || '';
-  const payLink = inv.qbPaymentLink || '';
+  const payLink = inv.paymentLink || inv.qbPaymentLink || '';
 
   // Get portal link for invoice viewing
   let portalUrl = '';

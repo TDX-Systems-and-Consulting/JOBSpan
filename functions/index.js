@@ -41,6 +41,19 @@ const functions = require('firebase-functions');
 const admin = require('firebase-admin');
 admin.initializeApp();
 
+// ── Stripe ───────────────────────────────────────────
+// process.env.STRIPE_SECRET_KEY, falling back to functions.config()
+// for backward compatibility, same pattern used for every other
+// secret in this file (Twilio, SendGrid, QBO, Google).
+function getStripeClient() {
+  const key = process.env.STRIPE_SECRET_KEY || (functions.config().stripe || {}).secret_key;
+  if (!key) throw new Error('Stripe is not configured (functions.config().stripe.secret_key missing). See functions/DEPLOY_STRIPE.md.');
+  return require('stripe')(key);
+}
+function getStripeWebhookSecret() {
+  return process.env.STRIPE_WEBHOOK_SECRET || (functions.config().stripe || {}).webhook_secret;
+}
+
 function getTwilioClient() {
   // Prefer environment variables (recommended post-2027 approach)
   // Fall back to functions.config() for backward compatibility
@@ -853,6 +866,105 @@ async function ensureQboEstimate(companyId, jobId, qbCustomerId) {
 // Cascades Customer -> Estimate -> Invoice -> Payment in order, each
 // step skipped if already done, and returns the QBO Invoice Id so the
 // button can confirm success.
+// Core QBO sync logic, extracted out of qbCreateInvoice so it can be
+// reused by both the manual "Push to QuickBooks" button (qbCreateInvoice,
+// which wraps this with auth checks) and the Stripe payment webhook
+// (which has no user context to check auth against - Stripe calls it
+// directly, not the client). Never had any context.auth dependency to
+// begin with, so this extraction is behavior-preserving.
+async function syncInvoiceToQbo(companyId, jobId, invoiceId) {
+  const db = admin.firestore();
+  const jobRef = db.collection('companies').doc(companyId).collection('jobs').doc(jobId);
+  const invRef = jobRef.collection('invoices').doc(invoiceId);
+  const [jobDoc, invDoc] = await Promise.all([jobRef.get(), invRef.get()]);
+  if (!jobDoc.exists) throw new Error('Job not found.');
+  if (!invDoc.exists) throw new Error('Invoice not found.');
+  const job = jobDoc.data();
+  const inv = invDoc.data();
+
+  if (!job.customerId) {
+    throw new Error('This job has no linked Customer record - open the job and set a Customer before pushing to QuickBooks.');
+  }
+
+  // 1. Customer
+  const qbCustomerId = await ensureQboCustomer(companyId, job.customerId);
+
+  // 2. Estimate (best-effort - a missing proposal doesn't block the invoice)
+  try { await ensureQboEstimate(companyId, jobId, qbCustomerId); }
+  catch (e) { console.warn('QBO Estimate push skipped:', e.message); }
+
+  // 3. Invoice
+  const itemId = await getDefaultQboItemId(companyId);
+  const total = inv.total || 0;
+  let qbInvoiceId = inv.qbInvoiceId;
+  if (qbInvoiceId) {
+    // Updating requires the current SyncToken - QBO rejects updates
+    // without the exact token it last handed out (optimistic locking).
+    const current = await qboFetch(companyId, 'GET', `invoice/${qbInvoiceId}`);
+    const syncToken = current?.Invoice?.SyncToken;
+    const updated = await qboFetch(companyId, 'POST', 'invoice', {
+      Id: qbInvoiceId,
+      SyncToken: syncToken,
+      sparse: true,
+      CustomerRef: { value: qbCustomerId },
+      Line: [{
+        Amount: total,
+        DetailType: 'SalesItemLineDetail',
+        Description: job.name || 'JOBSpan Invoice',
+        SalesItemLineDetail: { ItemRef: { value: itemId }, Qty: 1, UnitPrice: total }
+      }]
+    });
+    // Backfills qbPaymentLink for invoices pushed before this field
+    // existed, or if QuickBooks Payments was only just enabled.
+    const linkNow = updated?.Invoice?.InvoiceLink || current?.Invoice?.InvoiceLink;
+    if (linkNow) await invRef.update({ qbPaymentLink: linkNow });
+  } else {
+    const created = await qboFetch(companyId, 'POST', 'invoice', {
+      CustomerRef: { value: qbCustomerId },
+      DueDate: inv.dueDate || undefined,
+      Line: [{
+        Amount: total,
+        DetailType: 'SalesItemLineDetail',
+        Description: job.name || 'JOBSpan Invoice',
+        SalesItemLineDetail: { ItemRef: { value: itemId }, Qty: 1, UnitPrice: total }
+      }]
+    });
+    qbInvoiceId = created?.Invoice?.Id;
+    if (!qbInvoiceId) throw new Error('QuickBooks did not return an Invoice Id.');
+    // InvoiceLink is QuickBooks' own hosted, secure payment page for
+    // this invoice - only present when QuickBooks Payments is active
+    // on the connected company. Stored separately from the manual
+    // paymentLink field (never overwritten) - the client falls back
+    // to this automatically only when paymentLink is blank.
+    const update = { qbInvoiceId };
+    if (created?.Invoice?.InvoiceLink) update.qbPaymentLink = created.Invoice.InvoiceLink;
+    await invRef.update(update);
+  }
+
+  // 4. Payment - only the un-recorded delta, so re-pushing the same
+  // invoice after a partial payment never double-counts. Re-reads the
+  // invoice doc here since amtPaid may have just been updated by the
+  // caller (e.g. the Stripe webhook) moments before calling this.
+  const freshInv = (await invRef.get()).data();
+  const amtPaid = freshInv.amtPaid || 0;
+  const lastSynced = freshInv.qbLastSyncedAmtPaid || 0;
+  if (amtPaid > lastSynced) {
+    const deltaAmt = amtPaid - lastSynced;
+    const createdPayment = await qboFetch(companyId, 'POST', 'payment', {
+      CustomerRef: { value: qbCustomerId },
+      TotalAmt: deltaAmt,
+      Line: [{ Amount: deltaAmt, LinkedTxn: [{ TxnId: qbInvoiceId, TxnType: 'Invoice' }] }]
+    });
+    const qbPaymentId = createdPayment?.Payment?.Id;
+    await invRef.update({
+      qbLastSyncedAmtPaid: amtPaid,
+      qbPaymentIds: admin.firestore.FieldValue.arrayUnion(qbPaymentId)
+    });
+  }
+
+  return { success: true, qbInvoiceId };
+}
+
 exports.qbCreateInvoice = functions.https.onCall(async (data, context) => {
   if (!context.auth) throw new functions.https.HttpsError('unauthenticated', 'Must be signed in.');
   const { companyId, jobId, invoiceId } = data;
@@ -866,6 +978,41 @@ exports.qbCreateInvoice = functions.https.onCall(async (data, context) => {
     throw new functions.https.HttpsError('permission-denied', 'Only Owner, Project Manager, or Accounting can push to QuickBooks.');
   }
 
+  try {
+    return await syncInvoiceToQbo(companyId, jobId, invoiceId);
+  } catch (e) {
+    console.error('qbCreateInvoice failed:', e.message);
+    throw new functions.https.HttpsError('internal', e.message);
+  }
+});
+
+// ════════════════════════════════════════════════════
+// ── Stripe payment link + webhook ────────────────────
+// Replaces QuickBooks Payments as the customer-facing payment
+// processor. Money goes Stripe -> Bluevine directly (payout bank
+// account is a Stripe Dashboard setting, not something this code
+// controls) instead of routing through QuickBooks Checking/Green Dot.
+// QBO connection is untouched - still used for bookkeeping via
+// syncInvoiceToQbo() above, now triggered by the Stripe webhook
+// instead of only the manual "Push to QuickBooks" button.
+// ════════════════════════════════════════════════════
+
+// Callable - creates a Stripe Checkout Session for whatever balance is
+// still owed on this invoice (total - amtPaid), stores the resulting
+// URL in the existing `paymentLink` field (already the field the
+// client prioritizes over qbPaymentLink everywhere - see
+// kytrac-app.js's "Pay Now" button logic), so no client/email changes
+// are needed at all to start using it.
+exports.createStripePaymentLink = functions.https.onCall(async (data, context) => {
+  if (!context.auth) throw new functions.https.HttpsError('unauthenticated', 'Must be signed in.');
+  const { companyId, jobId, invoiceId } = data;
+  if (!companyId || !jobId || !invoiceId) {
+    throw new functions.https.HttpsError('invalid-argument', 'Missing companyId/jobId/invoiceId.');
+  }
+  if (context.auth.token.companyId !== companyId) {
+    throw new functions.https.HttpsError('permission-denied', 'Not a member of this company.');
+  }
+
   const db = admin.firestore();
   const jobRef = db.collection('companies').doc(companyId).collection('jobs').doc(jobId);
   const invRef = jobRef.collection('invoices').doc(invoiceId);
@@ -875,88 +1022,136 @@ exports.qbCreateInvoice = functions.https.onCall(async (data, context) => {
   const job = jobDoc.data();
   const inv = invDoc.data();
 
-  if (!job.customerId) {
-    throw new functions.https.HttpsError('failed-precondition', 'This job has no linked Customer record - open the job and set a Customer before pushing to QuickBooks.');
+  const total = inv.total || 0;
+  const amtPaid = inv.amtPaid || 0;
+  const balance = Math.round((total - amtPaid) * 100) / 100;
+  if (balance <= 0) {
+    throw new functions.https.HttpsError('failed-precondition', 'This invoice has no remaining balance.');
   }
 
   try {
-    // 1. Customer
-    const qbCustomerId = await ensureQboCustomer(companyId, job.customerId);
+    const stripe = getStripeClient();
+    const session = await stripe.checkout.sessions.create({
+      mode: 'payment',
+      payment_method_types: ['card', 'us_bank_account'],
+      line_items: [{
+        price_data: {
+          currency: 'usd',
+          unit_amount: Math.round(balance * 100), // Stripe uses cents
+          product_data: {
+            name: (job.name || 'Invoice') + ' - Invoice',
+            description: 'Invoice #' + invoiceId.slice(-6).toUpperCase()
+          }
+        },
+        quantity: 1
+      }],
+      // Metadata is how the webhook finds its way back to the right
+      // invoice doc - Stripe echoes this back untouched on every event.
+      metadata: { companyId, jobId, invoiceId },
+      success_url: 'https://jobsmetrix.com/pay-success.html?invoice=' + invoiceId,
+      cancel_url: 'https://jobsmetrix.com/pay-cancelled.html?invoice=' + invoiceId,
+    });
 
-    // 2. Estimate (best-effort - a missing proposal doesn't block the invoice)
-    try { await ensureQboEstimate(companyId, jobId, qbCustomerId); }
-    catch (e) { console.warn('QBO Estimate push skipped:', e.message); }
+    await invRef.update({
+      paymentLink: session.url,
+      stripeCheckoutSessionId: session.id,
+      stripeCheckoutSessionCreatedAt: admin.firestore.FieldValue.serverTimestamp()
+    });
 
-    // 3. Invoice
-    const itemId = await getDefaultQboItemId(companyId);
-    const total = inv.total || 0;
-    let qbInvoiceId = inv.qbInvoiceId;
-    if (qbInvoiceId) {
-      // Updating requires the current SyncToken - QBO rejects updates
-      // without the exact token it last handed out (optimistic locking).
-      const current = await qboFetch(companyId, 'GET', `invoice/${qbInvoiceId}`);
-      const syncToken = current?.Invoice?.SyncToken;
-      const updated = await qboFetch(companyId, 'POST', 'invoice', {
-        Id: qbInvoiceId,
-        SyncToken: syncToken,
-        sparse: true,
-        CustomerRef: { value: qbCustomerId },
-        Line: [{
-          Amount: total,
-          DetailType: 'SalesItemLineDetail',
-          Description: job.name || 'JOBSpan Invoice',
-          SalesItemLineDetail: { ItemRef: { value: itemId }, Qty: 1, UnitPrice: total }
-        }]
-      });
-      // Backfills qbPaymentLink for invoices pushed before this field
-      // existed, or if QuickBooks Payments was only just enabled.
-      const linkNow = updated?.Invoice?.InvoiceLink || current?.Invoice?.InvoiceLink;
-      if (linkNow) await invRef.update({ qbPaymentLink: linkNow });
-    } else {
-      const created = await qboFetch(companyId, 'POST', 'invoice', {
-        CustomerRef: { value: qbCustomerId },
-        DueDate: inv.dueDate || undefined,
-        Line: [{
-          Amount: total,
-          DetailType: 'SalesItemLineDetail',
-          Description: job.name || 'JOBSpan Invoice',
-          SalesItemLineDetail: { ItemRef: { value: itemId }, Qty: 1, UnitPrice: total }
-        }]
-      });
-      qbInvoiceId = created?.Invoice?.Id;
-      if (!qbInvoiceId) throw new Error('QuickBooks did not return an Invoice Id.');
-      // InvoiceLink is QuickBooks' own hosted, secure payment page for
-      // this invoice - only present when QuickBooks Payments is active
-      // on the connected company. Stored separately from the manual
-      // paymentLink field (never overwritten) - the client falls back
-      // to this automatically only when paymentLink is blank.
-      const update = { qbInvoiceId };
-      if (created?.Invoice?.InvoiceLink) update.qbPaymentLink = created.Invoice.InvoiceLink;
-      await invRef.update(update);
-    }
-
-    // 4. Payment - only the un-recorded delta, so re-pushing the same
-    // invoice after a partial payment never double-counts.
-    const amtPaid = inv.amtPaid || 0;
-    const lastSynced = inv.qbLastSyncedAmtPaid || 0;
-    if (amtPaid > lastSynced) {
-      const deltaAmt = amtPaid - lastSynced;
-      const createdPayment = await qboFetch(companyId, 'POST', 'payment', {
-        CustomerRef: { value: qbCustomerId },
-        TotalAmt: deltaAmt,
-        Line: [{ Amount: deltaAmt, LinkedTxn: [{ TxnId: qbInvoiceId, TxnType: 'Invoice' }] }]
-      });
-      const qbPaymentId = createdPayment?.Payment?.Id;
-      await invRef.update({
-        qbLastSyncedAmtPaid: amtPaid,
-        qbPaymentIds: admin.firestore.FieldValue.arrayUnion(qbPaymentId)
-      });
-    }
-
-    return { success: true, qbInvoiceId };
+    return { success: true, url: session.url };
   } catch (e) {
-    console.error('qbCreateInvoice failed:', e.message);
+    console.error('createStripePaymentLink failed:', e.message);
     throw new functions.https.HttpsError('internal', e.message);
+  }
+});
+
+// Raw HTTP endpoint - Stripe calls this directly (no Firebase Auth
+// context at all), so this must verify the request really came from
+// Stripe using the webhook signing secret, not rely on any auth check.
+exports.stripeWebhook = functions.https.onRequest(async (req, res) => {
+  let stripe;
+  try {
+    stripe = getStripeClient();
+  } catch (e) {
+    console.error('stripeWebhook: Stripe not configured:', e.message);
+    return res.status(500).send('Stripe not configured.');
+  }
+  const webhookSecret = getStripeWebhookSecret();
+  if (!webhookSecret) {
+    console.error('stripeWebhook: STRIPE_WEBHOOK_SECRET not configured.');
+    return res.status(500).send('Webhook not configured.');
+  }
+
+  let event;
+  try {
+    // req.rawBody is provided automatically by Firebase Functions v1
+    // (functions.https.onRequest) - signature verification needs the
+    // exact raw bytes Stripe sent, not a re-serialized JSON body.
+    event = stripe.webhooks.constructEvent(req.rawBody, req.headers['stripe-signature'], webhookSecret);
+  } catch (e) {
+    console.error('stripeWebhook: signature verification failed:', e.message);
+    return res.status(400).send('Webhook signature verification failed.');
+  }
+
+  if (event.type !== 'checkout.session.completed') {
+    // Ack anything else so Stripe doesn't keep retrying events we
+    // don't care about.
+    return res.status(200).send('Ignored event type: ' + event.type);
+  }
+
+  const session = event.data.object;
+  const { companyId, jobId, invoiceId } = session.metadata || {};
+  if (!companyId || !jobId || !invoiceId) {
+    console.error('stripeWebhook: checkout.session.completed missing metadata.', session.id);
+    // Still 200 - a malformed/foreign session isn't something Stripe
+    // should keep retrying forever.
+    return res.status(200).send('Missing metadata, ignored.');
+  }
+
+  try {
+    const db = admin.firestore();
+    const invRef = db.collection('companies').doc(companyId)
+      .collection('jobs').doc(jobId).collection('invoices').doc(invoiceId);
+    const invDoc = await invRef.get();
+    if (!invDoc.exists) {
+      console.error('stripeWebhook: invoice not found', companyId, jobId, invoiceId);
+      return res.status(200).send('Invoice not found, ignored.');
+    }
+    const inv = invDoc.data();
+
+    const amountPaidNow = (session.amount_total || 0) / 100; // cents -> dollars
+    const newAmtPaid = Math.round(((inv.amtPaid || 0) + amountPaidNow) * 100) / 100;
+    const total = inv.total || 0;
+
+    const update = {
+      amtPaid: newAmtPaid,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      stripePaymentIntentId: session.payment_intent || null,
+      stripeLastPaidAt: admin.firestore.FieldValue.serverTimestamp()
+    };
+    if (newAmtPaid >= total) {
+      update.status = 'Paid';
+      update.paidDate = new Date().toISOString().split('T')[0];
+    }
+    await invRef.update(update);
+
+    // Sync to QBO for bookkeeping - best-effort. A QBO failure here
+    // should never make Stripe think the webhook failed (which would
+    // cause Stripe to keep retrying an already-successful payment
+    // confirmation). The payment is already recorded in JOBSMETRIX
+    // regardless of whether this succeeds.
+    try {
+      await syncInvoiceToQbo(companyId, jobId, invoiceId);
+    } catch (e) {
+      console.error('stripeWebhook: QBO sync failed (payment still recorded in JOBSMETRIX):', e.message);
+    }
+
+    return res.status(200).send('OK');
+  } catch (e) {
+    console.error('stripeWebhook: processing failed:', e.message);
+    // 500 here IS appropriate (unlike the QBO case above) - this means
+    // amtPaid itself failed to update, so Stripe retrying is correct.
+    return res.status(500).send('Processing failed.');
   }
 });
 
