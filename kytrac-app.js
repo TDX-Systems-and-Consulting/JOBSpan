@@ -29,7 +29,7 @@ function dataUrlToBlob(dataUrl) {
   while (n--) u8arr[n] = bstr.charCodeAt(n);
   return new Blob([u8arr], { type: mime });
 }
-function kClose(id){ const el=document.getElementById(id); if(el){ el.style.display='none'; el.classList.remove('open'); } if(id==='jobDetailModal' && typeof _msgUnsub==='function'){ try{_msgUnsub();}catch(e){} _msgUnsub=null; } }
+function kClose(id){ const el=document.getElementById(id); if(el){ el.style.display='none'; el.classList.remove('open'); } if(id==='jobDetailModal'){ if(typeof _msgUnsub==='function'){ try{_msgUnsub();}catch(e){} _msgUnsub=null; } if(typeof _clearEstimateListeners==='function'){ _clearEstimateListeners(); } } }
 window.kOpen = kOpen;
 window.kClose = kClose;
 
@@ -14877,86 +14877,129 @@ async function applyLaborBurden() {
 }
 window.applyLaborBurden = applyLaborBurden;
 
+// ── Live estimate sync ──────────────────────────────────────────────
+// Was a one-time .get() fetch chain — meant two people looking at the
+// same job's estimate wouldn't see each other's changes until closing
+// and reopening it. Converted to a tree of onSnapshot listeners so
+// changes made by anyone show up live for everyone else who has that
+// job's Estimate tab open, matching the real-time behavior already
+// used elsewhere in the app (Kanban board, Files tab, etc.).
+//
+// Strategy: groups/subgroups/items are 3-4 levels of nested
+// subcollections. Rather than diff each level incrementally (real but
+// fiddly bug surface — stale listeners on renamed/reordered docs),
+// this tears down and rebuilds the nested (subgroup/item) listeners
+// whenever their parent level changes. Groups/subgroups being added or
+// removed is rare (adding a whole new room/category), so the rebuild
+// cost is a non-issue; the correctness win is worth it. A short
+// debounce collapses multiple nested listeners firing in one burst
+// (e.g. loading 5 groups' subgroups at once) into a single re-render.
+
+let _estimateGroupsUnsub = null;   // top-level listener, torn down only on job switch
+let _estimateNestedUnsub = [];     // every subgroup/item listener, torn down + rebuilt on any group/subgroup change
+let _estimateRenderPending = false;
+
+function _clearEstimateListeners() {
+  if (_estimateGroupsUnsub) { try { _estimateGroupsUnsub(); } catch(e){} _estimateGroupsUnsub = null; }
+  _clearNestedEstimateListeners();
+}
+function _clearNestedEstimateListeners() {
+  _estimateNestedUnsub.forEach(fn => { try { fn(); } catch(e){} });
+  _estimateNestedUnsub = [];
+}
+
+function _scheduleEstimateRerender(jobId) {
+  if (_estimateRenderPending) return;
+  _estimateRenderPending = true;
+  setTimeout(() => {
+    _estimateRenderPending = false;
+    estGroups.sort((a,b) => (a.order ?? 0) - (b.order ?? 0));
+    renderEstimateTree();
+    updateEstimateSummary();
+    loadLaborBurdenBasis(conJobs.find(j => j.id === jobId));
+    renderPaymentScheduleControls(jobId);
+    loadProposals(jobId);
+  }, 60);
+}
+
 function loadEstimate(jobId) {
   if (!conDb || !jobId) return;
-  coll('jobs').doc(jobId).collection('estimateGroups')
-    .get()
-    .then(snap => {
-      estGroups = [];
-      const groupPromises = [];
-      snap.forEach(doc => {
-        const group = { id: doc.id, ...doc.data(), subgroups: [] };
-        estGroups.push(group);
-        // Load subgroups
-        const p = coll('jobs').doc(jobId).collection('estimateGroups')
-          .doc(doc.id).collection('subgroups').get()
-          .then(subSnap => {
-            const subPromises = [];
-            subSnap.forEach(subDoc => {
-              const subgroup = { id: subDoc.id, ...subDoc.data(), items: [] };
-              group.subgroups.push(subgroup);
-              // Load items
-              const sp = coll('jobs').doc(jobId).collection('estimateGroups')
-                .doc(doc.id).collection('subgroups').doc(subDoc.id).collection('items')
-                .get()
-                .then(itemSnap => {
-                  itemSnap.forEach(itemDoc => {
-                    subgroup.items.push({ id: itemDoc.id, ...itemDoc.data() });
-                  });
-                  subgroup.items.sort((a,b) => (a.order ?? 0) - (b.order ?? 0));
-                });
-              subPromises.push(sp);
-              // Load sub-subgroups (3rd level)
-              const ssp = coll('jobs').doc(jobId).collection('estimateGroups')
-                .doc(doc.id).collection('subgroups').doc(subDoc.id).collection('subgroups')
-                .get()
-                .then(subSubSnap => {
-                  const subSubPromises = [];
-                  subSubSnap.forEach(ssDoc => {
-                    const subsub = { id: ssDoc.id, ...ssDoc.data(), items: [] };
-                    if (!subgroup.subgroups) subgroup.subgroups = [];
-                    subgroup.subgroups.push(subsub);
-                    const ssp2 = coll('jobs').doc(jobId).collection('estimateGroups')
-                      .doc(doc.id).collection('subgroups').doc(subDoc.id)
-                      .collection('subgroups').doc(ssDoc.id).collection('items').get()
-                      .then(ssItemSnap => {
-                        ssItemSnap.forEach(ssItemDoc => subsub.items.push({ id: ssItemDoc.id, ...ssItemDoc.data() }));
-                        subsub.items.sort((a,b) => (a.order ?? 0) - (b.order ?? 0));
-                      });
-                    subSubPromises.push(ssp2);
-                  });
-                  if (subgroup.subgroups) subgroup.subgroups.sort((a,b) => (a.order ?? 0) - (b.order ?? 0));
-                  return Promise.all(subSubPromises);
-                });
-              subPromises.push(ssp);
-            });
-            group.subgroups.sort((a,b) => (a.order ?? 0) - (b.order ?? 0));
-            // Also load items directly on group (no subgroup)
-            const dp = coll('jobs').doc(jobId).collection('estimateGroups')
-              .doc(doc.id).collection('items').get()
-              .then(itemSnap => {
-                if (!group.directItems) group.directItems = [];
-                itemSnap.forEach(itemDoc => {
-                  group.directItems.push({ id: itemDoc.id, ...itemDoc.data() });
-                });
-                group.directItems.sort((a,b) => (a.order ?? 0) - (b.order ?? 0));
-              });
-            subPromises.push(dp);
-            return Promise.all(subPromises);
-          });
-        groupPromises.push(p);
-      });
-      return Promise.all(groupPromises);
-    })
-    .then(() => {
-      estGroups.sort((a,b) => (a.order ?? 0) - (b.order ?? 0));
-      renderEstimateTree();
-      updateEstimateSummary();
-      loadLaborBurdenBasis(conJobs.find(j => j.id === jobId));
-      renderPaymentScheduleControls(jobId);
-      loadProposals(jobId);
-    })
-    .catch(e => console.error('Estimate load error:', e));
+  _clearEstimateListeners();
+  estGroups = [];
+
+  const groupsRef = coll('jobs').doc(jobId).collection('estimateGroups');
+  _estimateGroupsUnsub = groupsRef.onSnapshot(snap => {
+    _clearNestedEstimateListeners();
+    estGroups = [];
+    snap.forEach(doc => {
+      const group = { id: doc.id, ...doc.data(), subgroups: [], directItems: [] };
+      estGroups.push(group);
+      _attachEstGroupListeners(jobId, doc.id, group);
+    });
+    _scheduleEstimateRerender(jobId);
+  }, e => console.error('Estimate groups listener error:', e));
+}
+
+function _attachEstGroupListeners(jobId, groupId, group) {
+  const groupRef = coll('jobs').doc(jobId).collection('estimateGroups').doc(groupId);
+
+  const unsubDirect = groupRef.collection('items').onSnapshot(itemSnap => {
+    group.directItems = [];
+    itemSnap.forEach(d => group.directItems.push({ id: d.id, ...d.data() }));
+    group.directItems.sort((a,b) => (a.order ?? 0) - (b.order ?? 0));
+    _scheduleEstimateRerender(jobId);
+  }, e => console.error('Group items listener error:', e));
+  _estimateNestedUnsub.push(unsubDirect);
+
+  const unsubSub = groupRef.collection('subgroups').onSnapshot(subSnap => {
+    // Same rebuild strategy one level down.
+    group.subgroups = [];
+    subSnap.forEach(subDoc => {
+      const subgroup = { id: subDoc.id, ...subDoc.data(), items: [], subgroups: [] };
+      group.subgroups.push(subgroup);
+      _attachEstSubgroupListeners(jobId, groupId, subDoc.id, subgroup);
+    });
+    group.subgroups.sort((a,b) => (a.order ?? 0) - (b.order ?? 0));
+    _scheduleEstimateRerender(jobId);
+  }, e => console.error('Subgroups listener error:', e));
+  _estimateNestedUnsub.push(unsubSub);
+}
+
+function _attachEstSubgroupListeners(jobId, groupId, subgroupId, subgroup) {
+  const subRef = coll('jobs').doc(jobId).collection('estimateGroups').doc(groupId)
+    .collection('subgroups').doc(subgroupId);
+
+  const unsubItems = subRef.collection('items').onSnapshot(itemSnap => {
+    subgroup.items = [];
+    itemSnap.forEach(d => subgroup.items.push({ id: d.id, ...d.data() }));
+    subgroup.items.sort((a,b) => (a.order ?? 0) - (b.order ?? 0));
+    _scheduleEstimateRerender(jobId);
+  }, e => console.error('Subgroup items listener error:', e));
+  _estimateNestedUnsub.push(unsubItems);
+
+  const unsubSubSub = subRef.collection('subgroups').onSnapshot(ssSnap => {
+    subgroup.subgroups = [];
+    ssSnap.forEach(ssDoc => {
+      const subsub = { id: ssDoc.id, ...ssDoc.data(), items: [] };
+      subgroup.subgroups.push(subsub);
+      _attachEstSubSubgroupListeners(jobId, groupId, subgroupId, ssDoc.id, subsub);
+    });
+    subgroup.subgroups.sort((a,b) => (a.order ?? 0) - (b.order ?? 0));
+    _scheduleEstimateRerender(jobId);
+  }, e => console.error('Sub-subgroups listener error:', e));
+  _estimateNestedUnsub.push(unsubSubSub);
+}
+
+function _attachEstSubSubgroupListeners(jobId, groupId, subgroupId, subsubId, subsub) {
+  const ssRef = coll('jobs').doc(jobId).collection('estimateGroups').doc(groupId)
+    .collection('subgroups').doc(subgroupId).collection('subgroups').doc(subsubId);
+  const unsub = ssRef.collection('items').onSnapshot(itemSnap => {
+    subsub.items = [];
+    itemSnap.forEach(d => subsub.items.push({ id: d.id, ...d.data() }));
+    subsub.items.sort((a,b) => (a.order ?? 0) - (b.order ?? 0));
+    _scheduleEstimateRerender(jobId);
+  }, e => console.error('Sub-subgroup items listener error:', e));
+  _estimateNestedUnsub.push(unsub);
 }
 
 // ── Payment Schedule (Proposal) ──
