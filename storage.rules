@@ -1,0 +1,32 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // Mirrors the Custom Claims trust model in firestore.rules — trusts
+    // request.auth.token.companyId (set by the syncMyClaims Cloud
+    // Function), not any client-supplied value, so this is the real
+    // security boundary rather than a copy of the client-side check.
+    function signedIn() { return request.auth != null; }
+    function inCompany(companyId) {
+      return signedIn() && request.auth.token.companyId == companyId;
+    }
+
+    // Job photos/files, uploaded via uploadJobFiles() in kytrac-app.js.
+    // Path: companies/{companyId}/jobs/{jobId}/photos/{filename}
+    // Any signed-in member of the company can read/write — matches the
+    // Firestore `documents` collection rule (inCompany() only, no
+    // hasFullAccess() gate), since field crew (Superintendent, Team
+    // Lead, Field Technician roles) upload job-site photos directly and
+    // aren't full-access roles.
+    match /companies/{companyId}/jobs/{jobId}/photos/{fileName} {
+      allow read, write: if inCompany(companyId);
+    }
+
+    // No other paths are in use yet. Default-deny everything else so a
+    // future path added without a matching rule fails closed instead of
+    // silently falling through to "allowed."
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

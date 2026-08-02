@@ -1,0 +1,37 @@
+{
+  "name": "JOBSMETRIX",
+  "short_name": "JobsMetrix",
+  "description": "Stop Running Blind. Your crews. Your jobs. Your numbers. All in one place.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#050e1c",
+  "theme_color": "#050e1c",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

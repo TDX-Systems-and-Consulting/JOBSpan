@@ -20,6 +20,121 @@ async function uploadToStorage(path, blob) {
   return await ref.getDownloadURL();
 }
 
+// ── Offline photo upload queue ──────────────────────────────────────
+// Firestore's own offline persistence (enabled in conInitFirebase)
+// already queues document writes automatically. Firebase Storage does
+// NOT do this — a put() call made with no signal just fails outright.
+// This module is the missing piece: it holds the actual photo Blob in
+// IndexedDB (binary data doesn't fit in localStorage) alongside the
+// Storage path and the Firestore doc it belongs to, retries on the
+// browser's 'online' event and on a periodic timer (some flaky-signal
+// situations never fire a clean online/offline transition), and drives
+// a small pending-count badge so Gonzalo/Shane can see "3 photos
+// pending upload" instead of wondering if a photo silently vanished.
+const PHOTO_QUEUE_DB = 'jobsmetrix-offline';
+const PHOTO_QUEUE_STORE = 'photoQueue';
+
+function openPhotoQueueDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(PHOTO_QUEUE_DB, 1);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(PHOTO_QUEUE_STORE)) {
+        db.createObjectStore(PHOTO_QUEUE_STORE, { keyPath: 'id' });
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function queuePhotoUpload(record) {
+  const db = await openPhotoQueueDB();
+  await new Promise((resolve, reject) => {
+    const tx = db.transaction(PHOTO_QUEUE_STORE, 'readwrite');
+    tx.objectStore(PHOTO_QUEUE_STORE).put(record);
+    tx.oncomplete = resolve;
+    tx.onerror = () => reject(tx.error);
+  });
+  updatePhotoQueueBadge();
+}
+
+async function getQueuedPhotoUploads() {
+  const db = await openPhotoQueueDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(PHOTO_QUEUE_STORE, 'readonly');
+    const req = tx.objectStore(PHOTO_QUEUE_STORE).getAll();
+    req.onsuccess = () => resolve(req.result || []);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function removeQueuedPhotoUpload(id) {
+  const db = await openPhotoQueueDB();
+  await new Promise((resolve, reject) => {
+    const tx = db.transaction(PHOTO_QUEUE_STORE, 'readwrite');
+    tx.objectStore(PHOTO_QUEUE_STORE).delete(id);
+    tx.oncomplete = resolve;
+    tx.onerror = () => reject(tx.error);
+  });
+  updatePhotoQueueBadge();
+}
+
+let _photoQueueRetrying = false;
+async function retryQueuedPhotoUploads() {
+  if (_photoQueueRetrying || !navigator.onLine || !conStorage) return;
+  _photoQueueRetrying = true;
+  try {
+    const queued = await getQueuedPhotoUploads();
+    for (const item of queued) {
+      try {
+        const url = await uploadToStorage(item.path, item.blob);
+        // Firestore write here rides its own offline persistence, so
+        // this is safe to call even if signal drops again mid-retry —
+        // it'll just queue again at the Firestore layer instead of
+        // this one, and either way we drop the Storage-queue entry
+        // since the blob itself made it up.
+        if (item.docId) {
+          await coll('documents').doc(item.docId).update({
+            storageUrl: url, pendingUpload: false, dataUrl: null
+          }).catch(() => {});
+        }
+        await removeQueuedPhotoUpload(item.id);
+      } catch (e) {
+        // Still failing (still offline, or a real error) — leave it
+        // queued and try the rest; next retry pass will pick it back up.
+        console.warn('Queued photo upload retry failed, will retry again later:', item.fileName, e.message);
+      }
+    }
+  } finally {
+    _photoQueueRetrying = false;
+  }
+}
+
+function updatePhotoQueueBadge() {
+  getQueuedPhotoUploads().then(queued => {
+    const n = queued.length;
+    document.querySelectorAll('.photo-queue-badge').forEach(el => {
+      if (n > 0) {
+        el.style.display = 'inline-flex';
+        el.textContent = n === 1 ? '1 photo pending upload' : (n + ' photos pending upload');
+      } else {
+        el.style.display = 'none';
+      }
+    });
+  }).catch(() => {});
+}
+
+window.addEventListener('online', retryQueuedPhotoUploads);
+// Belt-and-suspenders: some flaky-signal transitions (weak bars that
+// come and go without the browser ever firing a clean offline->online
+// event) never trigger the listener above, so also sweep periodically.
+setInterval(retryQueuedPhotoUploads, 30000);
+// And once at boot, in case photos were queued in a previous session
+// and the browser already has signal by the time the app reloads.
+setTimeout(retryQueuedPhotoUploads, 3000);
+setTimeout(updatePhotoQueueBadge, 1000);
+
 function dataUrlToBlob(dataUrl) {
   const arr = dataUrl.split(',');
   const mime = arr[0].match(/:(.*?);/)[1];
@@ -5703,6 +5818,25 @@ function conInitFirebase() {
       conApp = firebase.apps[0];
     }
     conDb = firebase.firestore();
+
+    // ── Offline persistence ──────────────────────────────────────────
+    // Queues reads/writes in IndexedDB so Gonzalo/Shane on job sites can
+    // keep working (clock in/out, task updates, daily logs) with no
+    // signal — writes sit locally and auto-sync the moment connectivity
+    // returns, with zero app-code changes needed at each call site.
+    // synchronizeTabs:true lets multiple open tabs of the app share one
+    // persistence layer instead of the second tab throwing
+    // 'failed-precondition' and running memory-only.
+    conDb.enablePersistence({ synchronizeTabs: true }).catch(err => {
+      if (err.code === 'failed-precondition') {
+        console.warn('Firestore persistence: multiple tabs open without synchronizeTabs support — this tab will run without offline cache.');
+      } else if (err.code === 'unimplemented') {
+        console.warn('Firestore persistence: browser does not support required APIs (private/incognito mode or old browser) — running online-only.');
+      } else {
+        console.warn('Firestore persistence failed to enable:', err);
+      }
+    });
+
     conAuth = firebase.auth();
     conFunctions = firebase.functions();
     conFirebaseReady = true;
@@ -11168,6 +11302,7 @@ function renderJobDocList(docs) {
         if (isImg && src) {
           return `<div style="position:relative;border-radius:10px;overflow:hidden;aspect-ratio:1;background:#111">
             <img src="${src}" style="width:100%;height:100%;object-fit:cover;cursor:pointer" onclick="openLightbox('${src.replace(/'/g,"\\'")}')">
+            ${d.pendingUpload ? `<div style="position:absolute;top:4px;left:4px;background:rgba(217,119,6,.92);color:#fff;border-radius:999px;padding:2px 8px;font-size:.62rem;font-weight:700;display:flex;align-items:center;gap:3px">⏳ Pending</div>` : ''}
             <div style="position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent,rgba(0,0,0,.7));padding:6px 8px;font-size:.65rem;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(d.name||'')}</div>
             <button onclick="deleteDoc('${d.id}')" style="position:absolute;top:4px;right:4px;background:rgba(0,0,0,.6);border:none;border-radius:50%;width:22px;height:22px;color:#fff;font-size:.7rem;cursor:pointer;display:flex;align-items:center;justify-content:center">✕</button>
           </div>`;
@@ -20445,16 +20580,52 @@ function uploadJobFiles(input) {
 
       try {
         const isImage = file.type.startsWith('image/');
-        let storageUrl = null;
-        let dataUrl = null;
 
         if (isImage && conStorage) {
           const raw = await new Promise((res, rej) => { const r = new FileReader(); r.onload = e => res(e.target.result); r.onerror = rej; r.readAsDataURL(file); });
           const compressed = await compressImage(raw, 1600, 0.8).catch(() => raw);
           const blob = dataUrlToBlob(compressed);
           const path = 'companies/' + currentCompanyId + '/jobs/' + conCurrentJobId + '/photos/' + Date.now() + '_' + file.name.replace(/[^a-zA-Z0-9._-]/g,'_');
-          storageUrl = await uploadToStorage(path, blob);
-        } else if (isImage) {
+
+          // Write the doc immediately with the compressed image as a
+          // local placeholder — this rides Firestore's own offline
+          // persistence, so the photo shows up in the grid right away
+          // whether or not signal is currently up. storageUrl fills in
+          // once the actual blob makes it to Storage, below.
+          const docRef = await coll('documents').add({
+            name: file.name, type: file.type, size: file.size,
+            storageUrl: null,
+            dataUrl: compressed,
+            pendingUpload: true,
+            jobId: conCurrentJobId,
+            jobName: job?.name || '',
+            category: 'Photo',
+            notes: '',
+            uploadedAt: firebase.firestore.FieldValue.serverTimestamp(),
+            uploadedDate: new Date().toISOString().split('T')[0],
+            uploadedBy: conCurrentUser?.email || '',
+            uploadedByName: conCurrentUser?.displayName || conCurrentUser?.email || '',
+          });
+
+          if (navigator.onLine) {
+            try {
+              const url = await uploadToStorage(path, blob);
+              await docRef.update({ storageUrl: url, pendingUpload: false, dataUrl: null });
+            } catch (uploadErr) {
+              // Upload attempt failed even though we appear online (weak
+              // signal dropping mid-transfer is the common real case) —
+              // fall back to the offline queue rather than losing the
+              // photo or blocking the rest of the batch.
+              await queuePhotoUpload({ id: uid('photo'), docId: docRef.id, path, blob, fileName: file.name, jobId: conCurrentJobId, createdAt: Date.now() });
+            }
+          } else {
+            await queuePhotoUpload({ id: uid('photo'), docId: docRef.id, path, blob, fileName: file.name, jobId: conCurrentJobId, createdAt: Date.now() });
+          }
+          continue;
+        }
+
+        let dataUrl = null;
+        if (isImage) {
           const raw = await new Promise((res, rej) => { const r = new FileReader(); r.onload = e => res(e.target.result); r.onerror = rej; r.readAsDataURL(file); });
           dataUrl = await compressImage(raw, 1600, 0.8).catch(() => raw);
         } else if (file.size > 5 * 1024 * 1024) {
@@ -20466,7 +20637,7 @@ function uploadJobFiles(input) {
 
         await coll('documents').add({
           name: file.name, type: file.type, size: file.size,
-          storageUrl: storageUrl || null,
+          storageUrl: null,
           dataUrl: dataUrl || null,
           jobId: conCurrentJobId,
           jobName: job?.name || '',
