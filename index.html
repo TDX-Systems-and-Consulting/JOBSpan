@@ -2116,6 +2116,30 @@
 
       <div class="settings-section">
         <div class="settings-head">
+          <h3>💳 Stripe Connection</h3>
+          <p>Connect this company's own Stripe account so customer invoice payments go directly to YOUR bank, not anyone else's</p>
+        </div>
+        <div class="settings-body">
+          <div id="stripeConnectionStatus" style="margin-bottom:14px" class="small muted">Checking connection status...</div>
+          <div id="stripeConnectForm" style="display:none">
+            <div style="margin-bottom:10px">
+              <label class="small muted" style="display:block;margin-bottom:5px">Stripe Secret Key</label>
+              <input id="stripeSecretKeyInput" type="password" placeholder="sk_live_... or sk_test_..." style="width:100%;max-width:420px" />
+              <div class="small muted" style="margin-top:4px">Find this in your Stripe Dashboard → Developers → API keys</div>
+            </div>
+            <div style="margin-bottom:10px">
+              <label class="small muted" style="display:block;margin-bottom:5px">Webhook Signing Secret (optional for now, required before going live)</label>
+              <input id="stripeWebhookSecretInput" type="password" placeholder="whsec_..." style="width:100%;max-width:420px" />
+              <div class="small muted" style="margin-top:4px">From Stripe Dashboard → Developers → Webhooks, after adding an endpoint pointing to this app's stripeWebhook function</div>
+            </div>
+            <button class="btn-amber" onclick="connectStripe()">💳 Connect Stripe</button>
+          </div>
+          <button class="btn" id="stripeDisconnectBtn" style="display:none" onclick="disconnectStripe()">Disconnect Stripe</button>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <div class="settings-head">
           <h3>🧾 Invoice Defaults</h3>
           <p>Default settings applied to every new invoice</p>
         </div>
@@ -4275,6 +4299,6 @@
   </div>
 </div>
 
-<script src="kytrac-app.js?v=202608011343"></script>
+<script src="kytrac-app.js?v=202608021125"></script>
 </body>
 </html>

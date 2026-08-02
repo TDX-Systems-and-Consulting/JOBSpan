@@ -8674,6 +8674,7 @@ function loadCompanyProfile() {
       populateSettingsForm();
       updateSidebarUserInfo();
       checkQBConnectionStatus();
+      checkStripeConnectionStatus();
     })
     .catch(() => {
       companyProfile = { ...DEFAULT_COMPANY_PROFILE };
@@ -8741,6 +8742,66 @@ function checkQBConnectionStatus() {
     .catch(() => { el.innerHTML = '<span style="color:#9ca3af">Not connected yet.</span>'; });
 }
 window.checkQBConnectionStatus = checkQBConnectionStatus;
+
+// Stripe doesn't use OAuth like QuickBooks/Google Calendar — the
+// company just pastes their own secret key directly. Same
+// connect/disconnect/status-check shape otherwise.
+function connectStripe() {
+  const keyEl = document.getElementById('stripeSecretKeyInput');
+  const whEl = document.getElementById('stripeWebhookSecretInput');
+  const secretKey = keyEl?.value.trim();
+  const webhookSecret = whEl?.value.trim() || null;
+  if (!secretKey) { alert('Enter your Stripe secret key first.'); return; }
+  if (!conFunctions) { alert('Not available yet.'); return; }
+  const btn = document.querySelector('#stripeConnectForm .btn-amber');
+  if (btn) { btn.disabled = true; btn.textContent = 'Connecting…'; }
+  conFunctions.httpsCallable('connectStripeAccount')({ companyId: currentCompanyId, secretKey, webhookSecret })
+    .then(result => {
+      if (keyEl) keyEl.value = '';
+      if (whEl) whEl.value = '';
+      alert('Stripe connected (' + (result.data?.mode || 'unknown') + ' mode).');
+      checkStripeConnectionStatus();
+    })
+    .catch(e => alert('Error connecting Stripe: ' + e.message))
+    .finally(() => { if (btn) { btn.disabled = false; btn.textContent = '💳 Connect Stripe'; } });
+}
+window.connectStripe = connectStripe;
+
+function disconnectStripe() {
+  if (!confirm('Disconnect Stripe? Customers won\'t be able to pay invoices online until you reconnect.')) return;
+  if (!conFunctions) { alert('Not available yet.'); return; }
+  conFunctions.httpsCallable('disconnectStripeAccount')({ companyId: currentCompanyId })
+    .then(() => checkStripeConnectionStatus())
+    .catch(e => alert('Error disconnecting: ' + e.message));
+}
+window.disconnectStripe = disconnectStripe;
+
+function checkStripeConnectionStatus() {
+  const el = document.getElementById('stripeConnectionStatus');
+  const formEl = document.getElementById('stripeConnectForm');
+  const disconnectBtn = document.getElementById('stripeDisconnectBtn');
+  if (!el || !conDb || !currentCompanyId) return;
+  coll('settings').doc('stripe').get()
+    .then(doc => {
+      const data = doc.exists ? doc.data() : {};
+      if (data.connected) {
+        el.innerHTML = '<span style="color:#1dbb87;font-weight:700">✓ Connected</span>' +
+          (data.keyMode === 'test' ? ' <span style="color:#f59e0b">(Test mode)</span>' : '') +
+          (data.hasWebhook ? '' : ' <span style="color:#ef4444">— webhook secret not set yet, payments won\'t auto-confirm</span>');
+        if (formEl) formEl.style.display = 'none';
+        if (disconnectBtn) disconnectBtn.style.display = '';
+      } else {
+        el.innerHTML = '<span style="color:#9ca3af">Not connected yet.</span>';
+        if (formEl) formEl.style.display = '';
+        if (disconnectBtn) disconnectBtn.style.display = 'none';
+      }
+    })
+    .catch(() => {
+      el.innerHTML = '<span style="color:#9ca3af">Not connected yet.</span>';
+      if (formEl) formEl.style.display = '';
+    });
+}
+window.checkStripeConnectionStatus = checkStripeConnectionStatus;
 
 function populateSettingsForm() {
   const p = companyProfile;

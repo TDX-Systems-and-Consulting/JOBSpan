@@ -92,6 +92,16 @@ service cloud.firestore {
         allow read, write: if false;
       }
 
+      // ── Stripe secret key (per-company, mirrors quickbooksTokens) ──
+      // Holds an encrypted Stripe secret key + webhook signing secret
+      // for this company's OWN connected Stripe account. Never
+      // client-readable regardless of role -- the client only ever
+      // sees the non-sensitive status doc at settings/stripe
+      // (connected boolean, key mode, when connected).
+      match /stripeTokens/{docId} {
+        allow read, write: if false;
+      }
+
       // ── Customers ──
       // NOTE: this collection had no rule at all before this pass -
       // loadCustomers()/renderCustomers() in kytrac-app.js read

@@ -41,18 +41,92 @@ const functions = require('firebase-functions');
 const admin = require('firebase-admin');
 admin.initializeApp();
 
-// ── Stripe ───────────────────────────────────────────
-// process.env.STRIPE_SECRET_KEY, falling back to functions.config()
-// for backward compatibility, same pattern used for every other
-// secret in this file (Twilio, SendGrid, QBO, Google).
-function getStripeClient() {
-  const key = process.env.STRIPE_SECRET_KEY || (functions.config().stripe || {}).secret_key;
-  if (!key) throw new Error('Stripe is not configured (functions.config().stripe.secret_key missing). See functions/DEPLOY_STRIPE.md.');
-  return require('stripe')(key);
+// ── Stripe (per-company, mirrors the QBO connection pattern) ────────
+// Each company connects its OWN Stripe account -- critical for
+// multi-tenant use. A single shared key would mean every company's
+// customer payments land in whoever owns that one key's Stripe/bank
+// account, not the company that actually did the job.
+//
+// Credentials live in stripeTokens/main, a dedicated collection with
+// allow read,write: if false in firestore.rules (same treatment as
+// quickbooksTokens/googleCalendarTokens) -- never client-readable
+// regardless of role. The client only ever sees the non-sensitive
+// status doc at settings/stripe (connected boolean, key mode, when).
+async function getStripeConnection(companyId) {
+  const db = admin.firestore();
+  const ref = db.collection('companies').doc(companyId).collection('stripeTokens').doc('main');
+  const doc = await ref.get();
+  if (!doc.exists) throw new Error('Stripe is not connected for this company yet - connect it in Settings first.');
+  const data = doc.data();
+  if (!data.secretKeyEncrypted) throw new Error('Stripe is not connected for this company yet - connect it in Settings first.');
+  return {
+    secretKey: decryptSecret(data.secretKeyEncrypted),
+    webhookSecret: data.webhookSecretEncrypted ? decryptSecret(data.webhookSecretEncrypted) : null,
+  };
 }
-function getStripeWebhookSecret() {
-  return process.env.STRIPE_WEBHOOK_SECRET || (functions.config().stripe || {}).webhook_secret;
+
+async function getStripeClientForCompany(companyId) {
+  const conn = await getStripeConnection(companyId);
+  return require('stripe')(conn.secretKey);
 }
+
+// Callable - a company admin pastes their own Stripe secret key (and,
+// once they've registered the webhook endpoint in their own Stripe
+// dashboard, its signing secret) to connect their account. Same shape
+// as the existing QBO connect flow, just without an OAuth round trip
+// since Stripe secret keys work directly.
+exports.connectStripeAccount = functions.https.onCall(async (data, context) => {
+  if (!context.auth) throw new functions.https.HttpsError('unauthenticated', 'Must be signed in.');
+  const { companyId, secretKey, webhookSecret } = data;
+  if (!companyId || !secretKey) {
+    throw new functions.https.HttpsError('invalid-argument', 'Missing companyId or secretKey.');
+  }
+  if (context.auth.token.companyId !== companyId) {
+    throw new functions.https.HttpsError('permission-denied', 'Not a member of this company.');
+  }
+  if (!secretKey.startsWith('sk_')) {
+    throw new functions.https.HttpsError('invalid-argument', "That doesn't look like a Stripe secret key (should start with sk_live_ or sk_test_).");
+  }
+
+  // Verify the key actually works before saving it.
+  try {
+    const testClient = require('stripe')(secretKey);
+    await testClient.balance.retrieve();
+  } catch (e) {
+    throw new functions.https.HttpsError('invalid-argument', 'Stripe rejected that key: ' + e.message);
+  }
+
+  const keyMode = secretKey.startsWith('sk_live_') ? 'live' : 'test';
+  const db = admin.firestore();
+  const companyRef = db.collection('companies').doc(companyId);
+
+  const tokenUpdate = { secretKeyEncrypted: encryptSecret(secretKey) };
+  if (webhookSecret) tokenUpdate.webhookSecretEncrypted = encryptSecret(webhookSecret);
+  await companyRef.collection('stripeTokens').doc('main').set(tokenUpdate, { merge: true });
+
+  // Non-sensitive status doc the client is actually allowed to read.
+  await companyRef.collection('settings').doc('stripe').set({
+    connected: true,
+    keyMode,
+    hasWebhook: !!webhookSecret,
+    connectedAt: admin.firestore.FieldValue.serverTimestamp(),
+    connectedBy: context.auth.token.email || context.auth.uid,
+  }, { merge: true });
+
+  return { success: true, mode: keyMode };
+});
+
+exports.disconnectStripeAccount = functions.https.onCall(async (data, context) => {
+  if (!context.auth) throw new functions.https.HttpsError('unauthenticated', 'Must be signed in.');
+  const { companyId } = data;
+  if (context.auth.token.companyId !== companyId) {
+    throw new functions.https.HttpsError('permission-denied', 'Not a member of this company.');
+  }
+  const companyRef = admin.firestore().collection('companies').doc(companyId);
+  await companyRef.collection('stripeTokens').doc('main').delete();
+  await companyRef.collection('settings').doc('stripe').set({ connected: false }, { merge: true });
+  return { success: true };
+});
 
 function getTwilioClient() {
   // Prefer environment variables (recommended post-2027 approach)
@@ -503,9 +577,12 @@ function getQboEncryptionKey() {
   return Buffer.from(hex, 'hex');
 }
 
-// Returns a single string "iv:authTag:ciphertext" (all hex) so it drops
-// into one Firestore field with no schema change elsewhere.
-function encryptQboToken(plaintext) {
+// Generic secret-at-rest encryption -- same AES-256-GCM approach QBO tokens
+// already use, reusing the same encryption key. Not QBO-specific despite the
+// function name below (kept for backward compatibility with existing call
+// sites) -- this is the right primitive for any per-company secret,
+// including each company's own Stripe key.
+function encryptSecret(plaintext) {
   const key = getQboEncryptionKey();
   const iv = crypto.randomBytes(12); // 96-bit IV, standard for GCM
   const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
@@ -514,14 +591,25 @@ function encryptQboToken(plaintext) {
   return [iv.toString('hex'), authTag.toString('hex'), ciphertext.toString('hex')].join(':');
 }
 
-function decryptQboToken(encrypted) {
+function decryptSecret(encrypted) {
   const key = getQboEncryptionKey();
   const [ivHex, authTagHex, ciphertextHex] = String(encrypted).split(':');
-  if (!ivHex || !authTagHex || !ciphertextHex) throw new Error('Stored QuickBooks token is malformed or was saved before encryption was enabled - please reconnect QuickBooks in Settings.');
+  if (!ivHex || !authTagHex || !ciphertextHex) throw new Error('Stored secret is malformed or was saved before encryption was enabled.');
   const decipher = crypto.createDecipheriv('aes-256-gcm', key, Buffer.from(ivHex, 'hex'));
   decipher.setAuthTag(Buffer.from(authTagHex, 'hex'));
   const plaintext = Buffer.concat([decipher.update(Buffer.from(ciphertextHex, 'hex')), decipher.final()]);
   return plaintext.toString('utf8');
+}
+
+// Returns a single string "iv:authTag:ciphertext" (all hex) so it drops
+// into one Firestore field with no schema change elsewhere.
+function encryptQboToken(plaintext) { return encryptSecret(plaintext); }
+function decryptQboToken(encrypted) {
+  try {
+    return decryptSecret(encrypted);
+  } catch (e) {
+    throw new Error('Stored QuickBooks token is malformed or was saved before encryption was enabled - please reconnect QuickBooks in Settings.');
+  }
 }
 
 function isQboFullAccess(token) {
@@ -1030,7 +1118,7 @@ exports.createStripePaymentLink = functions.https.onCall(async (data, context) =
   }
 
   try {
-    const stripe = getStripeClient();
+    const stripe = await getStripeClientForCompany(companyId);
     const session = await stripe.checkout.sessions.create({
       mode: 'payment',
       payment_method_types: ['card', 'us_bank_account'],
@@ -1069,17 +1157,35 @@ exports.createStripePaymentLink = functions.https.onCall(async (data, context) =
 // context at all), so this must verify the request really came from
 // Stripe using the webhook signing secret, not rely on any auth check.
 exports.stripeWebhook = functions.https.onRequest(async (req, res) => {
-  let stripe;
+  // Which company this event belongs to determines which webhook
+  // secret verifies it -- so peek at the unverified payload first just
+  // to find companyId, then verify properly with that company's own
+  // secret before trusting anything else in the payload.
+  let peek;
   try {
-    stripe = getStripeClient();
+    peek = JSON.parse(req.rawBody.toString('utf8'));
   } catch (e) {
-    console.error('stripeWebhook: Stripe not configured:', e.message);
-    return res.status(500).send('Stripe not configured.');
+    console.error('stripeWebhook: could not parse payload:', e.message);
+    return res.status(400).send('Malformed payload.');
   }
-  const webhookSecret = getStripeWebhookSecret();
-  if (!webhookSecret) {
-    console.error('stripeWebhook: STRIPE_WEBHOOK_SECRET not configured.');
-    return res.status(500).send('Webhook not configured.');
+  const companyId = peek?.data?.object?.metadata?.companyId;
+  if (!companyId) {
+    console.error('stripeWebhook: no companyId in event metadata, cannot route it.', peek?.id);
+    return res.status(200).send('No companyId in metadata, ignored.');
+  }
+
+  let stripe, webhookSecret;
+  try {
+    const conn = await getStripeConnection(companyId);
+    if (!conn.webhookSecret) {
+      console.error('stripeWebhook: company has no webhook secret configured yet:', companyId);
+      return res.status(500).send('Webhook not configured for this company.');
+    }
+    stripe = require('stripe')(conn.secretKey);
+    webhookSecret = conn.webhookSecret;
+  } catch (e) {
+    console.error('stripeWebhook: could not load Stripe connection for company', companyId, e.message);
+    return res.status(500).send('Stripe not configured for this company.');
   }
 
   let event;
@@ -1100,8 +1206,8 @@ exports.stripeWebhook = functions.https.onRequest(async (req, res) => {
   }
 
   const session = event.data.object;
-  const { companyId, jobId, invoiceId } = session.metadata || {};
-  if (!companyId || !jobId || !invoiceId) {
+  const { jobId, invoiceId } = session.metadata || {};
+  if (!jobId || !invoiceId) {
     console.error('stripeWebhook: checkout.session.completed missing metadata.', session.id);
     // Still 200 - a malformed/foreign session isn't something Stripe
     // should keep retrying forever.
