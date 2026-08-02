@@ -70,6 +70,14 @@ service cloud.firestore {
         allow write: if inCompany(companyId) && hasFullAccess();
       }
 
+      // ── Pulse history (daily snapshot of activeJobs/outstandingInvoices/
+      // unprocessedCOs, written client-side, read by the dailyKpiRefresh
+      // Cloud Function to compute a week-over-week trend for PlannerXD's
+      // Weekly Pulse). Non-sensitive aggregate counts only.
+      match /pulseHistory/{dateStr} {
+        allow read, write: if inCompany(companyId);
+      }
+
       // ── Google Calendar OAuth tokens ──
       // Refresh tokens are real credentials (equivalent to a password for
       // that person's calendar) - NEVER client-readable, regardless of

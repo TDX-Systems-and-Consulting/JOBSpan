@@ -1448,15 +1448,17 @@ exports.dailyKpiRefresh = functions.pubsub
 
     for (const companyDoc of companiesSnap.docs) {
       const companyId = companyDoc.id;
+
+      // ── QBO-dependent MTD KPI cache — only runs if QBO is connected ──
       try {
         // Load QBO tokens
         const tokenDoc = await db.collection('companies').doc(companyId)
           .collection('quickbooksTokens').doc('main').get();
-        if (!tokenDoc.exists) continue;
+        if (!tokenDoc.exists) throw new Error('__no_qbo__');
 
         const tokens = tokenDoc.data();
         const realmId = tokens.realmId;
-        if (!realmId || !tokens.accessToken) continue;
+        if (!realmId || !tokens.accessToken) throw new Error('__no_qbo__');
 
         const now = new Date();
         const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
@@ -1514,19 +1516,60 @@ exports.dailyKpiRefresh = functions.pubsub
 
         console.log(`KPI refresh complete for ${companyId}: collected=$${collectedMTD} spent=$${spentMTD}`);
 
-        // ── SLA Trigger System ──────────────────────────────────────────
-        try {
-          await runSLATriggers(db, companyId);
-        } catch(e) {
-          console.error(`SLA triggers failed for ${companyId}:`, e.message);
-        }
-
       } catch(e) {
-        console.error(`KPI refresh failed for ${companyId}:`, e.message);
+        if (e.message !== '__no_qbo__') console.error(`KPI refresh failed for ${companyId}:`, e.message);
+      }
+
+      // ── SLA Trigger System — runs for every company regardless of
+      // QBO connection status (SLAs are based on job/invoice/CO data
+      // already in Firestore, not QBO). ──────────────────────────────
+      try {
+        await runSLATriggers(db, companyId);
+      } catch(e) {
+        console.error(`SLA triggers failed for ${companyId}:`, e.message);
+      }
+
+      // ── Weekly Pulse trend — diff today's snapshot (written
+      // client-side into pulseHistory whenever PlannerXD syncs) against
+      // 7 days ago, merge the delta into plannerxd_pulse_sync so
+      // PlannerXD can show trend arrows instead of just raw counts. ──
+      try {
+        await computePulseTrend(db, companyId);
+      } catch(e) {
+        console.error(`Pulse trend failed for ${companyId}:`, e.message);
       }
     }
     return null;
   });
+
+// ── Weekly Pulse trend helper ────────────────────────────────────────────
+async function computePulseTrend(db, companyId) {
+  const todayStr = new Date().toISOString().split('T')[0];
+  const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+  const [todayDoc, weekAgoDoc, settDoc] = await Promise.all([
+    db.collection('companies').doc(companyId).collection('pulseHistory').doc(todayStr).get(),
+    db.collection('companies').doc(companyId).collection('pulseHistory').doc(weekAgo).get(),
+    db.collection('companies').doc(companyId).collection('settings').doc('company').get()
+  ]);
+
+  if (!todayDoc.exists || !weekAgoDoc.exists) return; // not enough history yet
+  const ownerUid = settDoc.exists ? settDoc.data().ownerUid : null;
+  if (!ownerUid) return;
+
+  const t = todayDoc.data();
+  const w = weekAgoDoc.data();
+  const delta = (key) => (typeof t[key] === 'number' && typeof w[key] === 'number') ? t[key] - w[key] : null;
+
+  await db.collection('plannerxd_pulse_sync').doc(ownerUid).set({
+    trend: {
+      activeJobs: delta('activeJobs'),
+      outstandingInvoices: delta('outstandingInvoices'),
+      unprocessedCOs: delta('unprocessedCOs'),
+      comparedTo: weekAgo
+    }
+  }, { merge: true });
+}
 
 // ── SLA Trigger Helper ──────────────────────────────────────────────────
 async function runSLATriggers(db, companyId) {
@@ -1541,6 +1584,17 @@ async function runSLATriggers(db, companyId) {
   const owners = teamSnap.docs
     .filter(d => ['Owner', 'Full Access'].includes(d.data().role))
     .map(d => ({ email: d.data().email, name: d.data().name || d.data().email }));
+
+  // PlannerXD ownerUid — same lookup the client-side pulse/notification
+  // bridges use. If it's not set, we just skip the PlannerXD push and
+  // still create the JOBSMETRIX todo as before — this is additive,
+  // never a dependency for the existing SLA todo system.
+  let plannerxdOwnerUid = null;
+  try {
+    const settDoc = await db.collection('companies').doc(companyId)
+      .collection('settings').doc('company').get();
+    plannerxdOwnerUid = settDoc.exists ? (settDoc.data().ownerUid || null) : null;
+  } catch(e) {}
 
   const todosRef = db.collection('companies').doc(companyId).collection('todos');
 
@@ -1562,6 +1616,31 @@ async function runSLATriggers(db, companyId) {
     return !existing.empty;
   };
 
+  // Pushes a warning into PlannerXD (via the same plannerxd_notifications
+  // bridge the proposal-signed event already uses). Note: the PlannerXD
+  // side currently turns every item in this collection into a "Do First"
+  // task, not a separate blockers list — which is actually the right
+  // landing spot for these, since Do First is already the "needs your
+  // hand today" quadrant. Only called for priority:'high' items so that
+  // quadrant stays short and trustworthy instead of a mirror of every
+  // SLA nudge JOBSMETRIX tracks internally.
+  const pushToPlannerXD = async (title, jobId) => {
+    if (!plannerxdOwnerUid) return;
+    try {
+      await db.collection('plannerxd_notifications').doc(plannerxdOwnerUid)
+        .collection('items').add({
+          type: 'sla_alert',
+          title,
+          body: '',
+          jobId: jobId || null,
+          companyId,
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          createdMs: Date.now(),
+          read: false
+        });
+    } catch(e) { console.warn('PlannerXD push failed:', e.message); }
+  };
+
   const createTodo = async (jobId, jobName, text, priority, assignees, slaKey) => {
     if (await slaExists(slaKey)) return;
     await todosRef.add({
@@ -1577,7 +1656,11 @@ async function runSLATriggers(db, companyId) {
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
     });
     console.log(`SLA todo: [${priority}] ${text}`);
+    if (priority === 'high') await pushToPlannerXD(text, jobId);
   };
+
+  let unprocessedCOCount = 0;
+  let outstandingInvoiceTotal = 0;
 
   for (const jobDoc of jobsSnap.docs) {
     const job = jobDoc.data();
@@ -1650,6 +1733,50 @@ async function runSLATriggers(db, companyId) {
           'med', owners, `${jobId}_invoice_due5`);
       }
     }
+
+    // No daily log 2+ days on an active job — mirrors the 🟡 flag
+    // already shown on the JOBSMETRIX home dashboard's Active Jobs
+    // table, just surfaced proactively instead of only-if-you-look.
+    if (!['Closed Completed', 'Closed Lost', 'Submitted', 'To Be Scheduled', 'Permitting', 'Approved'].includes(status)) {
+      const logDays = daysSince(job.lastLogDate);
+      if (logDays !== null && logDays >= 3) {
+        await createTodo(jobId, jobName,
+          `No daily log on ${jobName} in ${logDays} days`,
+          'high', owners, `${jobId}_no_log_${todayStr}`);
+      }
+    }
+
+    // Tally for company-wide checks below
+    (job.invoices || []).forEach(inv => {
+      if (inv.status !== 'Paid') outstandingInvoiceTotal += (inv.total || 0) - (inv.amtPaid || 0);
+    });
+  }
+
+  // Unprocessed change orders, company-wide — reuses the same
+  // "3+ is red" threshold the dashboard tile already uses.
+  try {
+    const coPromises = jobsSnap.docs.map(jobDoc =>
+      db.collection('companies').doc(companyId).collection('jobs').doc(jobDoc.id)
+        .collection('changeorders').get()
+        .then(s => s.forEach(d => {
+          const st = (d.data().status || '').toLowerCase();
+          if (!['approved','declined','rejected','paid','invoiced'].includes(st)) unprocessedCOCount++;
+        })).catch(() => {})
+    );
+    await Promise.all(coPromises);
+    if (unprocessedCOCount >= 3) {
+      await createTodo(companyId, 'Company-wide',
+        `${unprocessedCOCount} change orders awaiting your review`,
+        'high', owners, `${companyId}_unprocessed_cos_${todayStr}`);
+    }
+  } catch(e) {}
+
+  // Outstanding invoices total, company-wide — reuses the same
+  // "$10k+ is red" threshold the dashboard tile already uses.
+  if (outstandingInvoiceTotal >= 10000) {
+    await createTodo(companyId, 'Company-wide',
+      `Outstanding invoices total $${Math.round(outstandingInvoiceTotal).toLocaleString()} — above your $10k threshold`,
+      'high', owners, `${companyId}_outstanding_threshold_${todayStr}`);
   }
 
   console.log(`SLA triggers complete for ${companyId}`);

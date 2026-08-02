@@ -1138,12 +1138,27 @@ function syncDashboardToPlannerXD(data) {
   _pulseSyncTimer = setTimeout(() => {
     getPulseSyncOwnerUid().then(ownerUid => {
       if (!ownerUid || !conDb) return;
+      const rounded = Math.round(data.outstandingInvoices);
       conDb.collection('plannerxd_pulse_sync').doc(ownerUid).set({
         activeJobs: data.activeJobs,
-        outstandingInvoices: Math.round(data.outstandingInvoices),
+        outstandingInvoices: rounded,
         unprocessedCOs: data.unprocessedCOs,
         updatedAt: firebase.firestore.FieldValue.serverTimestamp()
       }, { merge: true }).catch(e => console.warn('Pulse sync write error:', e));
+
+      // Also drop today's snapshot into a dated history doc so the
+      // nightly dailyKpiRefresh function (functions/index.js) can
+      // diff against 7 days ago and merge a trend into the same
+      // plannerxd_pulse_sync doc. Cheap upsert, same debounce.
+      if (currentCompanyId) {
+        const todayStr = new Date().toISOString().split('T')[0];
+        coll('pulseHistory').doc(todayStr).set({
+          activeJobs: data.activeJobs,
+          outstandingInvoices: rounded,
+          unprocessedCOs: data.unprocessedCOs,
+          date: todayStr
+        }, { merge: true }).catch(e => console.warn('Pulse history write error:', e));
+      }
     });
   }, 2000);
 }
