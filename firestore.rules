@@ -341,5 +341,16 @@ service cloud.firestore {
       allow read, update: if true;
       allow create: if signedIn() || request.auth == null;
     }
+
+    // PlannerXD pulse sync — UID-keyed, single rollup doc per owner.
+    // JOBSMETRIX writes a handful of live dashboard numbers here
+    // (activeJobs, outstandingInvoices, unprocessedCOs); PlannerXD
+    // reads it into Weekly Pulse. Same open-read/authenticated-write
+    // pattern as plannerxd_notifications above — low-sensitivity
+    // aggregate counts, not per-job detail.
+    match /plannerxd_pulse_sync/{ownerUid} {
+      allow read: if true;
+      allow write: if signedIn();
+    }
   }
 }

@@ -1102,6 +1102,52 @@ function getJobValue(job) {
   return Number(job.contractValue || job.approvedOrders || job.pendingOrders || 0);
 }
 
+// ════════════════════════════════════════════════════
+// ── JOBSMETRIX → PLANNERXD PULSE SYNC ──
+// Writes a small rollup doc to plannerxd_pulse_sync/{ownerUid} so
+// PlannerXD's Weekly Pulse can show a few real, live numbers instead
+// of manually-typed ones. Deliberately narrow: just the handful of
+// numbers that are actionable day-to-day (money owed to you, COs
+// waiting on your sign-off, how many jobs are live) — not a mirror of
+// the whole dashboard. See plannerxd_notifications for the sibling
+// bridge (JOBSMETRIX events → PlannerXD blockers) this follows the
+// same ownerUid-lookup pattern as.
+// ════════════════════════════════════════════════════
+let _pulseSyncOwnerUid = null;
+let _pulseSyncOwnerUidPromise = null;
+
+function getPulseSyncOwnerUid() {
+  if (_pulseSyncOwnerUid) return Promise.resolve(_pulseSyncOwnerUid);
+  if (_pulseSyncOwnerUidPromise) return _pulseSyncOwnerUidPromise;
+  if (!conDb || !currentCompanyId) return Promise.resolve(null);
+  _pulseSyncOwnerUidPromise = coll('settings').doc('company').get()
+    .then(doc => {
+      _pulseSyncOwnerUid = doc.exists ? (doc.data().ownerUid || null) : null;
+      return _pulseSyncOwnerUid;
+    })
+    .catch(() => null);
+  return _pulseSyncOwnerUidPromise;
+}
+
+let _pulseSyncTimer = null;
+function syncDashboardToPlannerXD(data) {
+  // Debounce — conRenderStats can fire in quick succession (e.g. right
+  // after a job/invoice edit triggers a re-render); no need to write
+  // more than once every few seconds.
+  if (_pulseSyncTimer) clearTimeout(_pulseSyncTimer);
+  _pulseSyncTimer = setTimeout(() => {
+    getPulseSyncOwnerUid().then(ownerUid => {
+      if (!ownerUid || !conDb) return;
+      conDb.collection('plannerxd_pulse_sync').doc(ownerUid).set({
+        activeJobs: data.activeJobs,
+        outstandingInvoices: Math.round(data.outstandingInvoices),
+        unprocessedCOs: data.unprocessedCOs,
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+      }, { merge: true }).catch(e => console.warn('Pulse sync write error:', e));
+    });
+  }, 2000);
+}
+
 function conRenderStats() {
   const closedStatuses = ['Closed Completed','Closed Lost'];
   const active = conJobs.filter(j => !closedStatuses.includes(j.status));
@@ -1178,6 +1224,8 @@ function conRenderStats() {
       const coColor = unprocessed === 0 ? '#1dbb87' : unprocessed <= 2 ? '#f59e0b' : '#ef5350';
       setTile('statUnprocessedCO', 'statUnprocessedCOTile', unprocessed, coColor);
       setNavBadge('navCOBadge', unprocessed);
+      _pulseUnprocessedCOs = unprocessed;
+      _maybeSyncPulse();
     });
   }
 
@@ -1214,6 +1262,15 @@ function conRenderStats() {
     avgJobVal ? '$' + Math.round(avgJobVal).toLocaleString() : '—', ajvColor);
 
   // Outstanding Invoices — sum unpaid across all jobs
+  let _pulseOutstanding = null, _pulseUnprocessedCOs = null;
+  const _maybeSyncPulse = () => {
+    if (_pulseOutstanding === null || _pulseUnprocessedCOs === null) return;
+    syncDashboardToPlannerXD({
+      activeJobs: active.length,
+      outstandingInvoices: _pulseOutstanding,
+      unprocessedCOs: _pulseUnprocessedCOs
+    });
+  };
   if (conDb) {
     let outstanding = 0;
     const invPromises = conJobs.map(j =>
@@ -1227,6 +1284,8 @@ function conRenderStats() {
       const outColor = outstanding === 0 ? '#1dbb87' : outstanding <= 10000 ? '#f59e0b' : '#ef5350';
       setTile('statOutstanding', 'statOutstandingTile',
         outstanding > 0 ? '$' + Math.round(outstanding).toLocaleString() : '$0', outColor);
+      _pulseOutstanding = outstanding;
+      _maybeSyncPulse();
     });
   }
 
