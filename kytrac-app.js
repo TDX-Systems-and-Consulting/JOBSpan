@@ -15198,6 +15198,20 @@ function loadEstimate(jobId) {
   estGroups = [];
 
   const groupsRef = coll('jobs').doc(jobId).collection('estimateGroups');
+
+  // Force a genuine server round-trip before the live listener takes
+  // over. With offline persistence enabled, onSnapshot's very first
+  // callback can be served from local IndexedDB cache — if this device
+  // had an older cached copy of this job's estimate from a previous
+  // session, that stale snapshot would paint first. This doesn't
+  // change the live-sync behavior at all (the onSnapshot listener below
+  // still keeps everything current going forward); it just guarantees
+  // the FIRST thing you see when opening the tab is confirmed current,
+  // not whatever happened to be sitting in cache.
+  groupsRef.get({ source: 'server' }).catch(e => {
+    console.warn('Estimate server-fresh pre-fetch failed (will still get live updates via cache/listener):', e);
+  });
+
   _estimateGroupsUnsub = groupsRef.onSnapshot(snap => {
     _clearNestedEstimateListeners();
     estGroups = [];
@@ -15213,7 +15227,9 @@ function loadEstimate(jobId) {
 function _attachEstGroupListeners(jobId, groupId, group) {
   const groupRef = coll('jobs').doc(jobId).collection('estimateGroups').doc(groupId);
 
-  const unsubDirect = groupRef.collection('items').onSnapshot(itemSnap => {
+  const directItemsRef = groupRef.collection('items');
+  directItemsRef.get({ source: 'server' }).catch(() => {});
+  const unsubDirect = directItemsRef.onSnapshot(itemSnap => {
     group.directItems = [];
     itemSnap.forEach(d => group.directItems.push({ id: d.id, ...d.data() }));
     group.directItems.sort((a,b) => (a.order ?? 0) - (b.order ?? 0));
@@ -15221,7 +15237,9 @@ function _attachEstGroupListeners(jobId, groupId, group) {
   }, e => console.error('Group items listener error:', e));
   _estimateNestedUnsub.push(unsubDirect);
 
-  const unsubSub = groupRef.collection('subgroups').onSnapshot(subSnap => {
+  const subgroupsRef = groupRef.collection('subgroups');
+  subgroupsRef.get({ source: 'server' }).catch(() => {});
+  const unsubSub = subgroupsRef.onSnapshot(subSnap => {
     // Same rebuild strategy one level down.
     group.subgroups = [];
     subSnap.forEach(subDoc => {
@@ -15239,7 +15257,9 @@ function _attachEstSubgroupListeners(jobId, groupId, subgroupId, subgroup) {
   const subRef = coll('jobs').doc(jobId).collection('estimateGroups').doc(groupId)
     .collection('subgroups').doc(subgroupId);
 
-  const unsubItems = subRef.collection('items').onSnapshot(itemSnap => {
+  const itemsRef = subRef.collection('items');
+  itemsRef.get({ source: 'server' }).catch(() => {});
+  const unsubItems = itemsRef.onSnapshot(itemSnap => {
     subgroup.items = [];
     itemSnap.forEach(d => subgroup.items.push({ id: d.id, ...d.data() }));
     subgroup.items.sort((a,b) => (a.order ?? 0) - (b.order ?? 0));
