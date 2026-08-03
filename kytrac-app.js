@@ -15600,7 +15600,9 @@ window.savePaymentSchedule = savePaymentSchedule;
 function getPaymentScheduleRows(paymentSchedule, grandTotal) {
   const ps = paymentSchedule || { type: 'none' };
   let stages = null;
-  if (ps.type === '50/50') {
+  if (ps.type === 'full') {
+    stages = [['Payment in Full (Due Upon Completion)', 100]];
+  } else if (ps.type === '50/50') {
     stages = [['Deposit', 50], ['Final Payment (Due Upon Completion)', 50]];
   } else if (ps.type === '50/25/25') {
     stages = [['Deposit', 50], ['Progress Payment', 25], ['Final Payment (Due Upon Completion)', 25]];
