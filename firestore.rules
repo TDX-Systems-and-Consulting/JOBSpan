@@ -222,9 +222,23 @@ service cloud.firestore {
         allow read: if inCompany(companyId) || request.auth == null;
         // Any authenticated team member can update job fields (status,
         // notes - daily logs live under here too). Anonymous portal
-        // writes (signature capture, decline, message send) are scoped
-        // narrowly in the specific subcollections below, not here.
-        allow write: if inCompany(companyId);
+        // writes are scoped narrowly in the specific subcollections
+        // below, EXCEPT for this one case: submitPortalSignature()
+        // (kytrac-app.js) auto-advances a job to 'Approved' the moment
+        // a customer signs, writing status/statusDate/lastActivity/
+        // lastActivityNote directly on this document. That write was
+        // being silently denied by this rule (confirmed via a real
+        // signature test that created the SLA to-do fine — a
+        // subcollection write, unaffected — but never advanced the
+        // Kanban card). Scoped tightly: only those 4 fields, and only
+        // when setting status specifically to 'Approved' — anonymous
+        // visitors still can't touch pricing, contact info, or set any
+        // other status.
+        allow write: if inCompany(companyId) ||
+          (request.auth == null &&
+           request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['status', 'statusDate', 'lastActivity', 'lastActivityNote']) &&
+           request.resource.data.status == 'Approved');
 
         // Money-sensitive subcollections: full-access roles only.
         // NOTE (known limitation): this locks the whole collection, but

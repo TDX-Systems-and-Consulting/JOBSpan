@@ -13052,7 +13052,21 @@ function submitPortalSignature(proposalId, jobId, action) {
           const approvedIdx = PORTAL_STATUS_ORDER.indexOf('Approved');
           if (curIdx !== -1 && curIdx < approvedIdx) {
             jobRef.update({ status: 'Approved', statusDate: new Date().toISOString().split('T')[0],
-              lastActivity: now, lastActivityNote: `Proposal signed by ${name}` });
+              lastActivity: now, lastActivityNote: `Proposal signed by ${name}` })
+              .then(() => {
+                jobRef.collection('logs').add({
+                  type: 'status_auto_advanced',
+                  notes: `Job auto-advanced to Approved (was ${snap.data().status}) — customer signed proposal.`,
+                  jobId, companyId, createdAt: now, createdMs: nowMs, createdBy: 'customer-portal'
+                }).catch(()=>{});
+              })
+              .catch(e => {
+                jobRef.collection('logs').add({
+                  type: 'status_advance_failed',
+                  notes: 'Auto-advance to Approved failed: ' + e.message,
+                  jobId, companyId, createdAt: now, createdMs: nowMs, createdBy: 'customer-portal'
+                }).catch(()=>{});
+              });
           }
         }).catch(()=>{});
 
