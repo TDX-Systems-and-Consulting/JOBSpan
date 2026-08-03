@@ -10126,13 +10126,64 @@ function renderTodos() {
           <span style="font-size:.7rem;color:rgba(110,145,210,.3)">${todo.createdByName||''}</span>
         </div>
       </div>
-      <div style="display:flex;gap:6px;flex-shrink:0">
+      <div style="display:flex;gap:6px;flex-shrink:0;align-items:center">
+        ${todo.plannerxdPushedAt
+          ? `<span title="Already pushed to PlannerXD" style="font-size:.68rem;color:#1dbb87">✓ PlannerXD</span>`
+          : `<button onclick="pushTodoToPlannerXD('${todo.id}')" title="Manually add this to PlannerXD's Do First list" style="background:none;border:1px solid rgba(110,145,210,.25);border-radius:6px;color:var(--muted);cursor:pointer;font-size:.72rem;padding:3px 8px;white-space:nowrap">📤 To PlannerXD</button>`}
         <button onclick="openEditTodo('${todo.id}')" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:.9rem;padding:2px 4px">✏️</button>
         <button onclick="deleteTodo('${todo.id}')" style="background:none;border:none;color:rgba(239,83,80,.4);cursor:pointer;font-size:.9rem;padding:2px 4px">🗑</button>
       </div>
     </div>`;
   }).join('');
 }
+
+// Manual fallback while the automatic JOBSMETRIX->PlannerXD bridge
+// (triggered on proposal signature) is being diagnosed — same
+// destination (plannerxd_notifications/{ownerUid}/items), just
+// triggered by hand from any To-Do instead of only automatically on
+// signature. Errors are shown directly, not swallowed — today's
+// automatic-bridge issue was invisible for exactly that reason.
+function pushTodoToPlannerXD(todoId) {
+  if (!conDb) return;
+  const todo = allTodos.find(t => t.id === todoId);
+  if (!todo) return;
+  const btn = document.querySelector(`button[onclick="pushTodoToPlannerXD('${todoId}')"]`);
+  if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }
+
+  coll('settings').doc('company').get()
+    .then(settDoc => {
+      const ownerUid = settDoc.exists ? settDoc.data().ownerUid : null;
+      if (!ownerUid) {
+        alert("Can't push to PlannerXD — no PlannerXD account (ownerUid) is linked in Company Settings.");
+        if (btn) { btn.disabled = false; btn.textContent = '📤 To PlannerXD'; }
+        return;
+      }
+      const linkedJob = todo.jobId ? conJobs.find(j => j.id === todo.jobId) : null;
+      return conDb.collection('plannerxd_notifications').doc(ownerUid).collection('items').add({
+        type: 'manual_todo_push',
+        title: todo.text || 'JOBSMETRIX to-do',
+        body: linkedJob ? ('Job: ' + linkedJob.name) : '',
+        jobId: todo.jobId || null,
+        companyId: currentCompanyId,
+        actionLabel: 'Open Job',
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+        createdMs: Date.now(),
+        read: false
+      }).then(() => {
+        return coll('todos').doc(todoId).update({
+          plannerxdPushedAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+      }).then(() => {
+        todo.plannerxdPushedAt = true; // local flag so renderTodos shows the ✓ immediately, before the listener re-fires
+        renderTodos();
+      });
+    })
+    .catch(e => {
+      alert('Error pushing to PlannerXD: ' + e.message);
+      if (btn) { btn.disabled = false; btn.textContent = '📤 To PlannerXD'; }
+    });
+}
+window.pushTodoToPlannerXD = pushTodoToPlannerXD;
 
 function addTodo() {
   const input = document.getElementById('newTodoInput');
