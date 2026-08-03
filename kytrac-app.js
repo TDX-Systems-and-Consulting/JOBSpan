@@ -16854,6 +16854,16 @@ function sendProposalViaEmail(btn) {
     document.getElementById('emailPreviewTo').textContent = job.email + (toName ? ' (' + toName + ')' : '');
     document.getElementById('emailPreviewSubject').textContent = subject;
     document.getElementById('emailPreviewBody').innerHTML = bodyHtml;
+
+    // Also render the ACTUAL proposal document — the thing the "View &
+    // Sign Proposal" link in the email above actually opens — not just
+    // the wrapper email text, so this preview reflects what the
+    // recipient really sees, not just the notification pointing to it.
+    const itemized = !!document.getElementById('proposalItemizedToggle')?.checked;
+    const proposalData = computeProposalData(job, itemized);
+    const proposalHtml = renderProposalDocumentHtml(proposalData, job, companyProfile, false);
+    document.getElementById('emailPreviewProposalFrame').srcdoc = proposalHtml;
+
     kOpen('emailPreviewModal');
   };
 
