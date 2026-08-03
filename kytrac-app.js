@@ -16240,7 +16240,7 @@ function computeProposalData(job, itemized) {
       // — these are description-only room sections for the proposal and punch list
       if (st.price <= 0 && !sub.scopeNotes) return null;
       return {
-        label: customerSafeLabel(sub),
+        label: proposalSafeLabel(sub),
         price: st.price,
         scopeNotes: sub.scopeNotes || '',
         pendingBid: !!sub.pendingBid,
@@ -16253,8 +16253,7 @@ function computeProposalData(job, itemized) {
       if (item.visibleToCustomer === false) return null;
       const price = (item.qty || 1) * (item.unitPrice || item.unitCost || 0);
       if (price <= 0) return null;
-      const gradeWord = item.bundleTier ? ({ low: 'Low Grade', med: 'Medium Grade', high: 'High Grade' }[item.bundleTier] || '') : '';
-      const label = gradeWord ? toGenericLabel(item.desc) + ' — ' + gradeWord : toGenericLabel(item.desc);
+      const label = toGenericLabel(item.desc);
       return { label, price, notes: item.notes || '' };
     }).filter(Boolean);
 
@@ -16277,7 +16276,7 @@ function computeProposalData(job, itemized) {
 // Turns a computeProposalData() result into the full printable HTML page.
 // Used both for a fresh live print and for reprinting a frozen historical
 // version — same renderer, different data source.
-function renderProposalDocumentHtml(data, job, co) {
+function renderProposalDocumentHtml(data, job, co, autoPrint) {
   const itemized = data.itemized;
 
   const roomSections = data.rooms.map(room => {
@@ -16419,7 +16418,7 @@ function renderProposalDocumentHtml(data, job, co) {
     ${esc(co.companyName||'')} · ${esc(co.phone||'')} · ${esc(co.email||'')}${co.license?' · License #'+esc(co.license):''}
   </div>
 
-  <script>window.onload = () => setTimeout(() => window.print(), 250);<\/script></body></html>`;
+  ${autoPrint !== false ? '<script>window.onload = () => setTimeout(() => window.print(), 250);<\/script>' : ''}</body></html>`;
 }
 
 // ── Proposal version history (Draft → Pending → Approved/Declined) ──
@@ -16729,6 +16728,33 @@ function printProposal() {
 }
 window.printProposal = printProposal;
 
+// Same document as printProposal, but without the auto-print trigger —
+// for actually looking at what you're about to send/print, not printing
+// it. Previously the ONLY way to see the proposal at all was to hit
+// Print, which immediately threw up the browser's print dialog.
+function viewProposal() {
+  const job = conJobs.find(j => j.id === conCurrentJobId);
+  const co = companyProfile;
+  const itemized = !!document.getElementById('proposalItemizedToggle')?.checked;
+
+  if (!estGroups || !estGroups.length) {
+    conLoadEstimate(conCurrentJobId);
+    setTimeout(() => {
+      const data = computeProposalData(job, itemized);
+      const win = window.open('', '_blank');
+      win.document.write(renderProposalDocumentHtml(data, job, co, false));
+      win.document.close();
+    }, 1500);
+    return;
+  }
+
+  const data = computeProposalData(job, itemized);
+  const win = window.open('', '_blank');
+  win.document.write(renderProposalDocumentHtml(data, job, co, false));
+  win.document.close();
+}
+window.viewProposal = viewProposal;
+
 // Sends the latest proposal via real email (Postmark), with genuine
 // sent/opened/clicked tracking — as opposed to every other "email" action
 // in the app, which is just a mailto: link. Requires the Postmark Cloud
@@ -16754,18 +16780,13 @@ function logProposalEvent(jobId, type, note, jobName) {
 }
 window.logProposalEvent = logProposalEvent;
 
+let _pendingProposalEmail = null;
+
 function sendProposalViaEmail(btn) {
   const job = conJobs.find(j => j.id === conCurrentJobId);
   if (!job) return;
   if (!job.email) { alert('This job has no customer email on file. Add one in the job details first.'); return; }
   if (!conFunctions) { alert("Email sending isn't set up yet — deploy the Cloud Functions first."); return; }
-
-  if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }
-
-  const finish = (msg) => {
-    if (btn) { btn.disabled = false; btn.textContent = '📧 Send via Email'; }
-    if (msg) alert(msg);
-  };
 
   const proceed = (portalUrl) => {
     const toName = job.client || job.name || 'Valued Customer';
@@ -16773,6 +16794,7 @@ function sendProposalViaEmail(btn) {
     const prop = conProposals && conProposals[0];
     const total = prop?.snapshot?.grandTotal || 0;
     const co = companyProfile?.companyName || 'JTXD Contracting';
+    const subject = `Your Proposal from ${co}${jobNum ? ' — Job ' + jobNum : ''}`;
     const bodyHtml = `
       <p>Hi ${toName},</p>
       <p>${co} has sent you a proposal${jobNum ? ' for job <strong>' + jobNum + '</strong>' : ''}.</p>
@@ -16781,26 +16803,16 @@ function sendProposalViaEmail(btn) {
       <p style="color:#888;font-size:.85rem">If the button above doesn't work, copy and paste this link into your browser:<br>${portalUrl || ''}</p>
       <p>Thank you for choosing ${co}.</p>
     `;
-    conFunctions.httpsCallable('sendJobspanEmail')({
-      to: job.email,
-      toName,
-      subject: `Your Proposal from ${co}${jobNum ? ' — Job ' + jobNum : ''}`,
-      bodyHtml,
-      jobId: conCurrentJobId,
-      docType: 'proposal'
-    }).then(() => {
-      finish('Proposal emailed to ' + job.email + '.');
-      // Log to activity feed
-      logProposalEvent(conCurrentJobId, 'proposal_emailed', `Proposal emailed to ${job.email}`, job.name || '');
-      // Stamp emailSentAt on the proposal doc
-      const prop2 = conProposals && conProposals[0];
-      if (prop2) {
-        coll('jobs').doc(conCurrentJobId).collection('proposals').doc(prop2.id)
-          .update({ emailSentAt: firebase.firestore.FieldValue.serverTimestamp() }).catch(()=>{});
-      }
-      if (prop && prop.status === 'draft') markProposalStatus(prop.id, 'pending');
-      else loadProposals(conCurrentJobId);
-    }).catch(e => finish('Error sending email: ' + e.message));
+
+    // Stash everything confirmSendProposalEmail() needs, then show the
+    // preview instead of sending right away — per feedback, there was
+    // no way to see exactly what was about to go out before it went
+    // out, risking sending the wrong document/customer.
+    _pendingProposalEmail = { job, toName, subject, bodyHtml, prop, btn };
+    document.getElementById('emailPreviewTo').textContent = job.email + (toName ? ' (' + toName + ')' : '');
+    document.getElementById('emailPreviewSubject').textContent = subject;
+    document.getElementById('emailPreviewBody').innerHTML = bodyHtml;
+    kOpen('emailPreviewModal');
   };
 
   // Reuse an existing portal token for this job if one exists, otherwise
@@ -16815,12 +16827,55 @@ function sendProposalViaEmail(btn) {
           jobId: conCurrentJobId, jobName: job.name || '', companyId: currentCompanyId,
           created: Date.now(), createdBy: conCurrentUser?.email || '', expires: null, shareInvoices: true
         }).then(() => proceed(window.location.origin + window.location.pathname + '?portal=' + token))
-          .catch(e => finish('Error creating portal link: ' + e.message));
+          .catch(e => alert('Error creating portal link: ' + e.message));
       }
     })
-    .catch(e => finish('Error looking up portal link: ' + e.message));
+    .catch(e => alert('Error looking up portal link: ' + e.message));
 }
 window.sendProposalViaEmail = sendProposalViaEmail;
+
+// Fires only once the user has actually reviewed the preview and
+// clicked Confirm & Send — this is where the real Postmark call and
+// activity-log/status updates happen, moved out of sendProposalViaEmail
+// itself so nothing goes out until explicitly confirmed.
+function confirmSendProposalEmail() {
+  const pending = _pendingProposalEmail;
+  if (!pending) { kClose('emailPreviewModal'); return; }
+  const { job, toName, subject, bodyHtml, prop, btn } = pending;
+  const jobNum = job.jobNumber || '';
+
+  const confirmBtn = document.getElementById('emailPreviewConfirmBtn');
+  if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.textContent = 'Sending…'; }
+  if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }
+
+  const finish = (msg) => {
+    if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = '✅ Confirm & Send'; }
+    if (btn) { btn.disabled = false; btn.textContent = '📧 Send via Email'; }
+    kClose('emailPreviewModal');
+    _pendingProposalEmail = null;
+    if (msg) alert(msg);
+  };
+
+  conFunctions.httpsCallable('sendJobspanEmail')({
+    to: job.email,
+    toName,
+    subject,
+    bodyHtml,
+    jobId: conCurrentJobId,
+    docType: 'proposal'
+  }).then(() => {
+    finish('Proposal emailed to ' + job.email + '.');
+    logProposalEvent(conCurrentJobId, 'proposal_emailed', `Proposal emailed to ${job.email}`, job.name || '');
+    const prop2 = conProposals && conProposals[0];
+    if (prop2) {
+      coll('jobs').doc(conCurrentJobId).collection('proposals').doc(prop2.id)
+        .update({ emailSentAt: firebase.firestore.FieldValue.serverTimestamp() }).catch(()=>{});
+    }
+    if (prop && prop.status === 'draft') markProposalStatus(prop.id, 'pending');
+    else loadProposals(conCurrentJobId);
+  }).catch(e => finish('Error sending email: ' + e.message));
+}
+window.confirmSendProposalEmail = confirmSendProposalEmail;
 
 function printEstimate() {
   const job = conJobs.find(j => j.id === conCurrentJobId);
@@ -16967,6 +17022,18 @@ function customerSafeLabel(sub) {
   const generic = toGenericLabel(sub.name);
   const grade = subgroupGradeLabel(sub);
   return grade ? generic + ' — ' + grade : generic;
+}
+
+// Same generic cleanup as customerSafeLabel, but WITHOUT the grade
+// word — used only on the customer-facing Proposal document. Jason's
+// feedback: customers were nitpicking "Low Grade"/"Medium Grade"
+// wording since that's literally the tier they picked at that price
+// point; the crew-facing Punch List still needs the grade shown (they
+// need to know which tier to actually install), so this is
+// deliberately a separate function rather than changing
+// customerSafeLabel itself.
+function proposalSafeLabel(sub) {
+  return toGenericLabel(sub.name);
 }
 
 // Turns the crew-facing scope stored on a subgroup into individual punch-list
