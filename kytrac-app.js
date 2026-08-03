@@ -9027,13 +9027,17 @@ function loadCompanyProfile() {
     .then(doc => {
       if (doc.exists) {
         companyProfile = { ...DEFAULT_COMPANY_PROFILE, ...doc.data() };
-        // Store owner uid so portal can route notifications
-        if (currentUserRole === 'Owner' || currentUserRole === 'Full Access Override') {
-          const uid = conCurrentUser.uid;
-          if (doc.data().ownerUid !== uid) {
-            coll('settings').doc('company').update({ ownerUid: uid }).catch(() => {});
-          }
-        }
+        // NOTE: this used to auto-set ownerUid to conCurrentUser.uid here
+        // (the JOBSMETRIX login's own Firebase UID, from the kytrac-72d91
+        // project) every time this loaded. That's the wrong UID entirely —
+        // PlannerXD is a SEPARATE Firebase project with its own unrelated
+        // UID namespace, so ownerUid needs to be PlannerXD's account UID,
+        // not a JOBSMETRIX one. That auto-overwrite silently clobbered
+        // whatever correct value might have existed on every single
+        // JOBSMETRIX load, which is very likely why the PlannerXD bridge
+        // has never actually worked. Removed — ownerUid is now only ever
+        // set manually via the PlannerXD Owner UID field in Company
+        // Settings.
       } else {
         companyProfile = { ...DEFAULT_COMPANY_PROFILE };
         coll('settings').doc('company').set(companyProfile).catch(() => {});
@@ -9189,6 +9193,7 @@ function populateSettingsForm() {
   setVal('settOtThreshold', p.otWeeklyThreshold !== undefined ? p.otWeeklyThreshold : 40);
   setVal('settOtMultiplier', p.otMultiplier !== undefined ? p.otMultiplier : 1.5);
   setVal('settWeekStart', p.weekStartDay || 'mon');
+  setVal('settPlannerxdOwnerUid', p.ownerUid);
 
   // Logo
   const img = document.getElementById('logoPreviewImg');
@@ -9237,6 +9242,7 @@ function saveCompanyProfile() {
     otWeeklyThreshold: parseFloat(document.getElementById('settOtThreshold')?.value),
     otMultiplier: parseFloat(document.getElementById('settOtMultiplier')?.value),
     weekStartDay: document.getElementById('settWeekStart')?.value || 'mon',
+    ownerUid: document.getElementById('settPlannerxdOwnerUid')?.value.trim() || '',
     updatedAt: firebase.firestore.FieldValue.serverTimestamp()
   };
   if (isNaN(profile.defaultMaterialsMarkup)) profile.defaultMaterialsMarkup = 25;
