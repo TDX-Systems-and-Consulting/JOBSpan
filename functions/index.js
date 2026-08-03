@@ -1668,6 +1668,7 @@ async function runSLATriggers(db, companyId) {
     const jobName = job.name || jobId;
     const status = job.status || '';
 
+    if (job.archived) continue;
     if (['Closed Completed', 'Closed Lost'].includes(status)) continue;
 
     // Estimate SLA

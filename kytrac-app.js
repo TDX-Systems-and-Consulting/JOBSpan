@@ -6096,6 +6096,172 @@ function deleteCurrentJob() {
 }
 window.deleteCurrentJob = deleteCurrentJob;
 
+// ── Job Data Cleanup Tool ────────────────────────────────────────────────
+// Built after real Red Maples/JobTread test data was found still sitting
+// as live job records (should never have persisted as actual jobs — only
+// anonymized catalog/vendor reference data was ever supposed to carry
+// over). Lets the account owner review every job and permanently remove
+// anything that doesn't belong, with full cascading cleanup — not just
+// the job doc, but its estimate tree, invoices, change orders, logs,
+// proposals, and any SLA to-dos already generated referencing it. Plain
+// job.delete() alone would leave all of that behind as orphaned data.
+let _jobCleanupAll = [];
+let _jobCleanupSelected = new Set();
+
+function openJobCleanupModal() {
+  if (!conDb) return;
+  const listEl = document.getElementById('jobCleanupList');
+  if (listEl) listEl.innerHTML = '<p class="muted">Loading every job…</p>';
+  _jobCleanupSelected = new Set();
+  kOpen('jobCleanupModal');
+
+  coll('jobs').get().then(snap => {
+    _jobCleanupAll = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    // Oldest first — leftover test/import data is far more likely to be
+    // old than anything genuinely created recently.
+    _jobCleanupAll.sort((a, b) => {
+      const ta = a.createdAt?.toMillis ? a.createdAt.toMillis() : 0;
+      const tb = b.createdAt?.toMillis ? b.createdAt.toMillis() : 0;
+      return ta - tb;
+    });
+    renderJobCleanupList();
+  }).catch(e => {
+    if (listEl) listEl.innerHTML = '<p style="color:#ef5350">Error loading jobs: ' + esc(e.message) + '</p>';
+  });
+}
+window.openJobCleanupModal = openJobCleanupModal;
+
+function renderJobCleanupList() {
+  const listEl = document.getElementById('jobCleanupList');
+  if (!listEl) return;
+  const q = (document.getElementById('jobCleanupSearch')?.value || '').toLowerCase().trim();
+  const filtered = q
+    ? _jobCleanupAll.filter(j => (j.name || '').toLowerCase().includes(q) || (j.address || '').toLowerCase().includes(q))
+    : _jobCleanupAll;
+
+  if (!filtered.length) {
+    listEl.innerHTML = '<p class="muted">No jobs match.</p>';
+    updateJobCleanupSelectedCount();
+    return;
+  }
+
+  listEl.innerHTML = filtered.map(j => {
+    const created = j.createdAt?.toDate ? j.createdAt.toDate().toLocaleDateString() : '—';
+    const checked = _jobCleanupSelected.has(j.id) ? 'checked' : '';
+    return `<div style="display:flex;align-items:center;gap:12px;padding:10px 8px;border-bottom:1px solid rgba(110,145,210,.1)">
+      <input type="checkbox" ${checked} onchange="toggleJobCleanupSelect('${j.id}',this.checked)" style="flex-shrink:0;cursor:pointer" />
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:600;font-size:.9rem">${esc(j.name || j.address || j.id)}</div>
+        <div class="muted small">${esc(j.address || '')}${j.address && j.status ? ' · ' : ''}${esc(j.status || '')} · created ${created}</div>
+      </div>
+    </div>`;
+  }).join('');
+  updateJobCleanupSelectedCount();
+}
+window.renderJobCleanupList = renderJobCleanupList;
+
+function toggleJobCleanupSelect(jobId, checked) {
+  if (checked) _jobCleanupSelected.add(jobId);
+  else _jobCleanupSelected.delete(jobId);
+  updateJobCleanupSelectedCount();
+}
+window.toggleJobCleanupSelect = toggleJobCleanupSelect;
+
+function selectAllJobCleanup(select) {
+  const q = (document.getElementById('jobCleanupSearch')?.value || '').toLowerCase().trim();
+  const filtered = q
+    ? _jobCleanupAll.filter(j => (j.name || '').toLowerCase().includes(q) || (j.address || '').toLowerCase().includes(q))
+    : _jobCleanupAll;
+  if (select) filtered.forEach(j => _jobCleanupSelected.add(j.id));
+  else filtered.forEach(j => _jobCleanupSelected.delete(j.id));
+  renderJobCleanupList();
+}
+window.selectAllJobCleanup = selectAllJobCleanup;
+
+function updateJobCleanupSelectedCount() {
+  const el = document.getElementById('jobCleanupSelectedCount');
+  if (el) el.textContent = _jobCleanupSelected.size + ' selected';
+}
+
+// Deletes a job and everything hanging off it: estimateGroups (with
+// nested subgroups/items/sub-subgroups), invoices, changeorders,
+// logs, proposals, dailyLogs, and any company-wide todos referencing
+// this jobId (this is specifically what was generating the "URGENT:
+// still unscheduled" alerts for jobs that never should have existed).
+async function deleteJobCompletely(jobId) {
+  const jobRef = coll('jobs').doc(jobId);
+
+  const deleteAllDocs = async (ref) => {
+    const snap = await ref.get();
+    await Promise.all(snap.docs.map(d => d.ref.delete()));
+    return snap.docs;
+  };
+
+  // Estimate tree: fetch groups first, clean every nested subcollection
+  // (items, subgroups, sub-subgroups and their items), then delete each
+  // group doc — order matters, deleting the group first would leave its
+  // children as unreachable orphans.
+  try {
+    const groupsSnap = await jobRef.collection('estimateGroups').get();
+    for (const groupDoc of groupsSnap.docs) {
+      await deleteAllDocs(groupDoc.ref.collection('items'));
+      const subgroupsSnap = await groupDoc.ref.collection('subgroups').get();
+      for (const subDoc of subgroupsSnap.docs) {
+        await deleteAllDocs(subDoc.ref.collection('items'));
+        const subsubSnap = await subDoc.ref.collection('subgroups').get();
+        for (const ssDoc of subsubSnap.docs) {
+          await deleteAllDocs(ssDoc.ref.collection('items'));
+          await ssDoc.ref.delete();
+        }
+        await subDoc.ref.delete();
+      }
+      await groupDoc.ref.delete();
+    }
+  } catch(e) { console.warn('Estimate tree cleanup error for', jobId, e.message); }
+
+  // Other job subcollections
+  for (const sub of ['invoices', 'changeorders', 'changeOrders', 'logs', 'dailyLogs', 'proposals']) {
+    try { await deleteAllDocs(jobRef.collection(sub)); } catch(e) {}
+  }
+
+  // Orphaned SLA/manual todos referencing this job, company-wide
+  try {
+    const todosSnap = await coll('todos').where('jobId', '==', jobId).get();
+    await Promise.all(todosSnap.docs.map(d => d.ref.delete()));
+  } catch(e) { console.warn('Todo cleanup error for', jobId, e.message); }
+
+  // Finally, the job doc itself
+  await jobRef.delete();
+}
+window.deleteJobCompletely = deleteJobCompletely;
+
+async function confirmJobCleanupDelete() {
+  const count = _jobCleanupSelected.size;
+  if (!count) { alert('Nothing selected.'); return; }
+  const typed = prompt(`You're about to PERMANENTLY delete ${count} job${count===1?'':'s'} and everything attached to them (estimates, invoices, change orders, logs, SLA to-dos). This cannot be undone.\n\nType DELETE to confirm:`);
+  if (typed !== 'DELETE') return;
+
+  const btn = document.getElementById('jobCleanupDeleteBtn');
+  if (btn) { btn.disabled = true; }
+  const ids = Array.from(_jobCleanupSelected);
+  let done = 0, failed = 0;
+  for (const jobId of ids) {
+    if (btn) btn.textContent = `Deleting ${done + failed + 1} of ${ids.length}…`;
+    try {
+      await deleteJobCompletely(jobId);
+      done++;
+    } catch(e) {
+      console.error('Failed to delete job', jobId, e);
+      failed++;
+    }
+  }
+  if (btn) { btn.disabled = false; btn.textContent = 'Delete Selected'; }
+  alert(`Deleted ${done} job${done===1?'':'s'}.` + (failed ? ` ${failed} failed — check console for details.` : ''));
+  _jobCleanupSelected = new Set();
+  openJobCleanupModal(); // refresh the list from scratch
+}
+window.confirmJobCleanupDelete = confirmJobCleanupDelete;
+
 window.ktNav = ktNav;
 
 // Returns the set of job IDs assigned to the current user - via crew

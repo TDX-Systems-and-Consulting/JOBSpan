@@ -2048,6 +2048,14 @@
     <!-- ── PAGE: COMPANY SETTINGS ── -->    <!-- ── PAGE: COMPANY SETTINGS ── -->
     <div class="kt-page" id="ktPageSettings">
 
+      <div class="settings-section" style="border-color:rgba(239,83,80,.35)">
+        <div class="settings-head">
+          <h3 style="color:#ef5350">🧹 Job Data Cleanup</h3>
+          <p>Review every job in your account and permanently delete any that don't belong — leftover test/import data, duplicates, anything that was never a real job created in JOBSMETRIX. This is a true delete, not an archive: it also removes the job's estimate, invoices, change orders, logs, and any SLA to-dos already generated for it.</p>
+        </div>
+        <button class="btn btn-danger" onclick="openJobCleanupModal()">Review &amp; Clean Up Jobs</button>
+      </div>
+
       <div class="settings-section">
         <div class="settings-head">
           <h3>🏢 Company Profile</h3>
@@ -3458,7 +3466,29 @@
     </div>
   </div>
 
-  <!-- ── Proposal Email Preview Modal ── -->
+  <!-- ── Job Data Cleanup Modal ── -->
+  <div id="jobCleanupModal" class="modal-overlay">
+    <div class="modal-box" style="max-width:900px;max-height:90vh;display:flex;flex-direction:column">
+      <div class="modal-head" style="flex-shrink:0">
+        <h3 style="margin:0;color:#ef5350">🧹 Review &amp; Clean Up Jobs</h3>
+        <button class="btn" onclick="kClose('jobCleanupModal')">Close</button>
+      </div>
+      <div class="modal-body" style="flex:1;overflow-y:auto">
+        <p class="muted small" style="margin-bottom:12px">Every job currently in your account, oldest first. Check any that don't belong (test/import data, duplicates) and delete them — this permanently removes the job plus its estimate, invoices, change orders, logs, and any SLA to-dos already created for it. This cannot be undone.</p>
+        <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center">
+          <input type="text" id="jobCleanupSearch" placeholder="Filter by name/address…" oninput="renderJobCleanupList()" style="flex:1" />
+          <button class="btn" style="font-size:.8rem" onclick="selectAllJobCleanup(true)">Select all (filtered)</button>
+          <button class="btn" style="font-size:.8rem" onclick="selectAllJobCleanup(false)">Clear selection</button>
+        </div>
+        <div id="jobCleanupList"></div>
+      </div>
+      <div class="modal-foot" style="flex-shrink:0;display:flex;justify-content:space-between;align-items:center">
+        <div id="jobCleanupSelectedCount" class="muted small">0 selected</div>
+        <button class="btn btn-danger" id="jobCleanupDeleteBtn" onclick="confirmJobCleanupDelete()">Delete Selected</button>
+      </div>
+    </div>
+  </div>
+
   <div id="emailPreviewModal" class="modal-overlay">
     <div class="modal-box" style="max-width:820px;max-height:90vh;display:flex;flex-direction:column">
       <div class="modal-head" style="flex-shrink:0">
@@ -4339,7 +4369,7 @@
 
 <div class="photo-queue-badge" style="display:none;position:fixed;bottom:18px;right:18px;z-index:9999;background:#d97706;color:#fff;border-radius:999px;padding:8px 16px;font-size:.8rem;font-weight:700;box-shadow:var(--shadow);align-items:center;gap:6px"></div>
 
-<script src="kytrac-app.js?v=202608031300"></script>
+<script src="kytrac-app.js?v=202608031330"></script>
 <script>
   // Register PWA service worker for installability + offline app-shell
   // loading. Registered after the main app script so a slow/failed SW
