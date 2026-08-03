@@ -15039,6 +15039,37 @@ window.loadJobBidRequests = loadJobBidRequests;
 // Each item has: { id, desc, qty, unit, costType, unitCost, markup, unitPrice, phase, notes }
 
 let estGroups = []; // [{id, name, order, collapsed, subgroups:[{id, name, order, items:[...]}]}]
+let _estItemDraftKey = null;
+let _estItemDraftTimer = null;
+// Debounced draft-autosave for the Add/Edit Line Item form — separate
+// from the actual per-item Firestore save (Save Item button), which
+// already protects everything already committed. This just protects
+// whatever's mid-typed in the currently-open form against a crash,
+// accidental tab close, or phone lock before Save Item gets clicked.
+function scheduleEstItemDraftSave() {
+  if (_estItemDraftTimer) clearTimeout(_estItemDraftTimer);
+  _estItemDraftTimer = setTimeout(() => {
+    if (!_estItemDraftKey) return;
+    const desc = document.getElementById('estItemDesc')?.value.trim();
+    if (!desc) { try { localStorage.removeItem(_estItemDraftKey); } catch(e){} return; }
+    const draft = {
+      desc,
+      qty: document.getElementById('estItemQty')?.value,
+      unit: document.getElementById('estItemUnit')?.value,
+      costType: document.getElementById('estItemCostType')?.value,
+      unitCost: document.getElementById('estItemUnitCost')?.value,
+      markup: document.getElementById('estItemMarkup')?.value,
+      unitPrice: document.getElementById('estItemUnitPrice')?.value,
+      phase: document.getElementById('estItemPhase')?.value,
+      notes: document.getElementById('estItemNotes')?.value,
+    };
+    try { localStorage.setItem(_estItemDraftKey, JSON.stringify(draft)); } catch(e) { console.warn('Draft save failed:', e); }
+  }, 400);
+}
+function clearEstItemDraft() {
+  if (_estItemDraftKey) { try { localStorage.removeItem(_estItemDraftKey); } catch(e){} }
+}
+window.scheduleEstItemDraftSave = scheduleEstItemDraftSave;
 let _estCollapsed = {}; // groupId/subgroupId -> bool
 let _editingGroupId = null;
 let _editingSubgroupId = null;
@@ -15853,22 +15884,59 @@ function openAddEstItemModal(itemId, groupId, subgroupId, subSubgroupId) {
   }
 
   const setVal = (id, v) => { const el = document.getElementById(id); if(el) el.value = v||''; };
-  document.getElementById('estItemModalTitle').textContent = item ? 'Edit Line Item' : 'Add Line Item';
-  setVal('estItemDesc', item?.desc);
-  setVal('estItemQty', item?.qty || 1);
-  setVal('estItemUnit', item?.unit || 'ea');
-  document.getElementById('estItemCostType').value = item?.costType || 'Labor';
-  setVal('estItemUnitCost', item?.unitCost || '');
-  const markup = item?.markup !== undefined ? item.markup : getDefaultMarkupForCostType(item?.costType || 'Labor');
-  setVal('estItemMarkup', markup);
-  setVal('estItemNotes', item?.notes || '');
-  setVal('estItemPhase', item?.phase || '');
 
-  // Only pre-fill Unit Price if it was manually overridden (differs from cost×markup)
-  const calcedPrice = (item?.unitCost || 0) * (1 + markup/100);
-  const storedPrice = item?.unitPrice || 0;
-  const isManualOverride = storedPrice > 0 && Math.abs(storedPrice - calcedPrice) > 0.01;
-  setVal('estItemUnitPrice', isManualOverride ? storedPrice : '');
+  // Draft-autosave: protects whatever's mid-typed in THIS specific
+  // form from being lost to a crash, accidental tab close, phone lock,
+  // etc. — separate from the per-item Firestore save on the Save Item
+  // button, which already protects everything already clicked Save on.
+  // Scoped per job + item (or 'new' for a brand-new item) so drafts
+  // for different items/jobs never collide or leak into each other.
+  _estItemDraftKey = 'jm_est_item_draft_' + conCurrentJobId + '_' + (itemId || 'new');
+  let restoredDraft = false;
+  try {
+    const raw = localStorage.getItem(_estItemDraftKey);
+    if (raw) {
+      const draft = JSON.parse(raw);
+      if (draft && draft.desc && confirm('You have an unsaved draft for this item ("' + draft.desc + '") — probably from a crash or accidental close. Restore it?')) {
+        setVal('estItemDesc', draft.desc);
+        setVal('estItemQty', draft.qty);
+        setVal('estItemUnit', draft.unit);
+        document.getElementById('estItemCostType').value = draft.costType || 'Labor';
+        setVal('estItemUnitCost', draft.unitCost);
+        setVal('estItemMarkup', draft.markup);
+        setVal('estItemUnitPrice', draft.unitPrice);
+        setVal('estItemPhase', draft.phase);
+        setVal('estItemNotes', draft.notes);
+        restoredDraft = true;
+      } else {
+        localStorage.removeItem(_estItemDraftKey);
+      }
+    }
+  } catch(e) { console.warn('Draft restore check failed:', e); }
+
+  document.getElementById('estItemModalTitle').textContent = item ? 'Edit Line Item' : 'Add Line Item';
+  let markup = item?.markup !== undefined ? item.markup : getDefaultMarkupForCostType(item?.costType || 'Labor');
+  if (!restoredDraft) {
+    setVal('estItemDesc', item?.desc);
+    setVal('estItemQty', item?.qty || 1);
+    setVal('estItemUnit', item?.unit || 'ea');
+    document.getElementById('estItemCostType').value = item?.costType || 'Labor';
+    setVal('estItemUnitCost', item?.unitCost || '');
+    setVal('estItemMarkup', markup);
+    setVal('estItemNotes', item?.notes || '');
+    setVal('estItemPhase', item?.phase || '');
+  }
+
+  // Only pre-fill Unit Price if it was manually overridden (differs from
+  // cost×markup) — skipped entirely if a draft was restored above, since
+  // draft.unitPrice (whatever the user had actually typed) was already
+  // set directly and shouldn't be second-guessed by this calculation.
+  if (!restoredDraft) {
+    const calcedPrice = (item?.unitCost || 0) * (1 + markup/100);
+    const storedPrice = item?.unitPrice || 0;
+    const isManualOverride = storedPrice > 0 && Math.abs(storedPrice - calcedPrice) > 0.01;
+    setVal('estItemUnitPrice', isManualOverride ? storedPrice : '');
+  }
 
   // Populate group dropdown
   const groupSel = document.getElementById('estItemGroupSel');
@@ -16052,6 +16120,7 @@ function saveEstItem() {
     : colRef.add({ ...data, order: 0, createdAt: firebase.firestore.FieldValue.serverTimestamp() });
 
   promise.then(() => {
+    clearEstItemDraft();
     kClose('addEstItemModal');
     loadEstimate(conCurrentJobId);
   }).catch(e => alert('Error: ' + e.message));
