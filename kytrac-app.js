@@ -12871,10 +12871,20 @@ function submitPortalSignature(proposalId, jobId, action) {
         // 1. Activity log — written after doc save so we can store docId
         // (done below after document write)
 
-        // 2. Auto-advance job to Approved
-        const advanceStatuses = ['New Lead','Appointment Set','Estimate Sent','Follow Up','Negotiating'];
+        // 2. Auto-advance job to Approved — any pre-Approved canonical
+        // status advances. Previously used a stale hardcoded list
+        // ('Estimate Sent'/'Follow Up'/'Negotiating') that doesn't match
+        // any status this app has actually used since the pipeline was
+        // finalized (New Lead -> Appointment Set -> Building Estimate ->
+        // Submitted -> Approved -> ...) — meaning a job sitting at
+        // 'Submitted' (exactly where emailing a proposal now sets it)
+        // would silently fail to advance to Approved on signature.
+        const PORTAL_STATUS_ORDER = ['New Lead','Appointment Set','Building Estimate','Submitted','Approved'];
         jobRef.get().then(snap => {
-          if (snap.exists && advanceStatuses.includes(snap.data().status)) {
+          if (!snap.exists) return;
+          const curIdx = PORTAL_STATUS_ORDER.indexOf(snap.data().status);
+          const approvedIdx = PORTAL_STATUS_ORDER.indexOf('Approved');
+          if (curIdx !== -1 && curIdx < approvedIdx) {
             jobRef.update({ status: 'Approved', statusDate: new Date().toISOString().split('T')[0],
               lastActivity: now, lastActivityNote: `Proposal signed by ${name}` });
           }
@@ -16528,6 +16538,33 @@ function maybeAdvanceJobStatusForApproval(jobId) {
 }
 window.maybeAdvanceJobStatusForApproval = maybeAdvanceJobStatusForApproval;
 
+// Generic version of the same forward-only advance logic above, for any
+// target status — used by the 'emailing a proposal moves the job to
+// Submitted' automation. Never regresses a job that's already further
+// along (e.g. re-sending a revised proposal on an already-Approved job
+// won't knock it back down to Submitted).
+function advanceJobStatusIfEarlier(jobId, targetStatus, reason) {
+  const job = conJobs.find(j => j.id === jobId);
+  if (!job) return;
+  const curIdx = CON_JOB_STATUSES.indexOf(job.status);
+  const targetIdx = CON_JOB_STATUSES.indexOf(targetStatus);
+  if (targetIdx === -1 || (curIdx !== -1 && curIdx >= targetIdx)) return;
+
+  const prevStatus = job.status;
+  coll('jobs').doc(jobId).update({
+    status: targetStatus,
+    statusDate: new Date().toISOString().split('T')[0],
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    updatedBy: conCurrentUser ? conCurrentUser.email : 'unknown'
+  }).then(() => {
+    job.status = targetStatus;
+    logStatusChangeActivity(jobId, prevStatus, targetStatus, reason || `Auto-advanced to ${targetStatus}`);
+    if (typeof conRenderBoard === 'function') conRenderBoard();
+    if (typeof renderJobsBoard === 'function') renderJobsBoard();
+  }).catch(e => console.error('Auto-advance job status error:', e));
+}
+window.advanceJobStatusIfEarlier = advanceJobStatusIfEarlier;
+
 function saveProposalSnapshot(jobId, data) {
   if (!conDb || !jobId) return;
   const latest = conProposals[0];
@@ -16979,6 +17016,7 @@ function confirmSendProposalEmail() {
     // the source of truth rather than re-deriving status from the
     // stale `prop` captured back when the preview was first opened.
     loadProposals(conCurrentJobId);
+    advanceJobStatusIfEarlier(conCurrentJobId, 'Submitted', 'Proposal emailed to customer');
   }).catch(e => finish('Error sending email: ' + e.message));
 }
 window.confirmSendProposalEmail = confirmSendProposalEmail;
