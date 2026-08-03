@@ -13033,6 +13033,15 @@ function submitPortalSignature(proposalId, jobId, action) {
         const jobRef = db.collection('companies').doc(companyId).collection('jobs').doc(jobId);
         const now = firebase.firestore.FieldValue.serverTimestamp();
         const nowMs = Date.now();
+        // The job's Activity tab (loadJobActivity) queries this same
+        // logs subcollection ordered by a 'date' field — Firestore
+        // silently EXCLUDES any document missing that field from an
+        // orderBy query entirely, not just sorts it oddly. Every log
+        // entry below was missing this (including the pre-existing
+        // 'proposal_signed' one), which is why none of them, including
+        // 'Customer signed proposal', were ever actually showing up in
+        // the Activity tab despite writing successfully to Firestore.
+        const todayDateStr = new Date().toISOString().split('T')[0];
 
         // 1. Activity log — written after doc save so we can store docId
         // (done below after document write)
@@ -13057,14 +13066,14 @@ function submitPortalSignature(proposalId, jobId, action) {
                 jobRef.collection('logs').add({
                   type: 'status_auto_advanced',
                   notes: `Job auto-advanced to Approved (was ${snap.data().status}) — customer signed proposal.`,
-                  jobId, companyId, createdAt: now, createdMs: nowMs, createdBy: 'customer-portal'
+                  jobId, companyId, createdAt: now, createdMs: nowMs, date: todayDateStr, createdBy: 'customer-portal'
                 }).catch(()=>{});
               })
               .catch(e => {
                 jobRef.collection('logs').add({
                   type: 'status_advance_failed',
                   notes: 'Auto-advance to Approved failed: ' + e.message,
-                  jobId, companyId, createdAt: now, createdMs: nowMs, createdBy: 'customer-portal'
+                  jobId, companyId, createdAt: now, createdMs: nowMs, date: todayDateStr, createdBy: 'customer-portal'
                 }).catch(()=>{});
               });
           }
@@ -13095,19 +13104,19 @@ function submitPortalSignature(proposalId, jobId, action) {
               type: 'proposal_signed',
               notes: 'Customer signed proposal — ' + name,
               jobId, companyId, docId: docRef.id,
-              createdAt: now, createdMs: nowMs, createdBy: 'customer-portal'
+              createdAt: now, createdMs: nowMs, date: todayDateStr, createdBy: 'customer-portal'
             }).catch(()=>{});
           }).catch(()=>{
             // Log without docId if doc save failed
             jobRef.collection('logs').add({
               type: 'proposal_signed', notes: 'Customer signed proposal — ' + name,
-              jobId, companyId, createdAt: now, createdMs: nowMs, createdBy: 'customer-portal'
+              jobId, companyId, createdAt: now, createdMs: nowMs, date: todayDateStr, createdBy: 'customer-portal'
             }).catch(()=>{});
           });
         } catch(e) {
           jobRef.collection('logs').add({
             type: 'proposal_signed', notes: 'Customer signed proposal — ' + name,
-            jobId, companyId, createdAt: now, createdMs: nowMs, createdBy: 'customer-portal'
+            jobId, companyId, createdAt: now, createdMs: nowMs, date: todayDateStr, createdBy: 'customer-portal'
           }).catch(()=>{});
         }
 
@@ -13131,7 +13140,7 @@ function submitPortalSignature(proposalId, jobId, action) {
             jobRef.collection('logs').add({
               type: 'todo_created',
               notes: 'Schedule to-do created automatically (customer signed proposal).',
-              jobId, companyId, createdAt: now, createdMs: nowMs, createdBy: 'customer-portal'
+              jobId, companyId, createdAt: now, createdMs: nowMs, date: todayDateStr, createdBy: 'customer-portal'
             }).catch(()=>{});
           }).catch(()=>{});
         } catch(e) {}
@@ -13149,7 +13158,7 @@ function submitPortalSignature(proposalId, jobId, action) {
                 jobRef.collection('logs').add({
                   type: 'plannerxd_push_skipped',
                   notes: 'PlannerXD notification skipped — no ownerUid set on company settings (Company Settings must be linked to a PlannerXD account for this to fire).',
-                  jobId, companyId, createdAt: now, createdMs: nowMs, createdBy: 'customer-portal'
+                  jobId, companyId, createdAt: now, createdMs: nowMs, date: todayDateStr, createdBy: 'customer-portal'
                 }).catch(()=>{});
                 return;
               }
@@ -13164,20 +13173,20 @@ function submitPortalSignature(proposalId, jobId, action) {
                   jobRef.collection('logs').add({
                     type: 'plannerxd_push_sent',
                     notes: 'PlannerXD notified — schedule reminder pushed to Do First.',
-                    jobId, companyId, createdAt: now, createdMs: nowMs, createdBy: 'customer-portal'
+                    jobId, companyId, createdAt: now, createdMs: nowMs, date: todayDateStr, createdBy: 'customer-portal'
                   }).catch(()=>{});
                 }).catch(e => {
                   jobRef.collection('logs').add({
                     type: 'plannerxd_push_failed',
                     notes: 'PlannerXD notification failed: ' + e.message,
-                    jobId, companyId, createdAt: now, createdMs: nowMs, createdBy: 'customer-portal'
+                    jobId, companyId, createdAt: now, createdMs: nowMs, date: todayDateStr, createdBy: 'customer-portal'
                   }).catch(()=>{});
                 });
             }).catch(e => {
               jobRef.collection('logs').add({
                 type: 'plannerxd_push_failed',
                 notes: 'PlannerXD notification failed (settings lookup): ' + e.message,
-                jobId, companyId, createdAt: now, createdMs: nowMs, createdBy: 'customer-portal'
+                jobId, companyId, createdAt: now, createdMs: nowMs, date: todayDateStr, createdBy: 'customer-portal'
               }).catch(()=>{});
             });
         } catch(e) {}
