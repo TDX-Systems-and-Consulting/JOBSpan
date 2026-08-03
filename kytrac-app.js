@@ -20299,17 +20299,53 @@ function wizardCustomItemCardHtml() {
     '</div></div>';
 }
 
-function wizardAddCustomItem() {
+async function wizardAddCustomItem() {
   const roomName = _wizardRoom || _wizardCategory;
   const phaseName = _wizardPhaseLabel || (_wizardTrade || '').split(' ').slice(1).join(' ') || '';
-  let groupId = null, subgroupId = null;
-  const group = estGroups.find(g => g.name.toLowerCase() === (roomName || '').toLowerCase());
-  if (group) {
-    groupId = group.id;
-    const sub = group.subgroups?.find(s => s.name.toLowerCase() === phaseName.toLowerCase());
-    if (sub) subgroupId = sub.id;
-  }
   kClose('smartAddModal');
+
+  let groupId = null, subgroupId = null;
+  try {
+    let group = estGroups.find(g => g.name.toLowerCase() === (roomName || '').toLowerCase());
+
+    // Smart Add already knows the room (e.g. "Half Bath") — if nothing's
+    // been added to this estimate yet, that group genuinely doesn't
+    // exist in Firestore. Create it automatically instead of leaving
+    // groupId null and making the user hunt for '+ Create New Group'
+    // themselves; that option stays available as a fallback for the
+    // standalone + Add Item button, which has no room/trade context to
+    // work from.
+    if (!group && roomName && conDb && conCurrentJobId) {
+      const order = estGroups.length;
+      const ref = await coll('jobs').doc(conCurrentJobId).collection('estimateGroups').add({
+        name: roomName, order, createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+      group = { id: ref.id, name: roomName, order, subgroups: [], directItems: [] };
+      estGroups.push(group);
+    }
+
+    if (group) {
+      groupId = group.id;
+      let sub = group.subgroups?.find(s => s.name.toLowerCase() === phaseName.toLowerCase());
+      if (!sub && phaseName && conDb && conCurrentJobId) {
+        const subOrder = (group.subgroups || []).length;
+        const subRef = await coll('jobs').doc(conCurrentJobId).collection('estimateGroups')
+          .doc(groupId).collection('subgroups').add({
+            name: phaseName, order: subOrder, createdAt: firebase.firestore.FieldValue.serverTimestamp()
+          });
+        sub = { id: subRef.id, name: phaseName, items: [] };
+        if (!group.subgroups) group.subgroups = [];
+        group.subgroups.push(sub);
+      }
+      if (sub) subgroupId = sub.id;
+    }
+    renderEstimateTree();
+  } catch(e) {
+    console.error('Auto-create group/subgroup for custom item failed:', e);
+    // Fall through and open the modal with whatever we resolved — the
+    // '+ Create New Group' option is still there as a manual fallback.
+  }
+
   openAddEstItemModal(null, groupId, subgroupId, null);
 }
 window.wizardAddCustomItem = wizardAddCustomItem;
