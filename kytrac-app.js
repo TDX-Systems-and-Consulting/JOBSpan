@@ -16256,9 +16256,20 @@ function computeProposalData(job, itemized) {
       // Include subgroups that have scope notes even if they have no items/price
       // — these are description-only room sections for the proposal and punch list
       if (st.price <= 0 && !sub.scopeNotes) return null;
+      // Individual line items inside the subgroup, shown indented beneath the
+      // subgroup name so the customer can see what the price actually covers.
+      // Prices stay off these lines unless the Itemized toggle is on.
+      const subItems = (sub.items || []).map(item => {
+        if (item.visibleToCustomer === false) return null;
+        const price = (item.qty || 1) * (item.unitPrice || item.unitCost || 0);
+        if (price <= 0) return null;
+        return { label: toGenericLabel(item.desc || item.name), price, notes: item.notes || '' };
+      }).filter(Boolean);
+
       return {
         label: proposalSafeLabel(sub),
         price: st.price,
+        items: subItems,
         scopeNotes: sub.scopeNotes || '',
         pendingBid: !!sub.pendingBid,
         pendingBidNote: sub.pendingBidNote || '',
@@ -16302,9 +16313,19 @@ function renderProposalDocumentHtml(data, job, co, autoPrint) {
       const bidCaveat = c.pendingBid
         ? `<div class="cat-bid-caveat">⚠ ${esc(c.pendingBidNote || 'Pricing for this item is preliminary and may be adjusted once final vendor bids are in.')}</div>`
         : '';
+      const itemsHtml = (c.items || []).length
+        ? `<div class="cat-items">${c.items.map(it => {
+            const itPrice = itemized ? `<span style="float:right;font-weight:600;color:#374151">$${it.price.toFixed(2)}</span>` : '';
+            return `<div class="cat-item">
+              <div class="cat-item-name">${esc(it.label)}${itPrice}</div>
+              ${it.notes ? `<div class="cat-item-note">${esc(it.notes)}</div>` : ''}
+            </div>`;
+          }).join('')}</div>`
+        : '';
       return `<div class="cat-block">
         <div class="cat-name">${esc(c.label)}${priceHtml}</div>
         ${c.scopeNotes ? `<div class="cat-scope">${esc(c.scopeNotes)}</div>` : ''}
+        ${itemsHtml}
         ${bidCaveat}
       </div>`;
     }).join('');
@@ -16366,6 +16387,10 @@ function renderProposalDocumentHtml(data, job, co, autoPrint) {
     .cat-block:last-child { border-radius: 0 0 8px 8px; }
     .cat-name { font-weight: 700; font-size: .98rem; color: #111827; overflow: hidden; }
     .cat-scope { color: #4b5563; font-size: .88rem; margin-top: 6px; line-height: 1.55; white-space: pre-line; }
+    .cat-items { margin-top: 8px; padding-left: 14px; border-left: 2px solid #e5e7eb; }
+    .cat-item { padding: 3px 0; break-inside: avoid; page-break-inside: avoid; }
+    .cat-item-name { color: #374151; font-size: .9rem; font-weight: 500; overflow: hidden; }
+    .cat-item-note { color: #6b7280; font-size: .82rem; margin-top: 2px; line-height: 1.5; white-space: pre-line; }
     .cat-bid-caveat { color: #92400e; background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; padding: 6px 10px; font-size: .82rem; margin-top: 8px; line-height: 1.5; }
     .total-box { margin-top: 36px; padding: 20px 24px; background: #1f2937; color: #fff; border-radius: 10px; display: flex; justify-content: space-between; align-items: center; }
     .total-box .label { font-size: 1rem; font-weight: 700; letter-spacing: .04em; }
