@@ -10128,7 +10128,7 @@ function renderTodos() {
       </div>
       <div style="display:flex;gap:6px;flex-shrink:0;align-items:center">
         ${todo.plannerxdPushedAt
-          ? `<span title="Already pushed to PlannerXD" style="font-size:.68rem;color:#1dbb87">✓ PlannerXD</span>`
+          ? `<button onclick="pushTodoToPlannerXD('${todo.id}')" title="Already pushed — click to send again" style="background:none;border:1px solid rgba(29,187,135,.3);border-radius:6px;color:#1dbb87;cursor:pointer;font-size:.68rem;padding:3px 8px;white-space:nowrap">✓ PlannerXD (resend)</button>`
           : `<button onclick="pushTodoToPlannerXD('${todo.id}')" title="Manually add this to PlannerXD's Do First list" style="background:none;border:1px solid rgba(110,145,210,.25);border-radius:6px;color:var(--muted);cursor:pointer;font-size:.72rem;padding:3px 8px;white-space:nowrap">📤 To PlannerXD</button>`}
         <button onclick="openEditTodo('${todo.id}')" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:.9rem;padding:2px 4px">✏️</button>
         <button onclick="deleteTodo('${todo.id}')" style="background:none;border:none;color:rgba(239,83,80,.4);cursor:pointer;font-size:.9rem;padding:2px 4px">🗑</button>
