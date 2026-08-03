@@ -13113,15 +13113,32 @@ function submitPortalSignature(proposalId, jobId, action) {
             createdAt: now,
             createdBy: 'customer-portal',
             source: 'proposal_signed'
+          }).then(() => {
+            jobRef.collection('logs').add({
+              type: 'todo_created',
+              notes: 'Schedule to-do created automatically (customer signed proposal).',
+              jobId, companyId, createdAt: now, createdMs: nowMs, createdBy: 'customer-portal'
+            }).catch(()=>{});
           }).catch(()=>{});
         } catch(e) {}
 
-        // 5. PlannerXD notification — look up ownerUid from company settings
+        // 5. PlannerXD notification — look up ownerUid from company settings.
+        // Always logs its outcome to Activity (success, skipped, or failed
+        // with the actual reason) — previously every failure mode here was
+        // silently swallowed by a bare .catch(()=>{}), making this
+        // undiagnosable when it didn't work.
         try {
           db.collection('companies').doc(companyId).collection('settings').doc('company').get()
             .then(settDoc => {
               const ownerUid = settDoc.exists ? settDoc.data().ownerUid : null;
-              if (!ownerUid) return;
+              if (!ownerUid) {
+                jobRef.collection('logs').add({
+                  type: 'plannerxd_push_skipped',
+                  notes: 'PlannerXD notification skipped — no ownerUid set on company settings (Company Settings must be linked to a PlannerXD account for this to fire).',
+                  jobId, companyId, createdAt: now, createdMs: nowMs, createdBy: 'customer-portal'
+                }).catch(()=>{});
+                return;
+              }
               db.collection('plannerxd_notifications').doc(ownerUid)
                 .collection('items').add({
                   type: 'proposal_signed',
@@ -13129,8 +13146,26 @@ function submitPortalSignature(proposalId, jobId, action) {
                   body: name + ' signed the proposal. Job approved and ready to schedule.',
                   jobId, companyId, actionLabel: 'Open Job',
                   createdAt: now, createdMs: nowMs, read: false
-                }).catch(()=>{});
-            }).catch(()=>{});
+                }).then(() => {
+                  jobRef.collection('logs').add({
+                    type: 'plannerxd_push_sent',
+                    notes: 'PlannerXD notified — schedule reminder pushed to Do First.',
+                    jobId, companyId, createdAt: now, createdMs: nowMs, createdBy: 'customer-portal'
+                  }).catch(()=>{});
+                }).catch(e => {
+                  jobRef.collection('logs').add({
+                    type: 'plannerxd_push_failed',
+                    notes: 'PlannerXD notification failed: ' + e.message,
+                    jobId, companyId, createdAt: now, createdMs: nowMs, createdBy: 'customer-portal'
+                  }).catch(()=>{});
+                });
+            }).catch(e => {
+              jobRef.collection('logs').add({
+                type: 'plannerxd_push_failed',
+                notes: 'PlannerXD notification failed (settings lookup): ' + e.message,
+                jobId, companyId, createdAt: now, createdMs: nowMs, createdBy: 'customer-portal'
+              }).catch(()=>{});
+            });
         } catch(e) {}
         _releaseSigGuard();
       })
