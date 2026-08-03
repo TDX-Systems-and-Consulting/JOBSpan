@@ -16846,15 +16846,6 @@ function sendProposalViaEmail(btn) {
       <p>Thank you for choosing ${co}.</p>
     `;
 
-    // Stash everything confirmSendProposalEmail() needs, then show the
-    // preview instead of sending right away — per feedback, there was
-    // no way to see exactly what was about to go out before it went
-    // out, risking sending the wrong document/customer.
-    _pendingProposalEmail = { job, toName, subject, bodyHtml, prop, btn };
-    document.getElementById('emailPreviewTo').textContent = job.email + (toName ? ' (' + toName + ')' : '');
-    document.getElementById('emailPreviewSubject').textContent = subject;
-    document.getElementById('emailPreviewBody').innerHTML = bodyHtml;
-
     // Also render the ACTUAL proposal document — the thing the "View &
     // Sign Proposal" link in the email above actually opens — not just
     // the wrapper email text, so this preview reflects what the
@@ -16863,6 +16854,19 @@ function sendProposalViaEmail(btn) {
     const proposalData = computeProposalData(job, itemized);
     const proposalHtml = renderProposalDocumentHtml(proposalData, job, companyProfile, false);
     document.getElementById('emailPreviewProposalFrame').srcdoc = proposalHtml;
+
+    // Stash everything confirmSendProposalEmail() needs, then show the
+    // preview instead of sending right away — per feedback, there was
+    // no way to see exactly what was about to go out before it went
+    // out, risking sending the wrong document/customer. proposalData is
+    // included so confirmSendProposalEmail can guarantee a matching
+    // Firestore proposal doc exists (see ensureProposalDocForSending) —
+    // this is the exact same data just rendered into the preview above,
+    // so what gets saved for the customer to sign matches what was shown.
+    _pendingProposalEmail = { job, toName, subject, bodyHtml, prop, btn, proposalData };
+    document.getElementById('emailPreviewTo').textContent = job.email + (toName ? ' (' + toName + ')' : '');
+    document.getElementById('emailPreviewSubject').textContent = subject;
+    document.getElementById('emailPreviewBody').innerHTML = bodyHtml;
 
     kOpen('emailPreviewModal');
   };
@@ -16886,6 +16890,49 @@ function sendProposalViaEmail(btn) {
 }
 window.sendProposalViaEmail = sendProposalViaEmail;
 
+// Guarantees a real proposal document exists in Firestore with a
+// customer-visible status before an email actually goes out. Root
+// cause of a real incident: sendProposalViaEmail() previously only
+// read conProposals[0] (whatever happened to already be loaded) and
+// skipped creating/updating anything if it was empty — if nobody had
+// separately clicked Print Proposal first, NO document existed at all,
+// so the customer portal's proposal query came back empty and showed
+// nothing. Now called unconditionally right before sending.
+function ensureProposalDocForSending(jobId, data) {
+  return coll('jobs').doc(jobId).collection('proposals')
+    .orderBy('version', 'desc').limit(1).get()
+    .then(snap => {
+      if (snap.empty) {
+        // Nothing has ever been saved for this job — create it directly
+        // as 'pending' since we're sending it right now, no need to
+        // pass through an intermediate draft state nobody will see.
+        return coll('jobs').doc(jobId).collection('proposals').add({
+          version: 1, status: 'pending', snapshot: data,
+          createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+          sentAt: firebase.firestore.FieldValue.serverTimestamp(),
+          createdBy: conCurrentUser ? conCurrentUser.email : 'unknown'
+        }).then(ref => ({ id: ref.id, status: 'pending' }));
+      }
+      const doc = snap.docs[0];
+      const existing = doc.data();
+      if (existing.status === 'draft') {
+        // Existing but never sent — refresh the snapshot to the current
+        // estimate and promote it to pending.
+        return doc.ref.update({
+          snapshot: data, status: 'pending',
+          sentAt: firebase.firestore.FieldValue.serverTimestamp(),
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        }).then(() => ({ id: doc.id, status: 'pending' }));
+      }
+      // Already pending/approved/declined — just refresh the snapshot
+      // content (estimate may have changed) without touching a
+      // customer's existing response/status.
+      return doc.ref.update({
+        snapshot: data, updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+      }).then(() => ({ id: doc.id, status: existing.status }));
+    });
+}
+
 // Fires only once the user has actually reviewed the preview and
 // clicked Confirm & Send — this is where the real Postmark call and
 // activity-log/status updates happen, moved out of sendProposalViaEmail
@@ -16893,7 +16940,7 @@ window.sendProposalViaEmail = sendProposalViaEmail;
 function confirmSendProposalEmail() {
   const pending = _pendingProposalEmail;
   if (!pending) { kClose('emailPreviewModal'); return; }
-  const { job, toName, subject, bodyHtml, prop, btn } = pending;
+  const { job, toName, subject, bodyHtml, prop, btn, proposalData } = pending;
   const jobNum = job.jobNumber || '';
 
   const confirmBtn = document.getElementById('emailPreviewConfirmBtn');
@@ -16908,13 +16955,17 @@ function confirmSendProposalEmail() {
     if (msg) alert(msg);
   };
 
-  conFunctions.httpsCallable('sendJobspanEmail')({
-    to: job.email,
-    toName,
-    subject,
-    bodyHtml,
-    jobId: conCurrentJobId,
-    docType: 'proposal'
+  // Guaranteed first, and the actual send is gated on it succeeding —
+  // never again send a link to a portal with nothing behind it.
+  ensureProposalDocForSending(conCurrentJobId, proposalData).then(() => {
+    return conFunctions.httpsCallable('sendJobspanEmail')({
+      to: job.email,
+      toName,
+      subject,
+      bodyHtml,
+      jobId: conCurrentJobId,
+      docType: 'proposal'
+    });
   }).then(() => {
     finish('Proposal emailed to ' + job.email + '.');
     logProposalEvent(conCurrentJobId, 'proposal_emailed', `Proposal emailed to ${job.email}`, job.name || '');
@@ -16923,8 +16974,11 @@ function confirmSendProposalEmail() {
       coll('jobs').doc(conCurrentJobId).collection('proposals').doc(prop2.id)
         .update({ emailSentAt: firebase.firestore.FieldValue.serverTimestamp() }).catch(()=>{});
     }
-    if (prop && prop.status === 'draft') markProposalStatus(prop.id, 'pending');
-    else loadProposals(conCurrentJobId);
+    // ensureProposalDocForSending() above already created/promoted the
+    // proposal doc as needed — just refresh the client-side cache from
+    // the source of truth rather than re-deriving status from the
+    // stale `prop` captured back when the preview was first opened.
+    loadProposals(conCurrentJobId);
   }).catch(e => finish('Error sending email: ' + e.message));
 }
 window.confirmSendProposalEmail = confirmSendProposalEmail;
