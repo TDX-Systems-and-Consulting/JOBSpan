@@ -8038,7 +8038,6 @@ function importEstimateToInvoice() {
 
           let subTotal = 0;
           let primaryItemDesc = '';
-          let gradeWord = '';
           itemSnap.forEach(d => {
             const item = d.data();
             subTotal += (item.qty || 1) * (item.unitPrice || 0);
@@ -8046,11 +8045,6 @@ function importEstimateToInvoice() {
             // detail — that's usually the actual product (with its size/model
             // baked into the description already).
             if (!primaryItemDesc && item.costType !== 'Labor' && item.desc) primaryItemDesc = item.desc;
-            // Surface the Low/Medium/High grade tier explicitly, if this
-            // subgroup came from a Smart Add bundle.
-            if (!gradeWord && item.bundleTier) {
-              gradeWord = { low: 'Low Grade', med: 'Medium Grade', high: 'High Grade' }[item.bundleTier] || '';
-            }
           });
           if (subTotal <= 0) continue;
 
@@ -8059,7 +8053,6 @@ function importEstimateToInvoice() {
             desc = sub.name + ' — ' + group.name;
           }
           const detailParts = [];
-          if (gradeWord) detailParts.push(gradeWord);
           if (primaryItemDesc && primaryItemDesc.toLowerCase() !== (sub.name||'').toLowerCase()) detailParts.push(primaryItemDesc);
           if (detailParts.length) desc += ' (' + detailParts.join(' — ') + ')';
 
