@@ -15864,6 +15864,10 @@ function openAddEstItemModal(itemId, groupId, subgroupId, subSubgroupId) {
   _editingSubgroupId = subgroupId || null;
   _editingSubSubgroupId = subSubgroupId || null;
 
+  const flatToggle = document.getElementById('estItemFlatRateToggle');
+  if (flatToggle) flatToggle.checked = false;
+  toggleEstItemFlatRate();
+
   // Find item if editing
   let item = null;
   if (itemId && groupId) {
@@ -16029,11 +16033,31 @@ window.onEstItemCostTypeChange = onEstItemCostTypeChange;
 
 function clearUnitPriceOverride() {
   // When cost or markup changes, clear any manual Unit Price override
-  // so the field recalculates from unitCost × markup instead of staying stuck
+  // so the field recalculates from unitCost × markup instead of staying
+  // stuck — EXCEPT in flat-rate mode, where cost and price are both
+  // independently known (e.g. Jason quoted a flat $1,600 for labor he
+  // costs out separately) and typing one shouldn't wipe the other.
+  if (document.getElementById('estItemFlatRateToggle')?.checked) return;
   const priceEl = document.getElementById('estItemUnitPrice');
   if (priceEl) priceEl.value = '';
 }
 window.clearUnitPriceOverride = clearUnitPriceOverride;
+
+function toggleEstItemFlatRate() {
+  const on = document.getElementById('estItemFlatRateToggle')?.checked;
+  const markupWrap = document.getElementById('estItemMarkupWrap');
+  const priceLabel = document.getElementById('estItemUnitPriceLabel');
+  const priceInput = document.getElementById('estItemUnitPrice');
+  if (markupWrap) markupWrap.style.display = on ? 'none' : '';
+  if (priceLabel) {
+    priceLabel.innerHTML = on
+      ? 'Unit Price ($) <span style="color:var(--muted);font-weight:400">(your negotiated price)</span>'
+      : 'Unit Price ($) <span style="color:var(--muted);font-weight:400">(optional override)</span>';
+  }
+  if (priceInput) priceInput.placeholder = on ? 'e.g. 1600.00' : 'Auto from markup';
+  calcEstItemPreview();
+}
+window.toggleEstItemFlatRate = toggleEstItemFlatRate;
 
 function calcEstItemPreview() {
   const qty = parseFloat(document.getElementById('estItemQty')?.value) || 1;
