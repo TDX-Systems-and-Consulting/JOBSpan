@@ -15854,7 +15854,8 @@ function openAddEstItemModal(itemId, groupId, subgroupId, subSubgroupId) {
   const groupSel = document.getElementById('estItemGroupSel');
   if (groupSel) {
     groupSel.innerHTML = '<option value="">— Select Group —</option>' +
-      estGroups.map(g => '<option value="'+g.id+'"'+(g.id===groupId?' selected':'')+'>'+esc(g.name)+'</option>').join('');
+      estGroups.map(g => '<option value="'+g.id+'"'+(g.id===groupId?' selected':'')+'>'+esc(g.name)+'</option>').join('') +
+      '<option value="__new__">+ Create New Group…</option>';
     if (groupId) groupSel.value = groupId;
   }
   populateEstSubgroupDropdown(groupId, subgroupId);
@@ -15875,9 +15876,45 @@ function populateEstSubgroupDropdown(groupId, selectedSubId) {
 }
 
 function onEstGroupChange() {
-  const groupId = document.getElementById('estItemGroupSel')?.value;
+  const sel = document.getElementById('estItemGroupSel');
+  const groupId = sel?.value;
+  if (groupId === '__new__') {
+    createGroupInlineFromItemModal();
+    return;
+  }
   _editingGroupId = groupId || null;
   populateEstSubgroupDropdown(groupId, null);
+}
+
+// Lets a brand-new estimate (zero groups yet) still add a manual line
+// item without dead-ending on a required Group dropdown with nothing
+// in it — reported by Jason: Smart Add's Custom/One-off Item option
+// opens this same modal, and on a fresh estimate estGroups is
+// legitimately empty, so there was no way to even create a group from
+// here. Mirrors addGroup()'s Firestore write but also re-populates and
+// re-selects in this modal's own dropdown instead of just updating the
+// (currently hidden) main estimate tree.
+function createGroupInlineFromItemModal() {
+  const name = prompt('New group name (e.g. "Half Bath"):');
+  const sel = document.getElementById('estItemGroupSel');
+  if (!name || !name.trim()) { if (sel) sel.value = ''; return; }
+  if (!conDb || !conCurrentJobId) { if (sel) sel.value = ''; return; }
+  const trimmed = name.trim();
+  const order = estGroups.length;
+  coll('jobs').doc(conCurrentJobId).collection('estimateGroups').add({
+    name: trimmed, order, createdAt: firebase.firestore.FieldValue.serverTimestamp()
+  }).then(ref => {
+    const newGroup = { id: ref.id, name: trimmed, order, subgroups: [], directItems: [] };
+    estGroups.push(newGroup);
+    if (sel) {
+      sel.innerHTML = '<option value="">— Select Group —</option>' +
+        estGroups.map(g => '<option value="'+g.id+'"'+(g.id===ref.id?' selected':'')+'>'+esc(g.name)+'</option>').join('') +
+        '<option value="__new__">+ Create New Group…</option>';
+      sel.value = ref.id;
+    }
+    _editingGroupId = ref.id;
+    populateEstSubgroupDropdown(ref.id, null);
+  }).catch(e => { alert('Error creating group: ' + e.message); if (sel) sel.value = ''; });
 }
 
 function onEstSubgroupChange() {
