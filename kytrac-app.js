@@ -425,11 +425,12 @@ function renderJobsBoard() {
         : '';
       card.innerHTML = `
         <div class="kt-job-num" style="color:${col.color}">${esc(job.jobNumber||job.name||'')}</div>
-        ${job.notes?`<div class="kt-job-desc">${esc(job.notes.length > 70 ? job.notes.slice(0,70)+'…' : job.notes)}</div>`:''}
+        ${job.address?`<div class="kt-job-addr">${esc(job.address)}</div>`:''}
         ${statusBadge}
         ${job.client?`<div class="kt-job-meta">Customer: ${esc(job.client)}</div>`:''}
-        ${job.statusDate||job.startDate?`<div class="kt-job-meta">Status Date: ${job.statusDate||job.startDate}</div>`:''}
         ${job.superintendent||job.teamLead||job.pm?`<div class="kt-job-meta">Team Lead: ${esc(job.superintendent||job.teamLead||job.pm)}</div>`:''}
+        ${job.statusDate||job.startDate?`<div class="kt-job-meta">Status Date: ${job.statusDate||job.startDate}</div>`:''}
+        ${job.notes?`<div class="kt-job-desc">${esc(job.notes.length > 70 ? job.notes.slice(0,70)+'…' : job.notes)}</div>`:''}
         ${getJobValue(job)?`<div class="kt-job-value">$${Math.round(getJobValue(job)).toLocaleString()}</div>`:''}
       `;
       card.onclick = () => openJobDetail(job.id);
