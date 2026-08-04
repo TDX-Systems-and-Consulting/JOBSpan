@@ -15714,7 +15714,13 @@ function savePaymentSchedule() {
 
   const data = { type };
   if (type === 'custom') {
-    const pcts = (custom.value || '').split(',').map(s => parseFloat(s.trim())).filter(n => !isNaN(n) && n > 0);
+    // Accept commas, slashes, or whitespace as separators — the preset
+    // dropdown options themselves display as "50 / 25 / 25", so typing
+    // a custom value the same way (e.g. "5/95") is a completely
+    // reasonable expectation. Previously only commas worked, so "5/95"
+    // silently parsed as just 5 (parseFloat stops at the first
+    // non-numeric character), giving a confusing "currently 5" error.
+    const pcts = (custom.value || '').split(/[,/]+/).map(s => parseFloat(s.trim())).filter(n => !isNaN(n) && n > 0);
     const sum = pcts.reduce((a, b) => a + b, 0);
     if (pcts.length && Math.abs(sum - 100) > 0.01) {
       alert('Custom payment percentages must add up to 100 (currently ' + sum + ').');
