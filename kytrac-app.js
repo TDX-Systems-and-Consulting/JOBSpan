@@ -8307,7 +8307,44 @@ function importEstimateToInvoice() {
         return;
       }
 
-      _invLineItems = [...combinedLines];
+      // Respect the job's saved Payment Schedule (set on the Estimate tab)
+      // instead of always importing 100% — if a multi-stage schedule
+      // exists, ask which stage this invoice is for and scale every line
+      // down accordingly. Single-stage (Full Payment) or no schedule set
+      // imports at 100% same as before.
+      const jobSnap = await jobRef.get();
+      const schedule = jobSnap.exists ? jobSnap.data().paymentSchedule : null;
+      let stagePcts = null;
+      if (schedule) {
+        if (schedule.type === 'custom' && Array.isArray(schedule.customPcts) && schedule.customPcts.length > 1) {
+          stagePcts = schedule.customPcts;
+        } else if (schedule.type === '502525') {
+          stagePcts = [50, 25, 25];
+        } else if (schedule.type === '333334') {
+          stagePcts = [33.33, 33.33, 33.34];
+        }
+      }
+
+      let finalLines = combinedLines;
+      if (stagePcts) {
+        const stageLabels = stagePcts.map((p, i) =>
+          (i + 1) + '. ' + p + '% ' + (i === 0 ? '(Deposit)' : i === stagePcts.length - 1 ? '(Final)' : '(Progress)'));
+        const choice = window.prompt(
+          'This job has a saved Payment Schedule (' + stagePcts.join('/') + '). Which stage is this invoice for?\n\n' +
+          stageLabels.join('\n') + '\n\nEnter a number, or Cancel to import the full 100% instead:'
+        );
+        const idx = parseInt(choice) - 1;
+        if (choice !== null && idx >= 0 && idx < stagePcts.length) {
+          const pct = stagePcts[idx];
+          finalLines = combinedLines.map(l => ({
+            ...l,
+            rate: Math.round(l.rate * pct / 100 * 100) / 100
+          }));
+        }
+        // choice === null (Cancel) or invalid entry falls through to full 100% import
+      }
+
+      _invLineItems = [...finalLines];
       renderInvLineItems();
       calcInvTotals();
     })
@@ -12654,6 +12691,11 @@ function renderPortalLogs(logs) {
 }
 
 function renderPortalInvoices(invs, jobId) {
+  // Draft invoices are still being put together — customers should
+  // never see them. Previously every invoice rendered regardless of
+  // status, meaning a Draft invoice with an unfinished/wrong amount
+  // could be visible in the portal the moment it was saved.
+  invs = invs.filter(i => i.status !== 'Draft');
   if (!invs.length) return;
   const section = document.getElementById('portalInvoicesSection');
   const el = document.getElementById('portalInvList');
