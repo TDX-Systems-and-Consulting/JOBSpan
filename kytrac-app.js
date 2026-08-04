@@ -7123,7 +7123,6 @@ function renderHomeDashboard() {
     ];
     pipeline.innerHTML = groups.map((g, i) => {
       const jobs = conJobs.filter(j => g.statuses.includes(j.status));
-      const val = jobs.reduce((s,j) => s + getJobValue(j), 0);
       return `<div style="padding:14px 16px;border-right:${i < groups.length-1 ? '1px solid rgba(110,145,210,.1)' : 'none'};text-align:center;flex:1">
         <div style="display:flex;align-items:center;justify-content:center;gap:6px;margin-bottom:6px">
           <div style="width:8px;height:8px;border-radius:50%;background:${g.color}"></div>
@@ -7133,7 +7132,6 @@ function renderHomeDashboard() {
           style="font-size:1.6rem;font-weight:900;color:${g.color};cursor:pointer;transition:opacity .15s"
           title="Click to view ${g.label} jobs"
           onmouseover="this.style.opacity='.7'" onmouseout="this.style.opacity='1'">${jobs.length}</div>
-        ${val > 0 ? `<div style="font-size:.72rem;color:var(--muted);margin-top:2px">$${Math.round(val).toLocaleString()}</div>` : '<div style="font-size:.72rem;color:var(--muted);margin-top:2px">—</div>'}
       </div>`;
     }).join('');
   }
