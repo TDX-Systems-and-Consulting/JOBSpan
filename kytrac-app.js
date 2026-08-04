@@ -6090,6 +6090,27 @@ function compressImage(dataUrl, maxWidth, quality) {
   });
 }
 
+// A single compressImage() pass (1600px/0.8, or whatever's passed) can
+// still land over Firestore's hard 1,048,487-byte-per-field limit —
+// real phone photos vary a lot in how well they compress, and base64
+// itself adds ~33% overhead on top of the encoded byte size, so
+// "usually fine" isn't the same as "always fine." This steps DOWN
+// width and quality repeatedly until the result actually fits, with
+// headroom, rather than gambling on one fixed setting and letting the
+// Firestore write throw for whichever photo happens to be more
+// detailed/complex than most.
+async function compressUntilUnderLimit(rawDataUrl, limitBytes) {
+  const steps = [
+    [1600, 0.8], [1200, 0.7], [900, 0.6], [700, 0.5], [500, 0.4], [350, 0.3],
+  ];
+  let result = rawDataUrl;
+  for (const [w, q] of steps) {
+    result = await compressImage(rawDataUrl, w, q).catch(() => result);
+    if (result.length <= limitBytes) return result;
+  }
+  return result; // last-resort smallest attempt, even if still over (rare)
+}
+
 // Render photos in a log entry
 function renderLogPhotos(photos) {
   if (!photos || !photos.length) return '';
@@ -22058,6 +22079,16 @@ function uploadJobFiles(input) {
           const compressed = await compressImage(raw, 1600, 0.8).catch(() => raw);
           const blob = dataUrlToBlob(compressed);
           const path = 'companies/' + currentCompanyId + '/jobs/' + conCurrentJobId + '/photos/' + Date.now() + '_' + file.name.replace(/[^a-zA-Z0-9._-]/g,'_');
+          // Firestore's placeholder is transient (cleared once storageUrl
+          // fills in below) — it only needs to be good enough to show a
+          // preview immediately, so it can afford to be much smaller than
+          // the real asset going to Storage. Using the same 1600/0.8
+          // "compressed" version here is what caused "The value of
+          // property dataUrl is longer than 1048487 bytes": that's still
+          // routinely over Firestore's hard per-field limit for a real
+          // phone photo. 900KB target leaves headroom under the actual
+          // ~1,048,487-byte ceiling.
+          const placeholderDataUrl = await compressUntilUnderLimit(raw, 900000).catch(() => null);
 
           // Write the doc immediately with the compressed image as a
           // local placeholder — this rides Firestore's own offline
@@ -22067,7 +22098,7 @@ function uploadJobFiles(input) {
           const docRef = await coll('documents').add({
             name: file.name, type: file.type, size: file.size,
             storageUrl: null,
-            dataUrl: compressed,
+            dataUrl: placeholderDataUrl,
             pendingUpload: true,
             jobId: conCurrentJobId,
             jobName: job?.name || '',
@@ -22099,7 +22130,12 @@ function uploadJobFiles(input) {
         let dataUrl = null;
         if (isImage) {
           const raw = await new Promise((res, rej) => { const r = new FileReader(); r.onload = e => res(e.target.result); r.onerror = rej; r.readAsDataURL(file); });
-          dataUrl = await compressImage(raw, 1600, 0.8).catch(() => raw);
+          // No Storage configured here, so THIS is the permanent copy —
+          // unlike the conStorage branch above, there's no separate
+          // full-quality asset elsewhere, so it must actually fit under
+          // Firestore's limit itself rather than just aiming for one
+          // fixed compression pass and hoping.
+          dataUrl = await compressUntilUnderLimit(raw, 900000).catch(() => raw);
         } else if (file.size > 5 * 1024 * 1024) {
           alert('"' + file.name + '" is ' + (file.size/1024/1024).toFixed(1) + 'MB — files over 5MB are not supported yet.');
           continue;
