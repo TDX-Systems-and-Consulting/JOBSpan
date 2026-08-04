@@ -19005,7 +19005,8 @@ const ROOM_STRUCTURE = {
         { label:"Siding", trade:"0800 Siding" },
         { label:"Gutters & Down spouts", trade:"0900 Roofing" },
         { label:"Flatwork", trade:"2800 Concrete" },
-        { label:"Landscaping", trade:"2900 Landscaping" }
+        { label:"Landscaping", trade:"2900 Landscaping" },
+        { label:"Electrical", trade:"1000 Electrical" }
       ] },
       "Basement": { icon:"⬇️", phases:[
         { label:"Framing", trade:"0600 Framing" },
@@ -19290,7 +19291,7 @@ const PHASE_ICONS = {
   "Framing":"🏗", "Kitchen Framing":"🏗", "Laundry Framing":"🏗",
   "Plumbing: rough":"🔧", "Plumbing: final":"🔧",
   "HVAC: Rough":"❄️", "HVAC: final":"❄️", "HVAC":"❄️",
-  "Electrical: rough":"⚡", "Electrical: final":"⚡", "Electric":"⚡", "Electrical Finishes":"💡",
+  "Electrical: rough":"⚡", "Electrical: final":"⚡", "Electric":"⚡", "Electrical Finishes":"💡", "Electrical":"⚡",
   "Insulation":"🧊", "Drywall":"🧱", "Doors":"🚪", "Windows":"🪟", "Doors/Windows":"🪟", "Trim":"📏",
   "Painting":"🎨", "Flooring":"🪵", "Cabinets":"🗄", "Countertops":"🪨", "Appliances":"🍳",
   "Demo/Trash out":"🗑", "Cleaning":"🧹", "Misc. Expenses":"💰",
