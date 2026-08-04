@@ -245,7 +245,7 @@ function logInvoiceActivity(jobId, eventType, notes) {
   coll('jobs').doc(jobId).collection('logs').add({
     date: new Date().toISOString().split('T')[0],
     notes,
-    type: eventType, // 'invoice_created' | 'invoice_emailed' | 'invoice_paid'
+    type: eventType, // 'invoice_created' | 'invoice_emailed' | 'invoice_paid' | 'materials_purchase' | 'vendor_bill'
     userName: conCurrentUser?.displayName || conCurrentUser?.email || 'Unknown',
     companyId: currentCompanyId,
     createdAt: firebase.firestore.FieldValue.serverTimestamp(),
@@ -4804,6 +4804,10 @@ function saveMaterialsPurchase() {
   promise.then(() => {
     kClose('addMaterialsModal');
     fhLoadJobMaterials(jobId, () => { fhRenderMaterials(); const j = conJobs.find(x=>x.id===jobId); if (j) { fhRenderTotals(j); refreshJobFinancials(j); } });
+    if (!expenseId) {
+      const amtStr = amount.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2});
+      logInvoiceActivity(jobId, 'materials_purchase', `Materials purchase — ${purchasedFrom}: $${amtStr}`);
+    }
   }).catch(e => alert('Error: ' + e.message));
 }
 window.saveMaterialsPurchase = saveMaterialsPurchase;
@@ -7521,6 +7525,10 @@ function renderActivityFeed(targetElId, itemCap) {
           items.push({ icon: '📧', text: l.notes || 'Invoice emailed to customer', sub: job ? job.name : '', jobId, ms });
         } else if (l.type === 'invoice_paid') {
           items.push({ icon: '💰', text: l.notes || 'Invoice paid', sub: job ? job.name : '', jobId, ms });
+        } else if (l.type === 'materials_purchase') {
+          items.push({ icon: '🧱', text: l.notes || 'Materials purchase logged', sub: job ? job.name : '', jobId, ms });
+        } else if (l.type === 'vendor_bill') {
+          items.push({ icon: '👷', text: l.notes || 'Vendor bill added', sub: job ? job.name : '', jobId, ms });
         } else {
           items.push({ icon:'📋', text: l.notes ? (l.notes.length > 60 ? l.notes.slice(0,60)+'…' : l.notes) : 'Daily log added', sub: job ? job.name : '', jobId, ms });
         }
@@ -7549,6 +7557,10 @@ function renderActivityFeed(targetElId, itemCap) {
               items.push({ icon: '📧', text: l.notes || 'Invoice emailed to customer', sub: job.name, jobId: job.id, ms });
             } else if (l.type === 'invoice_paid') {
               items.push({ icon: '💰', text: l.notes || 'Invoice paid', sub: job.name, jobId: job.id, ms });
+            } else if (l.type === 'materials_purchase') {
+              items.push({ icon: '🧱', text: l.notes || 'Materials purchase logged', sub: job.name, jobId: job.id, ms });
+            } else if (l.type === 'vendor_bill') {
+              items.push({ icon: '👷', text: l.notes || 'Vendor bill added', sub: job.name, jobId: job.id, ms });
             } else {
               items.push({ icon:'📋', text: l.notes ? (l.notes.length > 60 ? l.notes.slice(0,60)+'…' : l.notes) : 'Daily log added', sub: job.name, jobId: job.id, ms });
             }
@@ -11968,6 +11980,11 @@ function saveBill() {
     // otherwise a bill added via the new "+ Add Expense" job shortcut
     // wouldn't show up until you left the tab and came back.
     if (conCurrentJobId) fhLoadJobBills(conCurrentJobId, () => { fhRenderBills(); const j = conJobs.find(x=>x.id===conCurrentJobId); if (j) { fhRenderTotals(j); refreshJobFinancials(j); } });
+    if (!billId && data.jobId) {
+      const vendorName = (allVendors || []).find(v => v.id === vendorId)?.name || 'Vendor';
+      const amtStr = amount.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2});
+      logInvoiceActivity(data.jobId, 'vendor_bill', `Vendor bill added — ${vendorName}: $${amtStr}`);
+    }
   })
     .catch(e => alert('Error: ' + e.message));
 }
