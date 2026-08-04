@@ -9582,10 +9582,10 @@ function printInvoiceData(inv, job, otherInvoices) {
 
     (inv.notes ? '<div style="background:#f9fafb;border-radius:8px;padding:14px;font-size:.85rem;color:#4b5563;margin-bottom:20px"><strong>Notes & Terms:</strong><br><br>' + esc(inv.notes) + '</div>' : '') +
 
-    ((inv.paymentLink || inv.qbPaymentLink) ? 
+    (inv.paymentLink ?
       '<div style="text-align:center;margin:24px 0">' +
-      '<a href="' + (inv.paymentLink || inv.qbPaymentLink) + '" style="display:inline-block;background:#d97706;color:#fff;font-size:1.1rem;font-weight:800;padding:16px 48px;border-radius:12px;text-decoration:none;letter-spacing:.02em">💳 Pay Now</a>' +
-      '<div style="font-size:.76rem;color:#9ca3af;margin-top:8px">Click to pay securely' + (!inv.paymentLink && inv.qbPaymentLink ? ' via QuickBooks' : '') + '</div>' +
+      '<a href="' + inv.paymentLink + '" style="display:inline-block;background:#d97706;color:#fff;font-size:1.1rem;font-weight:800;padding:16px 48px;border-radius:12px;text-decoration:none;letter-spacing:.02em">💳 Pay Now</a>' +
+      '<div style="font-size:.76rem;color:#9ca3af;margin-top:8px">Click to pay securely</div>' +
       '</div>' : '') +
 
     '<div style="margin-top:32px;padding-top:16px;border-top:1px solid #e5e7eb;text-align:center;color:#9ca3af;font-size:.75rem">' +
@@ -12762,7 +12762,7 @@ function renderPortalInvoices(invs, jobId) {
   el.innerHTML = invs.map(inv => {
     const bal = (inv.total||0) - (inv.amtPaid||0);
     const sColor = statusColors[inv.status] || 'var(--muted)';
-    const payLink = inv.paymentLink || inv.qbPaymentLink;
+    const payLink = inv.paymentLink; // Stripe only — never inv.qbPaymentLink in the customer portal
     const payBtn = payLink && bal > 0 && inv.status !== 'Paid'
       ? `<a href="${payLink}" target="_blank" style="display:inline-block;margin-top:8px;background:#d97706;color:#fff;font-size:.78rem;font-weight:800;padding:7px 18px;border-radius:8px;text-decoration:none">💳 Pay Now</a>`
       : '';
