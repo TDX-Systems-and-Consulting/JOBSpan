@@ -7600,6 +7600,8 @@ function renderActivityFeed(targetElId, itemCap) {
           items.push({ icon: '🧱', text: l.notes || 'Materials purchase logged', sub: job ? job.name : '', jobId, ms });
         } else if (l.type === 'vendor_bill') {
           items.push({ icon: '👷', text: l.notes || 'Vendor bill added', sub: job ? job.name : '', jobId, ms });
+        } else if (l.type === 'photos_uploaded') {
+          items.push({ icon: '📸', text: l.notes || 'Photos uploaded', sub: job ? job.name : '', jobId, ms });
         } else {
           items.push({ icon:'📋', text: l.notes ? (l.notes.length > 60 ? l.notes.slice(0,60)+'…' : l.notes) : 'Daily log added', sub: job ? job.name : '', jobId, ms });
         }
@@ -7632,6 +7634,8 @@ function renderActivityFeed(targetElId, itemCap) {
               items.push({ icon: '🧱', text: l.notes || 'Materials purchase logged', sub: job.name, jobId: job.id, ms });
             } else if (l.type === 'vendor_bill') {
               items.push({ icon: '👷', text: l.notes || 'Vendor bill added', sub: job.name, jobId: job.id, ms });
+            } else if (l.type === 'photos_uploaded') {
+              items.push({ icon: '📸', text: l.notes || 'Photos uploaded', sub: job.name, jobId: job.id, ms });
             } else {
               items.push({ icon:'📋', text: l.notes ? (l.notes.length > 60 ? l.notes.slice(0,60)+'…' : l.notes) : 'Daily log added', sub: job.name, jobId: job.id, ms });
             }
@@ -22067,6 +22071,7 @@ function uploadJobFiles(input) {
   const job = conJobs.find(j => j.id === conCurrentJobId);
 
   (async () => {
+    let uploadedCount = 0;
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       if (listEl) listEl.innerHTML = `<div class="small muted" style="text-align:center;padding:20px;grid-column:1/-1">Uploading ${i+1} of ${files.length}: ${file.name}\u2026</div>`;
@@ -22124,6 +22129,7 @@ function uploadJobFiles(input) {
           } else {
             await queuePhotoUpload({ id: uid('photo'), docId: docRef.id, path, blob, fileName: file.name, jobId: conCurrentJobId, createdAt: Date.now() });
           }
+          uploadedCount++;
           continue;
         }
 
@@ -22156,9 +22162,18 @@ function uploadJobFiles(input) {
           uploadedBy: conCurrentUser?.email || '',
           uploadedByName: conCurrentUser?.displayName || conCurrentUser?.email || '',
         });
+        uploadedCount++;
       } catch(e) {
         alert('Error uploading ' + file.name + ': ' + e.message);
       }
+    }
+    // Log ONE Activity entry for the whole batch rather than one per
+    // file — this was missing entirely before (photo/file uploads
+    // never appeared in Activity at all, same class of gap as
+    // materials purchases and vendor bills earlier).
+    if (uploadedCount > 0) {
+      logInvoiceActivity(conCurrentJobId, 'photos_uploaded',
+        `${uploadedCount} photo${uploadedCount === 1 ? '' : 's'}/file${uploadedCount === 1 ? '' : 's'} uploaded`);
     }
     loadJobDocs(conCurrentJobId);
   })();
