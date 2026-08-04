@@ -18989,13 +18989,16 @@ const ROOM_STRUCTURE = {
         { label:"Flooring", trade:"1700 Flooring" },
         { label:"Trim", trade:"2100 Trimwork" },
         { label:"Electrical Finishes", trade:"1000 Electrical" },
-        { label:"Cleaning", trade:"0000 Uncategorized" }
+        { label:"Plumbing", trade:"1100 Plumbing" },
+        { label:"Cleaning", trade:"0000 Uncategorized" },
+        { label:"Miscellaneous", trade:"3100 Miscellaneous" }
       ] },
       "Mechanicals": { icon:"⚙️", phases:[
         { label:"Electric", trade:"1000 Electrical" },
         { label:"HVAC", trade:"1200 Mechanical" },
         { label:"Drain stack(s)", trade:"1100 Plumbing" },
-        { label:"Water heater", trade:"1100 Plumbing" }
+        { label:"Water heater", trade:"1100 Plumbing" },
+        { label:"Insulation", trade:"1300 Insulation" }
       ] },
       "Exterior": { icon:"🏗", phases:[
         { label:"Deck/Porch", trade:"2500 Decking" },
@@ -19006,7 +19009,11 @@ const ROOM_STRUCTURE = {
         { label:"Gutters & Down spouts", trade:"0900 Roofing" },
         { label:"Flatwork", trade:"2800 Concrete" },
         { label:"Landscaping", trade:"2900 Landscaping" },
-        { label:"Electrical", trade:"1000 Electrical" }
+        { label:"Electrical", trade:"1000 Electrical" },
+        { label:"Framing", trade:"0600 Framing" },
+        { label:"Painting", trade:"2300 Painting" },
+        { label:"Fencing", trade:"2600 Fencing" },
+        { label:"Garage", trade:"1600 Garage" }
       ] },
       "Basement": { icon:"⬇️", phases:[
         { label:"Framing", trade:"0600 Framing" },
@@ -19063,6 +19070,7 @@ const ROOM_STRUCTURE = {
         { label:"Trim", trade:"2100 Trimwork" },
         { label:"Painting", trade:"2300 Painting" },
         { label:"Flooring", trade:"1700 Flooring" },
+        { label:"Specialty Finishes", trade:"2200 Specialty Finishes" },
         { label:"HVAC: final", trade:"1200 Mechanical" },
         { label:"Electrical: final", trade:"1000 Electrical" }
       ] },
@@ -19195,6 +19203,8 @@ const ROOM_STRUCTURE = {
         { label:"Trim", trade:"2100 Trimwork" },
         { label:"Painting", trade:"2300 Painting" },
         { label:"Flooring", trade:"1700 Flooring" },
+        { label:"Tiling", trade:"1800 Tiling" },
+        { label:"Specialty Finishes", trade:"2200 Specialty Finishes" },
         { label:"Plumbing: final", trade:"1100 Plumbing" },
         { label:"HVAC: final", trade:"1200 Mechanical" },
         { label:"Electrical: final", trade:"1000 Electrical" }
@@ -19211,6 +19221,8 @@ const ROOM_STRUCTURE = {
         { label:"Trim", trade:"2100 Trimwork" },
         { label:"Painting", trade:"2300 Painting" },
         { label:"Flooring", trade:"1700 Flooring" },
+        { label:"Tiling", trade:"1800 Tiling" },
+        { label:"Specialty Finishes", trade:"2200 Specialty Finishes" },
         { label:"Plumbing: final", trade:"1100 Plumbing" },
         { label:"HVAC: final", trade:"1200 Mechanical" },
         { label:"Electrical: final", trade:"1000 Electrical" }
@@ -19227,6 +19239,7 @@ const ROOM_STRUCTURE = {
         { label:"Trim", trade:"2100 Trimwork" },
         { label:"Painting", trade:"2300 Painting" },
         { label:"Flooring", trade:"1700 Flooring" },
+        { label:"Tiling", trade:"1800 Tiling" },
         { label:"Plumbing: final", trade:"1100 Plumbing" },
         { label:"HVAC: final", trade:"1200 Mechanical" },
         { label:"Electrical: final", trade:"1000 Electrical" }
