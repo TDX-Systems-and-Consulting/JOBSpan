@@ -423,9 +423,22 @@ function renderJobsBoard() {
       const statusBadge = job.status !== col.dropStatus
         ? `<div class="kt-job-meta" style="color:${col.color};font-weight:700;font-size:.7rem">${esc(job.status)}</div>`
         : '';
-      // Street only — addresses are stored as "street, city, state zip";
-      // take everything before the first comma so the card stays short.
-      const streetOnly = job.address ? job.address.split(',')[0].trim() : '';
+      // Street only. Two strategies, since address entry hasn't been
+      // consistent: comma-separated ("123 Main St, St. Peters, MO") vs
+      // one run-on string with no commas at all ("7123 Beulah Ave St
+      // Louis MO 63136"). A naive split(',')[0] returns the WHOLE
+      // string for the second case — nothing to split on — which is
+      // exactly why some cards were trimmed and others weren't.
+      // Fallback: find the first common street-type suffix (Ave, Dr,
+      // Ct, St, Rd, etc.) and cut right after it, since that reliably
+      // marks the end of the street portion even with no delimiter.
+      const streetOnly = (() => {
+        const addr = (job.address || '').trim();
+        if (!addr) return '';
+        if (addr.includes(',')) return addr.split(',')[0].trim();
+        const suffixMatch = addr.match(/^(.*?\b(?:St|Street|Ave|Avenue|Dr|Drive|Ct|Court|Ln|Lane|Rd|Road|Blvd|Boulevard|Way|Pl|Place|Cir|Circle|Pkwy|Parkway|Ter|Terrace|Trl|Trail|Loop|Hwy|Highway)\.?)\b/i);
+        return suffixMatch ? suffixMatch[1] : addr;
+      })();
       card.innerHTML = `
         <div class="kt-job-num" style="color:${col.color}">${esc(job.jobNumber||job.name||'')}</div>
         ${streetOnly?`<div class="kt-job-addr">${esc(streetOnly)}</div>`:''}
