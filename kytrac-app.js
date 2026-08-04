@@ -16606,9 +16606,9 @@ function renderProposalDocumentHtml(data, job, co, autoPrint) {
       const bidCaveat = c.pendingBid
         ? `<div class="cat-bid-caveat">⚠ ${esc(c.pendingBidNote || 'Pricing for this item is preliminary and may be adjusted once final vendor bids are in.')}</div>`
         : '';
-      const itemsHtml = (c.items || []).length
+      const itemsHtml = (itemized && (c.items || []).length)
         ? `<div class="cat-items">${c.items.map(it => {
-            const itPrice = itemized ? `<span style="float:right;font-weight:600;color:#374151">$${it.price.toFixed(2)}</span>` : '';
+            const itPrice = `<span style="float:right;font-weight:600;color:#374151">$${it.price.toFixed(2)}</span>`;
             return `<div class="cat-item">
               <div class="cat-item-name">${esc(it.label)}${itPrice}</div>
               ${it.notes ? `<div class="cat-item-note">${esc(it.notes)}</div>` : ''}
