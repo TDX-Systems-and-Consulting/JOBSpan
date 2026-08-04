@@ -9449,8 +9449,13 @@ function checkStripeConnectionStatus() {
           (data.hasWebhook ? '' : ' <span style="color:#ef4444">— webhook secret not set yet, payments won\'t auto-confirm</span>');
         if (disconnectBtn) disconnectBtn.style.display = '';
         if (data.hasWebhook) {
-          // Fully set up — hide the form, nothing left to add.
+          // Fully set up — hide the form by default, but leave a way back
+          // in. Previously this was a dead end: the only way to correct a
+          // wrong/stale webhook secret was Disconnect, which wipes the
+          // secret key too and forces re-entering everything from
+          // scratch. "Edit connection" re-opens the same form in place.
           if (formEl) formEl.style.display = 'none';
+          el.innerHTML += ' <a href="javascript:void(0)" onclick="window.showStripeEditForm()" style="color:#63b3ed;text-decoration:underline;margin-left:10px;font-size:.82rem">Edit connection</a>';
         } else {
           // Connected, but still missing the webhook secret. Previously
           // this hid the whole form unconditionally the moment
@@ -9479,6 +9484,26 @@ function checkStripeConnectionStatus() {
     });
 }
 window.checkStripeConnectionStatus = checkStripeConnectionStatus;
+
+// Re-opens the connect form for an already-connected account so the
+// secret key and webhook signing secret can be corrected in place —
+// e.g. when the wrong webhook secret was pasted (mode mismatch, wrong
+// endpoint) and the signature never verifies. Both fields must be
+// re-entered: connectStripeAccount() always re-verifies the secret key,
+// and we never echo the previously-saved values back to the client.
+function showStripeEditForm() {
+  const formEl = document.getElementById('stripeConnectForm');
+  const keyLabel = document.getElementById('stripeSecretKeyLabel');
+  const connectBtnEl = document.querySelector('#stripeConnectForm .btn-amber');
+  const keyInput = document.getElementById('stripeSecretKeyInput');
+  const whInput = document.getElementById('stripeWebhookSecretInput');
+  if (formEl) formEl.style.display = '';
+  if (keyLabel) keyLabel.textContent = 'Stripe Secret Key (re-enter to update — including a corrected webhook secret below)';
+  if (connectBtnEl) connectBtnEl.textContent = '💳 Update Stripe Connection';
+  if (keyInput) { keyInput.value = ''; keyInput.focus(); }
+  if (whInput) whInput.value = '';
+}
+window.showStripeEditForm = showStripeEditForm;
 
 function populateSettingsForm() {
   const p = companyProfile;
