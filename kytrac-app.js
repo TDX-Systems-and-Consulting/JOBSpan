@@ -868,10 +868,14 @@ function conGenJobNumber() {
 function openNewJobModal() {
   conEditingJobId = null;
   document.getElementById('jobModalTitle').textContent = 'New Job';
-  ['jobName','jobClient','jobPhone','jobEmail','jobAddress','jobNotes','jobContractValue','jobEstCost','jobSuperintendent','jobPM'].forEach(id => {
+  ['jobClient','jobPhone','jobEmail','jobAddress','jobNotes','jobContractValue','jobEstCost','jobSuperintendent','jobPM'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.value = '';
   });
+  // Job Name is no longer free text — the job number IS the name.
+  // Generated immediately so it's visible before the user's even typed
+  // anything else, not silently assigned after save.
+  document.getElementById('jobName').value = conGenJobNumber();
   document.getElementById('jobStatus').value = 'New Lead';
   document.getElementById('jobType').value = 'Residential Remodel';
   document.getElementById('jobStartDate').value = '';
@@ -882,7 +886,12 @@ function openNewJobModal() {
 function saveJob(openEstimate) {
   const name = document.getElementById('jobName').value.trim();
   const client = document.getElementById('jobClient').value.trim();
-  if (!name || !client) { alert('Job name and client name are required.'); return; }
+  // name comes from the auto-generated, read-only job number field —
+  // should always be populated by openNewJobModal()/editCurrentJob(),
+  // but regenerate defensively rather than block save on an internal
+  // slip the user didn't cause.
+  const finalName = name || conGenJobNumber();
+  if (!client) { alert('Client name is required.'); return; }
 
   const newStatus = document.getElementById('jobStatus').value;
   let closedLostReason = null;
@@ -928,7 +937,10 @@ function saveJob(openEstimate) {
       })
       .catch(e => alert('Error saving: ' + e.message));
   } else {
-    data.jobNumber = conGenJobNumber();
+    // Same number already shown/entered as the name -- do NOT generate a
+    // second, independent one here (that was the original bug: name and
+    // jobNumber could end up completely different random numbers).
+    data.jobNumber = finalName;
     data.createdAt = firebase.firestore.FieldValue.serverTimestamp();
     data.createdBy = conCurrentUser ? conCurrentUser.email : 'unknown';
     data.actualCost = 0;
@@ -970,8 +982,9 @@ function prefillNewJobForCustomerData(customer) {
   if (!customer) return;
   conEditingJobId = null;
   document.getElementById('jobModalTitle').textContent = 'New Job';
-  // Pre-fill from customer
-  document.getElementById('jobName').value = customer.name + ' — ';
+  // Pre-fill from customer. Job Name is auto-generated (job number),
+  // no longer a free-text field seeded from the customer's name.
+  document.getElementById('jobName').value = conGenJobNumber();
   document.getElementById('jobClient').value = customer.name;
   document.getElementById('jobPhone').value = customer.phone || '';
   document.getElementById('jobEmail').value = customer.email || '';
@@ -21747,7 +21760,9 @@ window.openNewJobModal = function() {
 window.saveJob = function(openEstimate) {
   const name = document.getElementById('jobName').value.trim();
   const client = document.getElementById('jobClient').value.trim();
-  if (!name || !client) { alert('Job name and client name are required.'); return; }
+  // name comes from the auto-generated, read-only job number field.
+  const finalName = name || conGenJobNumber();
+  if (!client) { alert('Client name is required.'); return; }
 
   const newStatus = document.getElementById('jobStatus').value;
   let closedLostReason = null;
@@ -21764,7 +21779,7 @@ window.saveJob = function(openEstimate) {
   const customerId = document.getElementById('jobCustomerId')?.value.trim() || '';
 
   const data = {
-    name, client,
+    name: finalName, client,
     customerId,
     phone: document.getElementById('jobPhone').value.trim(),
     email: document.getElementById('jobEmail').value.trim(),
@@ -21796,7 +21811,10 @@ window.saveJob = function(openEstimate) {
       })
       .catch(e => alert('Error saving: ' + e.message));
   } else {
-    data.jobNumber = conGenJobNumber();
+    // Same number already shown/entered as the name -- do NOT generate a
+    // second, independent one here (that was the original bug: name and
+    // jobNumber could end up completely different random numbers).
+    data.jobNumber = finalName;
     data.createdAt = firebase.firestore.FieldValue.serverTimestamp();
     data.createdBy = conCurrentUser ? conCurrentUser.email : 'unknown';
     data.actualCost = 0;

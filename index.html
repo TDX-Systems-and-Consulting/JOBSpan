@@ -3381,7 +3381,10 @@
       </div>
       <div class="modal-body">
         <div class="form-grid">
-          <div class="full"><label class="small muted">Job Name *</label><input id="jobName" placeholder="Kitchen Remodel — Smith Residence" /></div>
+          <div class="full">
+            <label class="small muted">Job Number (auto-generated — this is the job's name)</label>
+            <input id="jobName" readonly style="background:rgba(255,255,255,.03);color:var(--amber);font-weight:700;letter-spacing:.02em;cursor:not-allowed" />
+          </div>
           <div class="full" style="position:relative">
             <label class="small muted">Customer *</label>
             <input id="jobClient" placeholder="Search or type a new name…" autocomplete="off"
@@ -4464,7 +4467,7 @@
 
 <div class="photo-queue-badge" style="display:none;position:fixed;bottom:18px;right:18px;z-index:9999;background:#d97706;color:#fff;border-radius:999px;padding:8px 16px;font-size:.8rem;font-weight:700;box-shadow:var(--shadow);align-items:center;gap:6px"></div>
 
-<script src="kytrac-app.js?v=202608042220"></script>
+<script src="kytrac-app.js?v=202608042240"></script>
 <script>
   // Register PWA service worker for installability + offline app-shell
   // loading. Registered after the main app script so a slow/failed SW
