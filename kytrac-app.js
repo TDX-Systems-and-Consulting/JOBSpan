@@ -237,6 +237,21 @@ function logStatusChangeActivity(jobId, prevStatus, newStatus, reason) {
   }).catch(e => console.error('Status change log error:', e));
 }
 
+// Logs invoice lifecycle events (created / emailed / paid) to the same
+// 'logs' collection the Activity feed reads. type stays specific so the
+// feed can render a proper icon instead of the generic daily-log bucket.
+function logInvoiceActivity(jobId, eventType, notes) {
+  if (!conDb || !jobId) return;
+  coll('jobs').doc(jobId).collection('logs').add({
+    date: new Date().toISOString().split('T')[0],
+    notes,
+    type: eventType, // 'invoice_created' | 'invoice_emailed' | 'invoice_paid'
+    userName: conCurrentUser?.displayName || conCurrentUser?.email || 'Unknown',
+    companyId: currentCompanyId,
+    createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+  }).catch(e => console.error('Invoice activity log error:', e));
+}
+
 // ── Theme toggle (Blue default / Black / Light) ──
 // Per-browser preference via localStorage, applied instantly on click
 // (no reload needed) and re-applied before paint on every future load
@@ -7302,6 +7317,12 @@ function renderActivityFeed(targetElId, itemCap) {
           items.push({ icon: '👁', text: 'Customer opened proposal in portal', sub: job ? job.name : '', jobId, ms });
         } else if (l.type === 'proposal_signed') {
           items.push({ icon: '📎', text: l.notes || 'Customer signed proposal', sub: job ? job.name : '', jobId, ms, docId: l.docId || null });
+        } else if (l.type === 'invoice_created') {
+          items.push({ icon: '🧾', text: l.notes || 'Invoice created', sub: job ? job.name : '', jobId, ms });
+        } else if (l.type === 'invoice_emailed') {
+          items.push({ icon: '📧', text: l.notes || 'Invoice emailed to customer', sub: job ? job.name : '', jobId, ms });
+        } else if (l.type === 'invoice_paid') {
+          items.push({ icon: '💰', text: l.notes || 'Invoice paid', sub: job ? job.name : '', jobId, ms });
         } else {
           items.push({ icon:'📋', text: l.notes ? (l.notes.length > 60 ? l.notes.slice(0,60)+'…' : l.notes) : 'Daily log added', sub: job ? job.name : '', jobId, ms });
         }
@@ -7324,6 +7345,12 @@ function renderActivityFeed(targetElId, itemCap) {
               items.push({ icon: '👁', text: 'Customer opened proposal in portal', sub: job.name, jobId: job.id, ms });
             } else if (l.type === 'proposal_signed') {
               items.push({ icon: '📎', text: l.notes || 'Customer signed proposal', sub: job.name, jobId: job.id, ms, docId: l.docId || null });
+            } else if (l.type === 'invoice_created') {
+              items.push({ icon: '🧾', text: l.notes || 'Invoice created', sub: job.name, jobId: job.id, ms });
+            } else if (l.type === 'invoice_emailed') {
+              items.push({ icon: '📧', text: l.notes || 'Invoice emailed to customer', sub: job.name, jobId: job.id, ms });
+            } else if (l.type === 'invoice_paid') {
+              items.push({ icon: '💰', text: l.notes || 'Invoice paid', sub: job.name, jobId: job.id, ms });
             } else {
               items.push({ icon:'📋', text: l.notes ? (l.notes.length > 60 ? l.notes.slice(0,60)+'…' : l.notes) : 'Daily log added', sub: job.name, jobId: job.id, ms });
             }
@@ -8430,6 +8457,12 @@ function saveInvoice() {
     switchDetailTab('invoices', null);
     loadAllInvoices();
 
+    // Log creation to Activity (only for brand-new invoices, not edits).
+    if (!invId) {
+      const amt = (data.total || 0).toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2});
+      logInvoiceActivity(jobId, 'invoice_created', `Invoice ${data.number || ''} created — $${amt}`.trim());
+    }
+
     if (pendingCOId) {
       const newInvId = invId || (ref && ref.id);
       coll('jobs').doc(jobId).collection('changeorders').doc(pendingCOId).update({
@@ -8554,6 +8587,12 @@ async function commitMarkPaid(jobId, invId, total) {
       ...payment,
       updatedAt: firebase.firestore.FieldValue.serverTimestamp()
     });
+
+    // 1b. Log to Activity.
+    const paidAmt = (total || 0).toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2});
+    let paidNote = `Invoice ${invData.number || ''} paid — $${paidAmt} (${method})`.replace('  ', ' ');
+    if (method === 'Check' && payment.checkNumber) paidNote += ` #${payment.checkNumber}`;
+    logInvoiceActivity(jobId, 'invoice_paid', paidNote.trim());
 
     // 2. Auto-advance job status to To Be Scheduled (Approved was removed
     // as a distinct stage), but only if it hasn't already progressed
@@ -8936,6 +8975,7 @@ async function doSendInvoiceEmail(jobId, invId) {
     });
     modal?.remove();
     alert(`✅ Invoice sent to ${to}`);
+    logInvoiceActivity(jobId, 'invoice_emailed', `Invoice emailed to ${to}`);
     loadJobInvoices(jobId);
   } catch(e) {
     if (btn) { btn.textContent = '✉️ Send Invoice'; btn.disabled = false; }
