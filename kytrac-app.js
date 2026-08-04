@@ -20443,8 +20443,16 @@ function wizLoadTemplates(trade) {
       const templates = [];
       snap.forEach(d => templates.push({ id: d.id, ...d.data() }));
       wizRenderTemplates(templates, trade);
+      // Templates is a separate, rarely-populated feature (the user has
+      // to manually create one per trade first) — defaulting to this
+      // tab meant a trade with real catalog items but zero saved
+      // templates (true for most trades most of the time) looked
+      // completely empty, with the actual inventory sitting one click
+      // away on the Catalog Items tab. Auto-switch so the tab that
+      // actually has content is what's shown.
+      if (!templates.length) wizShowTab('items');
     })
-    .catch(() => wizRenderTemplates([], trade));
+    .catch(() => { wizRenderTemplates([], trade); wizShowTab('items'); });
 }
 
 function wizRenderTemplates(templates, trade) {
