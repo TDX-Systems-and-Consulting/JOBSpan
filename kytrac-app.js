@@ -1,4 +1,21 @@
-// JOBSMETRIX Application JavaScript v2.72.0 · 26/Jul/2026
+// JOBSMETRIX Application JavaScript
+// BUILD_COMMIT and BUILD_DATE below are updated BY HAND on every
+// deploy-worthy commit, same discipline as the ?v= stamp on the
+// <script> tag in index.html. Read by loadVersionTag() for the Home
+// screen's "Build [hash] . [date]" display -- this is what makes that
+// tag trustworthy: no network call to GitHub (which could be ahead of
+// what's actually deployed), no ambiguity about what commit produced
+// the file currently running in the browser.
+//
+// NOTE: this will always show the PREVIOUS commit's hash, not this
+// one's. A file can't contain its own hash -- the hash is computed
+// FROM the file's content, so embedding it changes the content, which
+// changes the hash. Unresolvable without a build step that injects it
+// after the fact. In practice: run `git log`, and this hash is right
+// there as the immediate parent of HEAD -- trivially correlatable,
+// just off by exactly one commit.
+const BUILD_COMMIT = '1ff33f1';
+const BUILD_DATE = '2026-08-04';
 
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -15924,35 +15941,25 @@ function openBidComparison(requestId) {
 
 // Update trade filter in bid modal
 // ── Auto-updating version tag ────────────────────────────────────────
-// Was previously a hardcoded "Version X.Y.Z · date" string in index.html
-// that nothing ever updated automatically - it went stale across 7+
-// releases in a single session because bumping it wasn't part of the
-// commit habit.
+// History: started as a hardcoded "Version X.Y.Z · date" string that
+// went stale across 7+ releases in one session. Next version fetched
+// GitHub's main branch live — wrong in a different way, since it
+// reflected what had been PUSHED, not what had been DEPLOYED (those
+// are separate steps; this tag could claim a build that GitHub had but
+// the live site didn't). Then it read the ?v= timestamp off its own
+// <script> tag — accurate, but showed an arbitrary version number that
+// looked like a clock and wasn't one, which was its own confusion.
 //
-// A later version fetched the latest commit from GitHub's main branch
-// instead. That's WRONG in a different way: it reflects what's been
-// pushed to git, not what's actually been deployed and is running in
-// this browser. `git push` and `firebase deploy` are separate steps —
-// this tag could (and did) claim a build that GitHub had but the live
-// site didn't, which is actively misleading during exactly the kind of
-// "is this actually deployed?" troubleshooting the tag exists to help
-// with.
-//
-// Correct source of truth: the ?v=YYYYMMDDHHMM stamp on THIS script's
-// own <script> tag, bumped by hand on every deploy-worthy commit. If
-// this code is executing, that stamp is, by definition, what's running
-// right now — no network call, no chance of drifting ahead of reality.
+// Now: reads BUILD_COMMIT / BUILD_DATE, hand-updated at the top of
+// this file on every deploy-worthy commit. Shows the actual git short
+// hash so it can be matched directly against `git log`, plus the real
+// date — no network call, no ambiguity, no accidental clock reading.
 function loadVersionTag() {
   const el = document.getElementById('ktVersionTag');
   if (!el) return;
-  const scriptEl = document.querySelector('script[src*="kytrac-app.js"]');
-  const match = scriptEl?.src.match(/[?&]v=(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})/);
-  if (!match) { el.textContent = 'Version unavailable'; return; }
-  const [, yyyy, mm, dd, hh, mi] = match;
-  const stamped = new Date(`${yyyy}-${mm}-${dd}T${hh}:${mi}:00`);
-  const dateStr = stamped.toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' });
-  const timeStr = stamped.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
-  el.textContent = `Build ${yyyy}${mm}${dd}${hh}${mi} · ${dateStr} ${timeStr}`;
+  const d = new Date(BUILD_DATE + 'T00:00:00');
+  const dateStr = isNaN(d) ? BUILD_DATE : d.toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' });
+  el.textContent = `Build ${BUILD_COMMIT} · ${dateStr}`;
 }
 window.loadVersionTag = loadVersionTag;
 
