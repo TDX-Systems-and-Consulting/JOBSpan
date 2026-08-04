@@ -13522,6 +13522,40 @@ window.renderMonthView = function() {
   grid.innerHTML = cells;
 }
 
+// Generates <option> HTML for a 15-minute-increment time dropdown.
+// value stays 24hr "HH:MM" (matches how ev.time is already stored/read
+// everywhere else), display text is 12hr with AM/PM.
+function generateTimeOptionsHtml(selected) {
+  let html = '';
+  for (let h = 0; h < 24; h++) {
+    for (let m = 0; m < 60; m += 15) {
+      const val = String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
+      const h12 = h % 12 === 0 ? 12 : h % 12;
+      const ampm = h < 12 ? 'AM' : 'PM';
+      const label = h12 + ':' + String(m).padStart(2, '0') + ' ' + ampm;
+      html += `<option value="${val}"${val === selected ? ' selected' : ''}>${label}</option>`;
+    }
+  }
+  return html;
+}
+
+function addMinutesToTime(time, minsToAdd) {
+  const [h, m] = (time || '09:00').split(':').map(Number);
+  let total = h * 60 + m + minsToAdd;
+  total = ((total % 1440) + 1440) % 1440; // wrap within a single day
+  const nh = Math.floor(total / 60), nm = total % 60;
+  return String(nh).padStart(2, '0') + ':' + String(nm).padStart(2, '0');
+}
+
+function toggleCalEventAllDay() {
+  const isAllDay = document.getElementById('calEventAllDay')?.checked;
+  const startWrap = document.getElementById('calEventStartWrap');
+  const endWrap = document.getElementById('calEventEndWrap');
+  if (startWrap) startWrap.style.display = isAllDay ? 'none' : '';
+  if (endWrap) endWrap.style.display = isAllDay ? 'none' : '';
+}
+window.toggleCalEventAllDay = toggleCalEventAllDay;
+
 // ── Calendar Event CRUD ──
 function openCalEventModal(id, prefilledDate) {
   const ev = id ? calendarEvents.find(e => e.id === id) : null;
@@ -13532,11 +13566,24 @@ function openCalEventModal(id, prefilledDate) {
   setVal('calEventTitle', ev?.title);
   setVal('calEventType', ev?.type || 'Meeting');
   setVal('calEventDate', ev?.date || prefilledDate || new Date().toISOString().split('T')[0]);
-  setVal('calEventTime', ev?.time || '09:00');
-  setVal('calEventDuration', ev?.duration || '60');
+
+  // duration === 480 was the old dropdown's "All day" sentinel value —
+  // preserved here so events created under the old Duration-dropdown
+  // UI still round-trip correctly as All Day under this one.
+  const startTime = ev?.time || '09:00';
+  const durationMins = ev?.duration || 60;
+  const isAllDay = durationMins === 480;
+  const endTime = addMinutesToTime(startTime, durationMins);
+
+  document.getElementById('calEventAllDay').checked = isAllDay;
+  document.getElementById('calEventTime').innerHTML = generateTimeOptionsHtml(startTime);
+  document.getElementById('calEventEndTime').innerHTML = generateTimeOptionsHtml(endTime);
+  toggleCalEventAllDay();
+
   setVal('calEventLocation', ev?.location);
   setVal('calEventMeet', ev?.meetLink);
   setVal('calEventNotes', ev?.notes);
+
 
   // Populate assignee dropdown from team
   const assignSel = document.getElementById('calEventAssignee');
@@ -13604,12 +13651,26 @@ function saveCalEvent() {
   const id = document.getElementById('calEventId')?.value;
   const assignee = document.getElementById('calEventAssignee')?.value || '';
 
+  const isAllDay = document.getElementById('calEventAllDay')?.checked;
+  const startTime = document.getElementById('calEventTime')?.value || '09:00';
+  let duration;
+  if (isAllDay) {
+    duration = 480; // same sentinel the old Duration dropdown's "All day" option used
+  } else {
+    const endTime = document.getElementById('calEventEndTime')?.value || '10:00';
+    const [sh, sm] = startTime.split(':').map(Number);
+    const [eh, em] = endTime.split(':').map(Number);
+    let mins = (eh * 60 + em) - (sh * 60 + sm);
+    if (mins <= 0) mins += 1440; // finish time is next-day/wrapped past midnight
+    duration = mins;
+  }
+
   const data = {
     title,
     type: document.getElementById('calEventType')?.value || 'Meeting',
     date: document.getElementById('calEventDate')?.value || '',
-    time: document.getElementById('calEventTime')?.value || '',
-    duration: parseInt(document.getElementById('calEventDuration')?.value) || 60,
+    time: startTime,
+    duration,
     location: document.getElementById('calEventLocation')?.value.trim() || '',
     notes: document.getElementById('calEventNotes')?.value.trim() || '',
     meetLink: document.getElementById('calEventMeet')?.value.trim() || '',

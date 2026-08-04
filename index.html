@@ -2863,19 +2863,14 @@
         </div>
         <div><label class="small muted" style="display:block;margin-bottom:5px">Date *</label>
           <input id="calEventDate" type="date" /></div>
-        <div><label class="small muted" style="display:block;margin-bottom:5px">Start Time</label>
-          <input id="calEventTime" type="time" value="09:00" /></div>
-        <div><label class="small muted" style="display:block;margin-bottom:5px">Duration</label>
-          <select id="calEventDuration">
-            <option value="30">30 minutes</option>
-            <option value="60" selected>1 hour</option>
-            <option value="90">1.5 hours</option>
-            <option value="120">2 hours</option>
-            <option value="180">3 hours</option>
-            <option value="240">4 hours</option>
-            <option value="480">All day</option>
-          </select>
+        <div class="full" style="display:flex;align-items:center;gap:8px;margin:2px 0">
+          <input type="checkbox" id="calEventAllDay" onchange="toggleCalEventAllDay()" style="cursor:pointer" />
+          <label for="calEventAllDay" style="cursor:pointer;font-size:.85rem;color:var(--muted)">All day event</label>
         </div>
+        <div id="calEventStartWrap"><label class="small muted" style="display:block;margin-bottom:5px">Start Time</label>
+          <select id="calEventTime"></select></div>
+        <div id="calEventEndWrap"><label class="small muted" style="display:block;margin-bottom:5px">Finish Time</label>
+          <select id="calEventEndTime"></select></div>
         <div><label class="small muted" style="display:block;margin-bottom:5px">Assign To</label>
           <select id="calEventAssignee">
             <option value="">Everyone</option>
@@ -4383,7 +4378,7 @@
 
 <div class="photo-queue-badge" style="display:none;position:fixed;bottom:18px;right:18px;z-index:9999;background:#d97706;color:#fff;border-radius:999px;padding:8px 16px;font-size:.8rem;font-weight:700;box-shadow:var(--shadow);align-items:center;gap:6px"></div>
 
-<script src="kytrac-app.js?v=202608040830"></script>
+<script src="kytrac-app.js?v=202608040900"></script>
 <script>
   // Register PWA service worker for installability + offline app-shell
   // loading. Registered after the main app script so a slow/failed SW
