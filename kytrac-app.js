@@ -7989,6 +7989,41 @@ function addInvLineItem() {
   invPickerRender();
 }
 
+// ── Single source of truth for payment-schedule stages ──
+// Resolves a job's saved paymentSchedule (as written by savePaymentSchedule
+// on the Estimate tab) into an array of { pct, label } stages. Every place
+// that needs schedule stages — the new-invoice picker AND the estimate
+// importer — goes through this, so the vocabulary can never drift again.
+// Returns [] for 'none'/'full'/unset (i.e. no multi-stage breakdown).
+function resolveScheduleStages(paymentSchedule) {
+  const ps = paymentSchedule || { type: 'none' };
+  if (ps.type === '50/50') {
+    return [{ pct:50, label:'Deposit' }, { pct:50, label:'Final Payment' }];
+  }
+  if (ps.type === '50/25/25') {
+    return [{ pct:50, label:'Deposit' }, { pct:25, label:'Progress Payment' }, { pct:25, label:'Final Payment' }];
+  }
+  if (ps.type === '10/40/25/25') {
+    return [{ pct:10, label:'Deposit' }, { pct:40, label:'Materials & Mobilization' }, { pct:25, label:'Progress Payment' }, { pct:25, label:'Final Payment' }];
+  }
+  if (ps.type === 'custom' && Array.isArray(ps.customPcts) && ps.customPcts.length > 1) {
+    return ps.customPcts.map((pct, i) => {
+      const isLast = i === ps.customPcts.length - 1;
+      const label = i === 0 ? 'Deposit' : (isLast ? 'Final Payment' : 'Payment ' + (i + 1));
+      return { pct, label };
+    });
+  }
+  return [];
+}
+
+// Fetch the current invoice job's saved schedule stages. Uses the in-memory
+// conJobs copy (kept fresh by savePaymentSchedule) so the picker is synchronous.
+function currentInvoiceScheduleStages() {
+  const jobId = document.getElementById('invJobId')?.value;
+  const job = conJobs.find(j => j.id === jobId);
+  return resolveScheduleStages(job?.paymentSchedule);
+}
+
 function invPickerRender() {
   const body = document.getElementById('invPickerBody');
   const title = document.getElementById('invPickerTitle');
@@ -7999,14 +8034,19 @@ function invPickerRender() {
 
   if (step === 'type') {
     if (title) title.textContent = 'What type of invoice?';
-    const types = [
-      { id: '502525', icon: '💰', label: '50 / 25 / 25 Schedule', sub: 'Deposit + 2 progress payments' },
-      { id: '333334', icon: '⅓', label: '1/3 Schedule', sub: 'Three equal payments' },
+    const stages = currentInvoiceScheduleStages();
+    const types = [];
+    if (stages.length) {
+      // Offer the job's ACTUAL saved payment schedule — not a hardcoded one.
+      const pctStr = stages.map(s => s.pct).join(' / ');
+      types.push({ id: 'schedule', icon: '💰', label: 'Payment Schedule (' + pctStr + ')', sub: 'Bill a stage from this job\u2019s saved schedule' });
+    }
+    types.push(
       { id: 'full',   icon: '✅', label: 'Full Payment', sub: 'Invoice for the full amount' },
       { id: 'custom', icon: '✏️', label: 'Custom Amount', sub: 'Enter any percentage or dollar amount' },
       { id: 'catalog',icon: '📦', label: 'Catalog Items', sub: 'Pick individual items from your cost catalog' },
       { id: 'estimate',icon:'📋', label: 'Import from Estimate', sub: 'Pull all estimate lines into this invoice' },
-    ];
+    );
     body.innerHTML = types.map(t =>
       '<div onclick="window.invPickerSelectType(\'' + t.id + '\')"' +
       ' style="display:flex;align-items:center;gap:14px;padding:12px 14px;border-radius:12px;cursor:pointer;margin-bottom:8px;border:1px solid rgba(110,145,210,.12)"' +
@@ -8019,23 +8059,14 @@ function invPickerRender() {
     ).join('');
 
   } else if (step === 'payment') {
-    const type = window._invPickerType;
-    let payments = [];
-    if (type === '502525') {
-      if (title) title.textContent = 'Select Payment — 50/25/25';
-      payments = [
-        { pct:50, label:'Initial Deposit', sub:'50% — Due at signing' },
-        { pct:25, label:'Progress Payment', sub:'25% — Due at midpoint' },
-        { pct:25, label:'Final Payment',    sub:'25% — Due at completion' },
-      ];
-    } else if (type === '333334') {
-      if (title) title.textContent = 'Select Payment — 1/3 Schedule';
-      payments = [
-        { pct:33.33, label:'First Payment',  sub:'1/3 — Due at signing' },
-        { pct:33.33, label:'Second Payment', sub:'1/3 — Due at midpoint' },
-        { pct:33.34, label:'Final Payment',  sub:'1/3 — Due at completion' },
-      ];
-    }
+    const stages = currentInvoiceScheduleStages();
+    const pctStr = stages.map(s => s.pct).join('/');
+    if (title) title.textContent = 'Select Payment — ' + pctStr;
+    const payments = stages.map((s, i) => ({
+      pct: s.pct,
+      label: s.label,
+      sub: s.pct + '% — ' + (i === 0 ? 'Due at signing' : (i === stages.length - 1 ? 'Due at completion' : 'Due at midpoint')),
+    }));
     const backBtn = '<button onclick="window._invPickerStep=\'type\';window.invPickerRender()" style="margin-bottom:14px;background:transparent;border:none;color:var(--muted);font-size:.82rem;cursor:pointer">← Back</button>';
     body.innerHTML = backBtn + payments.map(p => {
       const amt = total > 0 ? fmt(total * p.pct / 100) : p.pct + '%';
@@ -8081,8 +8112,7 @@ function invPickerRender() {
 }
 
 function invPickerSelectType(typeId) {
-  if (typeId === '502525' || typeId === '333334') {
-    window._invPickerType = typeId;
+  if (typeId === 'schedule') {
     window._invPickerStep = 'payment';
     invPickerRender();
   } else if (typeId === 'full') {
@@ -8314,25 +8344,9 @@ function importEstimateToInvoice() {
       // imports at 100% same as before.
       const jobSnap = await jobRef.get();
       const schedule = jobSnap.exists ? jobSnap.data().paymentSchedule : null;
-      // Match the exact type strings savePaymentSchedule() writes:
-      // 'full', '50/50', '50/25/25', '10/40/25/25', or 'custom'.
-      let stagePcts = null;
-      let stageNames = null;
-      if (schedule) {
-        if (schedule.type === 'custom' && Array.isArray(schedule.customPcts) && schedule.customPcts.length > 1) {
-          stagePcts = schedule.customPcts;
-        } else if (schedule.type === '50/50') {
-          stagePcts = [50, 50];
-          stageNames = ['Deposit', 'Final Payment'];
-        } else if (schedule.type === '50/25/25') {
-          stagePcts = [50, 25, 25];
-          stageNames = ['Deposit', 'Progress Payment', 'Final Payment'];
-        } else if (schedule.type === '10/40/25/25') {
-          stagePcts = [10, 40, 25, 25];
-          stageNames = ['Deposit', 'Materials & Mobilization', 'Progress Payment', 'Final Payment'];
-        }
-        // 'full' and 'none' → stagePcts stays null → imports 100% (correct).
-      }
+      const stages = resolveScheduleStages(schedule);
+      const stagePcts = stages.length ? stages.map(s => s.pct) : null;
+      const stageNames = stages.length ? stages.map(s => s.label) : null;
 
       let finalLines = combinedLines;
       if (stagePcts) {
