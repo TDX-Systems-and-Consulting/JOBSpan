@@ -1302,7 +1302,15 @@ function conRenderStats() {
   setTile('statAvgJobVal', 'statAvgJobValTile',
     avgJobVal ? '$' + Math.round(avgJobVal).toLocaleString() : '—', ajvColor);
 
-  // Outstanding Invoices — sum unpaid across all jobs
+  // Outstanding Invoices + Collected MTD — sum across all jobs' real
+  // invoice data in ONE pass. Previously Collected MTD came ONLY from a
+  // QBO-synced cache (companies/{id}/kpiCache/mtd), which only reflects
+  // payments recorded as QuickBooks Payment objects. Stripe payments
+  // (and check payments via Mark Paid) update the JOBSMETRIX invoice
+  // directly but never touch QBO unless separately pushed there — so
+  // real, collected revenue was invisible on this tile. Computing it
+  // from amtPaid/paidDate on the invoices themselves means it's always
+  // accurate regardless of whether/when anything gets pushed to QBO.
   let _pulseOutstanding = null, _pulseUnprocessedCOs = null;
   const _maybeSyncPulse = () => {
     if (_pulseOutstanding === null || _pulseUnprocessedCOs === null) return;
@@ -1312,48 +1320,70 @@ function conRenderStats() {
       unprocessedCOs: _pulseUnprocessedCOs
     });
   };
+  // Shared between the two async blocks below so Net MTD can combine a
+  // JOBSMETRIX-sourced Collected figure with a QBO-sourced Spent figure,
+  // regardless of which one resolves first.
+  const _mtd = { collected: null, spent: null };
+  const _maybeRenderNetMTD = () => {
+    if (_mtd.collected === null || _mtd.spent === null) return;
+    const net = _mtd.collected - _mtd.spent;
+    const netColor = net > 0 ? '#1dbb87' : net < 0 ? '#ef5350' : '#f59e0b';
+    setTile('statNetMTD', 'statNetTile',
+      (net >= 0 ? '+$' : '-$') + Math.abs(Math.round(net)).toLocaleString(), netColor);
+  };
   if (conDb) {
     let outstanding = 0;
+    let collectedFromInvoices = 0;
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
     const invPromises = conJobs.map(j =>
       coll('jobs').doc(j.id).collection('invoices').get()
         .then(s => s.forEach(d => {
           const inv = d.data();
           if (inv.status !== 'Paid') outstanding += (inv.total || 0) - (inv.amtPaid || 0);
+          // paidDate is stamped as YYYY-MM-DD on Mark Paid — string
+          // comparison against monthStart works fine for that format.
+          if (inv.paidDate && inv.paidDate >= monthStart && inv.amtPaid > 0) {
+            collectedFromInvoices += inv.amtPaid;
+          }
         })).catch(() => {})
     );
     Promise.all(invPromises).then(() => {
       const outColor = outstanding === 0 ? '#1dbb87' : outstanding <= 10000 ? '#f59e0b' : '#ef5350';
       setTile('statOutstanding', 'statOutstandingTile',
         outstanding > 0 ? '$' + Math.round(outstanding).toLocaleString() : '$0', outColor);
+      setTile('statCollectedMTD', 'statCollectedTile',
+        '$' + Math.round(collectedFromInvoices).toLocaleString(), '#1dbb87');
       _pulseOutstanding = outstanding;
       _maybeSyncPulse();
+      _mtd.collected = collectedFromInvoices;
+      _maybeRenderNetMTD();
     });
   }
 
-  // QBO MTD numbers — load from cached Firestore doc (written by daily Cloud Function)
+  // Spent MTD — still from the QBO-synced cache, since bills and
+  // expenses genuinely live in QuickBooks with no JOBSMETRIX equivalent
+  // to compute them from directly. Net MTD is rendered above once BOTH
+  // this and the invoice-based Collected figure are in.
   if (conDb && currentCompanyId) {
     coll('kpiCache').doc('mtd').get().then(doc => {
       if (!doc.exists) {
-        // No cache yet — show dashes
-        ['statCollectedMTD','statSpentMTD','statNetMTD'].forEach(id => {
+        // No QBO cache yet — Spent/Net show dashes, but Collected MTD
+        // still renders from real invoice data above regardless.
+        ['statSpentMTD','statNetMTD'].forEach(id => {
           const el = document.getElementById(id);
           if (el) el.textContent = '—';
         });
         return;
       }
       const d = doc.data();
-      const collected = d.collectedMTD || 0;
       const spent = d.spentMTD || 0;
-      const net = collected - spent;
 
-      setTile('statCollectedMTD', 'statCollectedTile',
-        '$' + Math.round(collected).toLocaleString(), '#1dbb87');
       setTile('statSpentMTD', 'statSpentTile',
         '$' + Math.round(spent).toLocaleString(), '#f59e0b');
 
-      const netColor = net > 0 ? '#1dbb87' : net < 0 ? '#ef5350' : '#f59e0b';
-      setTile('statNetMTD', 'statNetTile',
-        (net >= 0 ? '+$' : '-$') + Math.abs(Math.round(net)).toLocaleString(), netColor);
+      _mtd.spent = spent;
+      _maybeRenderNetMTD();
     }).catch(() => {});
   }
 }
@@ -15671,24 +15701,32 @@ function openBidComparison(requestId) {
 // Was previously a hardcoded "Version X.Y.Z · date" string in index.html
 // that nothing ever updated automatically - it went stale across 7+
 // releases in a single session because bumping it wasn't part of the
-// commit habit. Fetches the actual latest commit on main from GitHub
-// instead, so the date and build reference are always true by
-// construction - there's no string left to forget to update.
+// commit habit.
+//
+// A later version fetched the latest commit from GitHub's main branch
+// instead. That's WRONG in a different way: it reflects what's been
+// pushed to git, not what's actually been deployed and is running in
+// this browser. `git push` and `firebase deploy` are separate steps —
+// this tag could (and did) claim a build that GitHub had but the live
+// site didn't, which is actively misleading during exactly the kind of
+// "is this actually deployed?" troubleshooting the tag exists to help
+// with.
+//
+// Correct source of truth: the ?v=YYYYMMDDHHMM stamp on THIS script's
+// own <script> tag, bumped by hand on every deploy-worthy commit. If
+// this code is executing, that stamp is, by definition, what's running
+// right now — no network call, no chance of drifting ahead of reality.
 function loadVersionTag() {
   const el = document.getElementById('ktVersionTag');
   if (!el) return;
-  fetch('https://api.github.com/repos/TDX-Systems-and-Consulting/JOBSpan/commits/main')
-    .then(r => { if (!r.ok) throw new Error('GitHub API error ' + r.status); return r.json(); })
-    .then(data => {
-      const sha = (data.sha || '').slice(0, 7);
-      const dateStr = data.commit?.committer?.date || data.commit?.author?.date;
-      const date = dateStr ? new Date(dateStr).toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' }) : '';
-      el.textContent = sha ? `Build ${sha} · ${date}` : el.textContent;
-    })
-    .catch(e => {
-      console.warn('loadVersionTag: could not fetch latest commit', e.message);
-      el.textContent = 'Version unavailable (offline?)';
-    });
+  const scriptEl = document.querySelector('script[src*="kytrac-app.js"]');
+  const match = scriptEl?.src.match(/[?&]v=(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})/);
+  if (!match) { el.textContent = 'Version unavailable'; return; }
+  const [, yyyy, mm, dd, hh, mi] = match;
+  const stamped = new Date(`${yyyy}-${mm}-${dd}T${hh}:${mi}:00`);
+  const dateStr = stamped.toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' });
+  const timeStr = stamped.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  el.textContent = `Build ${yyyy}${mm}${dd}${hh}${mi} · ${dateStr} ${timeStr}`;
 }
 window.loadVersionTag = loadVersionTag;
 
