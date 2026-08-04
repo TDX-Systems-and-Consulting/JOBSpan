@@ -2688,6 +2688,17 @@ function openJobDetail(jobId, defaultTab) {
   document.getElementById('detailAccessInfo').textContent = job.accessInfo || job.notes?.match(/Access: (.+)/)?.[1] || '—';
   document.getElementById('detailNotes').textContent = job.notes || '';
 
+  // Entry Info tab
+  const entryLockboxEl = document.getElementById('entryInfoLockbox');
+  const entryAlarmEl = document.getElementById('entryInfoAlarm');
+  const entryInstrEl = document.getElementById('entryInfoInstructions');
+  if (entryLockboxEl) entryLockboxEl.value = job.lockboxCode || '';
+  if (entryAlarmEl) entryAlarmEl.value = job.alarmCode || '';
+  if (entryInstrEl) entryInstrEl.value = job.accessInfo || '';
+  const savedMsgEl = document.getElementById('entryInfoSavedMsg');
+  if (savedMsgEl) savedMsgEl.style.display = 'none';
+  updateEntryInfoTabWarning(job);
+
   // Map — OpenStreetMap embed geocoded via Nominatim (free, no API key)
   const mapAddress = job.address || '';
   const mapAddrEl = document.getElementById('detailMapAddress');
@@ -4335,6 +4346,17 @@ function commitJobStatusChange(newStatus) {
   if (!job || !jobId) return;
   if (job.status === newStatus) return;
 
+  // Entry Information (lockbox code / access instructions) is required
+  // before a job can move to Approved or Scheduled — a crew showing up
+  // to a vacant property with no idea how to get in is exactly the
+  // problem this exists to prevent. Required for every job, not just
+  // ones flagged vacant.
+  if ((newStatus === 'Approved' || newStatus === 'Scheduled') && !(job.accessInfo && job.accessInfo.trim())) {
+    alert('Entry Information is required before this job can move to "' + newStatus + '".\n\nGo to the "🔑 Entry Info" tab and fill in access/lockbox instructions first.');
+    document.getElementById('detailStatusBadge').value = job.status || 'New Lead';
+    return;
+  }
+
   // Confirm on closing statuses — this is a meaningful, hard-to-undo action.
   if ((newStatus === 'Closed Completed' || newStatus === 'Closed Lost') &&
       !confirm('Mark this job as "' + newStatus + '"? This updates the job\'s status for everyone.')) {
@@ -4362,8 +4384,45 @@ function commitJobStatusChange(newStatus) {
 }
 window.commitJobStatusChange = commitJobStatusChange;
 
+// Shows a red dot on the Entry Info tab button itself when required
+// info is missing, so it's visible at a glance without having to click
+// into the tab to discover it's empty.
+function updateEntryInfoTabWarning(job) {
+  const btn = document.getElementById('entryInfoTabBtn');
+  if (!btn) return;
+  const filled = job && job.accessInfo && job.accessInfo.trim();
+  btn.innerHTML = filled
+    ? '🔑 Entry Info'
+    : '🔑 Entry Info <span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#ef5350;margin-left:3px"></span>';
+}
+
+function saveEntryInfo() {
+  const jobId = conCurrentJobId;
+  const job = conJobs.find(j => j.id === jobId);
+  if (!job || !jobId || !conDb) return;
+
+  const lockboxCode = document.getElementById('entryInfoLockbox')?.value.trim() || '';
+  const alarmCode = document.getElementById('entryInfoAlarm')?.value.trim() || '';
+  const accessInfo = document.getElementById('entryInfoInstructions')?.value.trim() || '';
+
+  coll('jobs').doc(jobId).update({
+    lockboxCode, alarmCode, accessInfo,
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    updatedBy: conCurrentUser ? conCurrentUser.email : 'unknown'
+  }).then(() => {
+    job.lockboxCode = lockboxCode;
+    job.alarmCode = alarmCode;
+    job.accessInfo = accessInfo;
+    document.getElementById('detailAccessInfo').textContent = accessInfo || '—';
+    updateEntryInfoTabWarning(job);
+    const msg = document.getElementById('entryInfoSavedMsg');
+    if (msg) { msg.style.display = 'block'; setTimeout(() => msg.style.display = 'none', 3000); }
+  }).catch(e => alert('Error saving Entry Information: ' + e.message));
+}
+window.saveEntryInfo = saveEntryInfo;
+
 function switchDetailTab(tab, btn) {
-  const allTabs = ['dashboard','financials','estimate','changeorders','subs','phases','logs','invoices','documents','activity','retrospective','todos','selections','specifications','plans','messages','reports','jobnotes'];
+  const allTabs = ['dashboard','financials','estimate','changeorders','subs','phases','logs','invoices','documents','activity','retrospective','todos','selections','specifications','plans','messages','reports','jobnotes','entryinfo'];
   allTabs.forEach(t => {
     const key = 'detail' + t.charAt(0).toUpperCase() + t.slice(1);
     const el = document.getElementById(key);
