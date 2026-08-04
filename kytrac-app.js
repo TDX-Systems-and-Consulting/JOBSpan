@@ -1,22 +1,12 @@
 // JOBSMETRIX Application JavaScript
-// BUILD_COMMIT and BUILD_DATE below are updated BY HAND on every
-// deploy-worthy commit, same discipline as the ?v= stamp on the
-// <script> tag in index.html. Read by loadVersionTag() for the Home
-// screen's "Build [hash] . [date]" display -- this is what makes that
-// tag trustworthy: no network call to GitHub (which could be ahead of
-// what's actually deployed), no ambiguity about what commit produced
-// the file currently running in the browser.
-//
-// NOTE: this will always show the PREVIOUS commit's hash, not this
-// one's. A file can't contain its own hash -- the hash is computed
-// FROM the file's content, so embedding it changes the content, which
-// changes the hash. Unresolvable without a build step that injects it
-// after the fact. In practice: run `git log`, and this hash is right
-// there as the immediate parent of HEAD -- trivially correlatable,
-// just off by exactly one commit.
-const BUILD_COMMIT = '1ff33f1';
-const BUILD_DATE = '2026-08-04';
-
+// version.json is intentionally NOT committed to git -- see deploy
+// instructions in the deploy docs. Anything baked into kytrac-app.js
+// itself can only ever show a PREVIOUS commit's hash (a file can't
+// contain its own hash; embedding it changes the content, which
+// changes the hash -- tried that approach first, it was still wrong,
+// just less obviously). Generating version.json fresh at deploy time,
+// outside of git's content-addressing, is the only way to show the
+// ACTUAL commit currently running. See loadVersionTag() below.
 
 const esc = s => ((s==null?'':s)).toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 const uid = p => `${p}-${Math.random().toString(36).slice(2,9)}`;
@@ -15942,24 +15932,38 @@ function openBidComparison(requestId) {
 // Update trade filter in bid modal
 // ── Auto-updating version tag ────────────────────────────────────────
 // History: started as a hardcoded "Version X.Y.Z · date" string that
-// went stale across 7+ releases in one session. Next version fetched
-// GitHub's main branch live — wrong in a different way, since it
-// reflected what had been PUSHED, not what had been DEPLOYED (those
-// are separate steps; this tag could claim a build that GitHub had but
-// the live site didn't). Then it read the ?v= timestamp off its own
-// <script> tag — accurate, but showed an arbitrary version number that
-// looked like a clock and wasn't one, which was its own confusion.
+// went stale across 7+ releases in one session. Next fetched GitHub's
+// main branch live — wrong differently, reflecting what had been
+// PUSHED, not what had been DEPLOYED (those are separate steps; could
+// claim a build GitHub had but the live site didn't). Then read the
+// ?v= timestamp off its own <script> tag — accurate but looked like a
+// clock and wasn't one. Then tried a hand-maintained BUILD_COMMIT
+// constant — closer, but structurally can't work: a file can't contain
+// its own hash (embedding it changes the content, which changes the
+// hash), so it could only ever show the PREVIOUS commit, silently.
 //
-// Now: reads BUILD_COMMIT / BUILD_DATE, hand-updated at the top of
-// this file on every deploy-worthy commit. Shows the actual git short
-// hash so it can be matched directly against `git log`, plus the real
-// date — no network call, no ambiguity, no accidental clock reading.
+// Correct fix: version.json is NOT committed to git. It's generated
+// fresh, right before each deploy, from whatever commit is actually
+// checked out locally at that moment — see the deploy command below.
+// Fetched live (same-origin, no GitHub rate limits) so this shows the
+// literal commit currently serving this page, not an approximation.
+//
+// DEPLOY COMMAND — run this instead of a bare `firebase deploy` for
+// hosting so version.json is always fresh:
+//   echo "{\"commit\":\"$(git rev-parse --short HEAD)\",\"date\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" > version.json && firebase deploy --only hosting --project kytrac-72d91
 function loadVersionTag() {
   const el = document.getElementById('ktVersionTag');
   if (!el) return;
-  const d = new Date(BUILD_DATE + 'T00:00:00');
-  const dateStr = isNaN(d) ? BUILD_DATE : d.toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' });
-  el.textContent = `Build ${BUILD_COMMIT} · ${dateStr}`;
+  fetch('version.json?t=' + Date.now())
+    .then(r => { if (!r.ok) throw new Error('no version.json'); return r.json(); })
+    .then(data => {
+      const d = new Date(data.date);
+      const dateStr = isNaN(d) ? data.date : d.toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' });
+      el.textContent = `Build ${data.commit} · ${dateStr}`;
+    })
+    .catch(() => {
+      el.textContent = 'Build unknown — run the version.json deploy command';
+    });
 }
 window.loadVersionTag = loadVersionTag;
 
