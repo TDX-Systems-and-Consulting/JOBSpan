@@ -265,6 +265,13 @@ service cloud.firestore {
           allow read: if inCompany(companyId) && hasFullAccess() || request.auth == null;
           allow write: if inCompany(companyId) && hasFullAccess();
         }
+        match /expenses/{expenseId} {
+          // Materials purchases (e.g. a team member buying drywall at
+          // Home Depot on the company debit card) — job-scoped, no
+          // vendor account involved. Same access tier as invoices/COs
+          // since it's money-sensitive.
+          allow read, write: if inCompany(companyId) && hasFullAccess();
+        }
         match /changeorders/{coId} {
           allow read: if inCompany(companyId) && hasFullAccess() || request.auth == null;
           allow write: if inCompany(companyId) && hasFullAccess();

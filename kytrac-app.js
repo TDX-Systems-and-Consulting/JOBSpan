@@ -1361,22 +1361,19 @@ function conRenderStats() {
     });
   }
 
-  // Spent MTD — now computed from JOBSMETRIX's own vendor bills
-  // (companies/{id}/vendors/*/bills), same fix as Collected MTD and for
+  // Spent MTD — computed from JOBSMETRIX's own vendor bills AND
+  // materials purchases (companies/{id}/vendors/*/bills +
+  // companies/{id}/jobs/*/expenses), same fix as Collected MTD and for
   // the same reason: the old QBO-only cache had zero visibility into
-  // anything logged here — like a debit-card material purchase entered
-  // via "+ Add Expense" — unless it was separately pushed to
-  // QuickBooks. Sums amtPaid across every vendor's bills where billDate
-  // falls in the current month. billDate is used as the "when it was
-  // paid" proxy since bills don't carry a separate paidDate field —
-  // fine for the common case (paid same day, e.g. a debit card
-  // purchase), less precise for bills paid well after their billDate,
-  // but still far more accurate than a cache that can be entirely
-  // empty of real activity.
+  // anything logged here — like Jason's debit-card Home Depot run —
+  // unless it was separately pushed to QuickBooks. Vendor bills use
+  // billDate as the "when paid" proxy (no separate paidDate field);
+  // materials purchases use their own date field directly since
+  // they're always paid at time of entry.
   if (conDb && currentCompanyId) {
     const now2 = new Date();
     const monthStart2 = new Date(now2.getFullYear(), now2.getMonth(), 1).toISOString().split('T')[0];
-    coll('vendors').get().then(vSnap => {
+    const billsPromise = coll('vendors').get().then(vSnap => {
       let spent = 0;
       const billPromises = vSnap.docs.map(vDoc =>
         vDoc.ref.collection('bills').get()
@@ -1388,7 +1385,20 @@ function conRenderStats() {
           })).catch(() => {})
       );
       return Promise.all(billPromises).then(() => spent);
-    }).then(spent => {
+    }).catch(() => 0);
+    const materialsPromise = Promise.all(conJobs.map(j =>
+      coll('jobs').doc(j.id).collection('expenses').get()
+        .then(eSnap => {
+          let s = 0;
+          eSnap.forEach(eDoc => {
+            const m = eDoc.data();
+            if (m.date && m.date >= monthStart2 && m.amount > 0) s += m.amount;
+          });
+          return s;
+        }).catch(() => 0)
+    )).then(arr => arr.reduce((a,b) => a+b, 0)).catch(() => 0);
+    Promise.all([billsPromise, materialsPromise]).then(([billsSpent, materialsSpent]) => {
+      const spent = billsSpent + materialsSpent;
       setTile('statSpentMTD', 'statSpentTile',
         '$' + Math.round(spent).toLocaleString(), '#f59e0b');
       _mtd.spent = spent;
@@ -4534,6 +4544,7 @@ function switchDetailTab(tab, btn) {
 // ════════════════════════════════════════════════════
 let _fhInvoices = [];
 let _fhBills = [];
+let _fhMaterials = [];
 let _fhBillsLoadedFor = null;
 
 function finhubToggle(bodyId, headEl) {
@@ -4582,6 +4593,10 @@ function renderFinancialsHub(jobId) {
   // Bills across vendors
   fhRenderBillsLoading();
   fhLoadJobBills(jobId, () => { fhRenderBills(); fhRenderTotals(job); });
+
+  // Materials purchases (direct, job-scoped, no vendor account)
+  fhRenderMaterialsLoading();
+  fhLoadJobMaterials(jobId, () => { fhRenderMaterials(); fhRenderTotals(job); });
 
   fhRenderEva();
 }
@@ -4667,6 +4682,98 @@ function fhRenderBills() {
   }).join('');
 }
 
+function fhRenderMaterialsLoading() {
+  const el = document.getElementById('fhMatSec');
+  if (el) el.innerHTML = '<div class="finhub-empty">Loading materials purchases…</div>';
+}
+
+// Materials purchases live directly under the job — jobs/{jobId}/expenses
+// — unlike vendor bills, since there's no vendor account involved.
+function fhLoadJobMaterials(jobId, cb) {
+  if (!conDb) { _fhMaterials = []; cb && cb(); return; }
+  coll('jobs').doc(jobId).collection('expenses').orderBy('date', 'desc').get()
+    .then(snap => { _fhMaterials = []; snap.forEach(d => _fhMaterials.push({ id: d.id, ...d.data() })); cb && cb(); })
+    .catch(() => { _fhMaterials = []; cb && cb(); });
+}
+
+function fhRenderMaterials() {
+  const el = document.getElementById('fhMatSec');
+  const cnt = document.getElementById('fhMatCount');
+  const sum = document.getElementById('fhMatSum');
+  if (!el) return;
+  const items = _fhMaterials;
+  const total = items.reduce((s,m) => s + (m.amount||0), 0);
+  if (cnt) cnt.textContent = items.length;
+  if (sum) sum.textContent = items.length ? `${fhMoney(total)} total` : '';
+  if (!items.length) { el.innerHTML = '<div class="finhub-empty">No materials purchases logged for this job.</div>'; return; }
+  el.innerHTML = items.map(m => `
+    <div class="finhub-line" onclick="openAddMaterialsFromJob('${m.id}')" style="cursor:pointer">
+      <div><div class="finhub-line-title">${esc(m.purchasedFrom||'Purchase')}</div><div class="finhub-line-sub">${esc(m.desc||'')}${m.paidBy?` · ${esc(m.paidBy)}`:''}${m.purchasedBy?` · ${esc(m.purchasedBy)}`:''}</div></div>
+      <div class="finhub-line-amt">${fhMoney(m.amount)}</div>
+      <div class="finhub-line-bal" style="color:#a3f2d2">paid</div>
+      <div>${fhBadge('Materials','#8ea3c8')}</div>
+    </div>`).join('');
+}
+
+// Opens the Materials Purchase modal, pre-scoped to the currently open
+// job. Pass an expenseId to edit an existing entry.
+function openAddMaterialsFromJob(expenseId) {
+  const existing = expenseId ? _fhMaterials.find(m => m.id === expenseId) : null;
+  document.getElementById('matExpenseId').value = expenseId || '';
+  const setVal = (id, v) => { const el = document.getElementById(id); if (el) el.value = v || ''; };
+  setVal('matPurchasedFrom', existing?.purchasedFrom);
+  setVal('matDesc', existing?.desc);
+  setVal('matAmount', existing?.amount);
+  setVal('matDate', existing?.date || new Date().toISOString().split('T')[0]);
+  setVal('matPurchasedBy', existing?.purchasedBy);
+  setVal('matNotes', existing?.notes);
+  document.getElementById('matPaidBy').value = existing?.paidBy || 'Debit Card';
+  document.getElementById('deleteMatBtn').style.display = existing ? 'inline-flex' : 'none';
+  kOpen('addMaterialsModal');
+}
+window.openAddMaterialsFromJob = openAddMaterialsFromJob;
+
+function saveMaterialsPurchase() {
+  const jobId = conCurrentJobId;
+  if (!jobId) { alert('No job open.'); return; }
+  const purchasedFrom = document.getElementById('matPurchasedFrom')?.value.trim();
+  const desc = document.getElementById('matDesc')?.value.trim();
+  const amount = parseFloat(document.getElementById('matAmount')?.value) || 0;
+  if (!purchasedFrom) { alert('Purchased From is required (e.g. Home Depot).'); return; }
+  if (!desc) { alert('Description is required.'); return; }
+  if (!amount) { alert('Amount is required.'); return; }
+  const expenseId = document.getElementById('matExpenseId')?.value;
+  const data = {
+    purchasedFrom, desc, amount,
+    date: document.getElementById('matDate')?.value || new Date().toISOString().split('T')[0],
+    paidBy: document.getElementById('matPaidBy')?.value || 'Debit Card',
+    purchasedBy: document.getElementById('matPurchasedBy')?.value.trim() || '',
+    notes: document.getElementById('matNotes')?.value.trim() || '',
+    companyId: currentCompanyId,
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+  };
+  const col = coll('jobs').doc(jobId).collection('expenses');
+  const promise = expenseId ? col.doc(expenseId).update(data)
+    : col.add({ ...data, createdAt: firebase.firestore.FieldValue.serverTimestamp() });
+  promise.then(() => {
+    kClose('addMaterialsModal');
+    fhLoadJobMaterials(jobId, () => { fhRenderMaterials(); const j = conJobs.find(x=>x.id===jobId); if (j) fhRenderTotals(j); });
+  }).catch(e => alert('Error: ' + e.message));
+}
+window.saveMaterialsPurchase = saveMaterialsPurchase;
+
+function deleteMaterialsPurchase() {
+  const jobId = conCurrentJobId;
+  const expenseId = document.getElementById('matExpenseId')?.value;
+  if (!jobId || !expenseId || !confirm('Delete this materials purchase?')) return;
+  coll('jobs').doc(jobId).collection('expenses').doc(expenseId).delete()
+    .then(() => {
+      kClose('addMaterialsModal');
+      fhLoadJobMaterials(jobId, () => { fhRenderMaterials(); const j = conJobs.find(x=>x.id===jobId); if (j) fhRenderTotals(j); });
+    }).catch(e => alert('Error: ' + e.message));
+}
+window.deleteMaterialsPurchase = deleteMaterialsPurchase;
+
 function openVendorFromBill(vendorId, billId) {
   // Best-effort: jump to vendor detail if available, else no-op
   if (typeof openVendorDetail === 'function' && vendorId) { openVendorDetail(vendorId); }
@@ -4691,9 +4798,12 @@ function fhRenderTotals(job) {
   const billsTotal = _fhBills.reduce((s,b)=>s+(b.amount||0),0);
   const billsPaid = _fhBills.reduce((s,b)=>s+(b.amtPaid||0),0);
   const weOwe = billsTotal - billsPaid;
+  // Materials purchases are always paid in full at time of purchase (no
+  // partial/owed concept, unlike vendor bills) — pure money already out.
+  const materialsTotal = _fhMaterials.reduce((s,m)=>s+(m.amount||0),0);
   const ec = job.estCost||0, ac = job.actualCost||0;
   const costToComplete = Math.max(ec - ac, 0);
-  const net = collected - billsPaid;
+  const net = collected - billsPaid - materialsTotal;
 
   const set = (id,v,color) => { const el=document.getElementById(id); if(el){ el.textContent=fhMoney(v); if(color)el.style.color=color; } };
   set('fhContract', contractTotal);
