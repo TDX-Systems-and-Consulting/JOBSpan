@@ -2481,15 +2481,61 @@ function syncCurrentJobEstimateCost() {
 }
 
 // Populates the financial bar, dashboard panel, and Financials-tab est/actual fields.
+//
+// job.actualCost is a STORED field that only updates two ways: a
+// JobTread CSV import, or manually typing a number into the Financials
+// tab's Actual Cost box. It has zero connection to the live Vendor
+// Bills / Materials Purchases data tracked elsewhere in the app — so
+// logging a $272 Home Depot run updated the Financials tab's own Net
+// Cash Position correctly, but this stat bar / Dashboard panel kept
+// showing $0 actual cost, because it was reading a completely
+// different, unrelated number.
+//
+// Fix: render once immediately with whatever we have (fast paint, no
+// loading flicker), then fetch the REAL live total (paid vendor bills +
+// materials purchases for this job) and re-render with that if it's
+// more complete than the stored field. Doesn't touch job.actualCost
+// itself — CSV-imported jobs that rely on that field for bulk-imported
+// historical data are unaffected; this only wins when live data exists.
 function refreshJobFinancials(job) {
   if (!job) return;
+  applyJobFinancialsDisplay(job, job.actualCost || 0);
+
+  if (!conDb) return;
+  const jobId = job.id;
+  let billsPaid = 0, materialsTotal = 0, doneCount = 0;
+  const maybeApplyLive = () => {
+    if (++doneCount < 2) return;
+    const liveActual = Math.round((billsPaid + materialsTotal) * 100) / 100;
+    // Only override if live tracking actually has data, or the stored
+    // field is empty — never silently zero out a real imported number.
+    if (liveActual > 0 || !(job.actualCost > 0)) {
+      applyJobFinancialsDisplay(job, liveActual);
+    }
+  };
+  coll('vendors').get().then(vSnap => {
+    const billPromises = vSnap.docs.map(vDoc =>
+      vDoc.ref.collection('bills').where('jobId','==',jobId).get()
+        .then(bSnap => bSnap.forEach(bDoc => { billsPaid += (bDoc.data().amtPaid || 0); }))
+        .catch(() => {})
+    );
+    Promise.all(billPromises).then(maybeApplyLive);
+  }).catch(maybeApplyLive);
+  coll('jobs').doc(jobId).collection('expenses').get()
+    .then(eSnap => { eSnap.forEach(eDoc => { materialsTotal += (eDoc.data().amount || 0); }); maybeApplyLive(); })
+    .catch(maybeApplyLive);
+}
+
+function applyJobFinancialsDisplay(job, acOverride) {
   const fmt = v => '$' + Number(v||0).toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:0});
   const cv = getJobValue(job);
   const ec = job.estCost || 0;
-  const ac = job.actualCost || 0;
-  // Best-known cost for margin math: prefer real imported actualCost over a stale/manual estCost.
+  const ac = acOverride || 0;
+  // Best-known cost for margin math: prefer real actual cost (now live
+  // vendor bills + materials purchases, falling back to the stored
+  // job.actualCost field) over a stale/manual estCost.
   // (estCost with no estimate line items behind it is often a bare imported number — see syncJobEstimateCost.)
-  const hasRealActual = typeof job.actualCost === 'number' && job.actualCost > 0;
+  const hasRealActual = ac > 0;
   const bestCost = hasRealActual ? ac : ec;
   const profit = cv - bestCost;
   const margin = cv ? (profit / cv * 100) : 0;
@@ -4757,7 +4803,7 @@ function saveMaterialsPurchase() {
     : col.add({ ...data, createdAt: firebase.firestore.FieldValue.serverTimestamp() });
   promise.then(() => {
     kClose('addMaterialsModal');
-    fhLoadJobMaterials(jobId, () => { fhRenderMaterials(); const j = conJobs.find(x=>x.id===jobId); if (j) fhRenderTotals(j); });
+    fhLoadJobMaterials(jobId, () => { fhRenderMaterials(); const j = conJobs.find(x=>x.id===jobId); if (j) { fhRenderTotals(j); refreshJobFinancials(j); } });
   }).catch(e => alert('Error: ' + e.message));
 }
 window.saveMaterialsPurchase = saveMaterialsPurchase;
@@ -4769,7 +4815,7 @@ function deleteMaterialsPurchase() {
   coll('jobs').doc(jobId).collection('expenses').doc(expenseId).delete()
     .then(() => {
       kClose('addMaterialsModal');
-      fhLoadJobMaterials(jobId, () => { fhRenderMaterials(); const j = conJobs.find(x=>x.id===jobId); if (j) fhRenderTotals(j); });
+      fhLoadJobMaterials(jobId, () => { fhRenderMaterials(); const j = conJobs.find(x=>x.id===jobId); if (j) { fhRenderTotals(j); refreshJobFinancials(j); } });
     }).catch(e => alert('Error: ' + e.message));
 }
 window.deleteMaterialsPurchase = deleteMaterialsPurchase;
@@ -11921,7 +11967,7 @@ function saveBill() {
     // Also refresh the job Financials Hub if that's where we are —
     // otherwise a bill added via the new "+ Add Expense" job shortcut
     // wouldn't show up until you left the tab and came back.
-    if (conCurrentJobId) fhLoadJobBills(conCurrentJobId, () => { fhRenderBills(); const j = conJobs.find(x=>x.id===conCurrentJobId); if (j) fhRenderTotals(j); });
+    if (conCurrentJobId) fhLoadJobBills(conCurrentJobId, () => { fhRenderBills(); const j = conJobs.find(x=>x.id===conCurrentJobId); if (j) { fhRenderTotals(j); refreshJobFinancials(j); } });
   })
     .catch(e => alert('Error: ' + e.message));
 }
