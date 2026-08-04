@@ -150,6 +150,16 @@ service cloud.firestore {
       }
       match /vendors/{vendorId} {
         allow read, write: if inCompany(companyId);
+        // Bills subcollection needs its OWN rule — Firestore rules do
+        // NOT cascade from a parent match block to its subcollections.
+        // This was missing entirely, so every write to
+        // vendors/{vendorId}/bills/{billId} was silently denied by
+        // default regardless of the parent rule above, from any entry
+        // point (vendor page or job Financials shortcut) — this
+        // feature never actually worked until this rule was added.
+        match /bills/{billId} {
+          allow read, write: if inCompany(companyId);
+        }
       }
       match /documents/{docId} {
         allow read, write: if inCompany(companyId);
