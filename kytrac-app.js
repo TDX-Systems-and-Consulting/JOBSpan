@@ -6417,21 +6417,29 @@ function confirmArchiveJob() {
 }
 window.confirmArchiveJob = confirmArchiveJob;
 
-function deleteCurrentJob() {
+async function deleteCurrentJob() {
   if (!conCurrentJobId || !conDb) return;
-  if (!confirm('Delete this job? This cannot be undone.')) return;
+  if (!confirm('Delete this job? This will also permanently delete its estimate, invoices, change orders, logs, and any to-dos tied to it. This cannot be undone.')) return;
   const deletingId = conCurrentJobId;
-  coll('jobs').doc(deletingId).delete()
-    .then(() => {
-      kClose('jobDetailModal');
-      conCurrentJobId = null;
-      // Remove from memory immediately — onSnapshot will confirm
-      conJobs = conJobs.filter(j => j.id !== deletingId);
-      conRenderBoard();
-      conRenderList();
-      conRenderStats();
-    })
-    .catch(e => alert('Error deleting: ' + e.message));
+  try {
+    // Previously did a bare doc delete here, which left every
+    // subcollection behind AND — the specific bug reported — any
+    // to-dos in the top-level todos collection referencing this job's
+    // ID, since those live outside the job doc entirely and a bare
+    // delete never touches them. deleteJobCompletely() already does
+    // this correctly (it's used by the bulk admin cleanup tool); this
+    // just makes the everyday Delete button use the same real cleanup
+    // instead of a second, incomplete copy of the logic.
+    await deleteJobCompletely(deletingId);
+    kClose('jobDetailModal');
+    conCurrentJobId = null;
+    conJobs = conJobs.filter(j => j.id !== deletingId);
+    conRenderBoard();
+    conRenderList();
+    conRenderStats();
+  } catch (e) {
+    alert('Error deleting: ' + e.message);
+  }
 }
 window.deleteCurrentJob = deleteCurrentJob;
 
