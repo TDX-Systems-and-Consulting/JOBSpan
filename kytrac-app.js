@@ -7852,7 +7852,7 @@ function renderJobInvoiceList(jobId, invs) {
         <div><span class="muted">Due:</span> <span style="color:${isOverdue?'#fca5a5':'inherit'}">${inv.dueDate||'—'}${isOverdue?' ⚠️':''}</span></div>
         <div><span class="muted">Paid:</span> <span style="color:#a3f2d2">$${(inv.amtPaid||0).toLocaleString()}</span></div>
         <div><span class="muted">Balance:</span> <span style="font-weight:700;color:${bal>0?'#fde68a':'#a3f2d2'}">$${bal.toLocaleString()}</span></div>
-        ${inv.payMethod?`<div><span class="muted">Via:</span> ${esc(inv.payMethod)}</div>`:''}
+        ${(inv.paymentMethod||inv.payMethod)?`<div><span class="muted">Via:</span> ${esc(inv.paymentMethod||inv.payMethod)}${inv.checkNumber?` #${esc(inv.checkNumber)}`:''}${inv.checkDate?` (${esc(inv.checkDate)})`:''}${inv.checkMemo?` — ${esc(inv.checkMemo)}`:''}</div>`:''}
       </div>
       ${inv.notes?`<div style="font-size:.8rem;color:var(--muted);margin-bottom:8px">${esc(inv.notes)}</div>`:''}
       <div style="display:flex;gap:6px;flex-wrap:wrap">
@@ -8478,8 +8478,67 @@ async function pushInvoiceToQuickBooks(jobId, invId, btnEl) {
 }
 window.pushInvoiceToQuickBooks = pushInvoiceToQuickBooks;
 
-async function quickMarkPaid(jobId, invId, total) {
-  if (!confirm('Mark this invoice as Paid in Full? This will also move the job to To Be Scheduled and prep it for scheduling.')) return;
+function quickMarkPaid(jobId, invId, total) {
+  // Open a small modal to capture HOW the invoice was paid. Check payments
+  // additionally capture check #, date, and memo for bookkeeping.
+  const existing = document.getElementById('markPaidModal');
+  if (existing) existing.remove();
+  const today = new Date().toISOString().split('T')[0];
+  const modal = document.createElement('div');
+  modal.id = 'markPaidModal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px';
+  modal.innerHTML = `
+    <div style="background:#0d1f35;border:1px solid var(--line);border-radius:16px;padding:28px;max-width:440px;width:100%">
+      <div style="font-size:1.1rem;font-weight:800;color:#eaf0fb;margin-bottom:4px">✓ Mark Invoice Paid</div>
+      <div style="font-size:.8rem;color:var(--muted);margin-bottom:20px">$${(total||0).toLocaleString(undefined,{minimumFractionDigits:2})} — moves job to To Be Scheduled</div>
+      <label style="font-size:.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-weight:700;display:block;margin-bottom:6px">Payment Method</label>
+      <select id="mpMethod" onchange="window.mpToggleCheckFields()" style="width:100%;padding:9px 12px;border-radius:8px;border:1px solid var(--line);background:rgba(8,18,36,.6);color:#eaf0fb;font-size:.9rem;box-sizing:border-box;margin-bottom:14px">
+        <option value="Check">Check</option>
+        <option value="Cash">Cash</option>
+        <option value="Card / Online">Card / Online (Stripe)</option>
+        <option value="Bank Transfer">Bank Transfer / ACH</option>
+        <option value="Other">Other</option>
+      </select>
+      <div id="mpCheckFields">
+        <div style="display:flex;gap:10px;margin-bottom:12px">
+          <div style="flex:1">
+            <label style="font-size:.72rem;color:var(--muted);font-weight:700;display:block;margin-bottom:6px">Check #</label>
+            <input id="mpCheckNum" placeholder="1234" style="width:100%;padding:9px 12px;border-radius:8px;border:1px solid var(--line);background:rgba(8,18,36,.6);color:#eaf0fb;font-size:.9rem;box-sizing:border-box">
+          </div>
+          <div style="flex:1">
+            <label style="font-size:.72rem;color:var(--muted);font-weight:700;display:block;margin-bottom:6px">Date Received</label>
+            <input id="mpCheckDate" type="date" value="${today}" style="width:100%;padding:9px 12px;border-radius:8px;border:1px solid var(--line);background:rgba(8,18,36,.6);color:#eaf0fb;font-size:.9rem;box-sizing:border-box">
+          </div>
+        </div>
+        <div style="margin-bottom:16px">
+          <label style="font-size:.72rem;color:var(--muted);font-weight:700;display:block;margin-bottom:6px">Memo (optional)</label>
+          <input id="mpCheckMemo" placeholder="e.g. bank, notes" style="width:100%;padding:9px 12px;border-radius:8px;border:1px solid var(--line);background:rgba(8,18,36,.6);color:#eaf0fb;font-size:.9rem;box-sizing:border-box">
+        </div>
+      </div>
+      <div style="display:flex;gap:10px">
+        <button onclick="window.commitMarkPaid('${jobId}','${invId}',${total||0})" class="btn-amber" style="flex:1;padding:10px;font-weight:700">✓ Confirm Paid</button>
+        <button onclick="document.getElementById('markPaidModal').remove()" class="btn" style="padding:10px">Cancel</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+}
+
+function mpToggleCheckFields() {
+  const method = document.getElementById('mpMethod')?.value;
+  const fields = document.getElementById('mpCheckFields');
+  if (fields) fields.style.display = (method === 'Check') ? '' : 'none';
+}
+window.mpToggleCheckFields = mpToggleCheckFields;
+
+async function commitMarkPaid(jobId, invId, total) {
+  const method = document.getElementById('mpMethod')?.value || 'Other';
+  const payment = { paymentMethod: method };
+  if (method === 'Check') {
+    payment.checkNumber = document.getElementById('mpCheckNum')?.value.trim() || '';
+    payment.checkDate = document.getElementById('mpCheckDate')?.value || '';
+    payment.checkMemo = document.getElementById('mpCheckMemo')?.value.trim() || '';
+  }
+  document.getElementById('markPaidModal')?.remove();
 
   try {
     // 0. Read the invoice first so we know if it's tied to a Change Order.
@@ -8487,11 +8546,12 @@ async function quickMarkPaid(jobId, invId, total) {
     const invData = invSnap.exists ? invSnap.data() : {};
     const linkedCOId = invData.changeOrderId || null;
 
-    // 1. Mark the invoice paid
+    // 1. Mark the invoice paid, recording how it was paid.
     await coll('jobs').doc(jobId).collection('invoices').doc(invId).update({
       status: 'Paid',
       amtPaid: total,
       paidDate: new Date().toISOString().split('T')[0],
+      ...payment,
       updatedAt: firebase.firestore.FieldValue.serverTimestamp()
     });
 
@@ -8601,6 +8661,7 @@ async function quickMarkPaid(jobId, invId, total) {
   }
 }
 window.quickMarkPaid = quickMarkPaid;
+window.commitMarkPaid = commitMarkPaid;
 
 // ── Print Invoice ──
 function printInvoiceById(jobId, invId) {
@@ -8712,6 +8773,38 @@ window.importEstimateToInvoice = importEstimateToInvoice;
 window.printInvoice = printInvoice;
 window.printInvoiceById = printInvoiceById;
 
+// ── Pay-by-check remittance note (single source of truth) ──
+// Returns { payableTo, address } or null if we have nothing useful to show.
+// Uses companyProfile.checkPayableTo if set (legal payee may differ from the
+// display name), otherwise companyName. Address is optional.
+function remittanceInfo() {
+  const payableTo = (companyProfile.checkPayableTo || companyProfile.companyName || '').trim();
+  const address = (companyProfile.address || '').trim();
+  if (!payableTo) return null;
+  return { payableTo, address };
+}
+
+// HTML block for emails / portal. Returns '' when there's nothing to show.
+function remittanceHtml() {
+  const r = remittanceInfo();
+  if (!r) return '';
+  return '<div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:14px;margin:16px 0;font-size:.85rem;color:#374151">'
+    + '<div style="font-weight:700;color:#111827;margin-bottom:6px">Prefer to pay by check?</div>'
+    + 'Make checks payable to <strong>' + esc(r.payableTo) + '</strong>'
+    + (r.address ? '<br>Mail to: ' + esc(r.address) : '')
+    + '<div style="font-size:.78rem;color:#6b7280;margin-top:6px">Please include the invoice number on your check.</div>'
+    + '</div>';
+}
+
+// Plain-text version for text email bodies.
+function remittanceText() {
+  const r = remittanceInfo();
+  if (!r) return '';
+  return '\n\nPrefer to pay by check? Make checks payable to ' + r.payableTo
+    + (r.address ? '\nMail to: ' + r.address : '')
+    + '\nPlease include the invoice number on your check.';
+}
+
 // ── Email Invoice to Customer ──
 async function emailInvoiceToCustomer(jobId, invId) {
   if (!conDb || !jobId || !invId) return;
@@ -8788,9 +8881,10 @@ async function emailInvoiceToCustomer(jobId, invId) {
     ${portalUrl ? `<p style="font-size:.85rem;color:#666;text-align:center">
       <a href="${portalUrl}" style="color:#d97706">View your project portal →</a>
     </p>` : ''}
+    ${remittanceHtml()}
     ${inv.notes ? `<p style="font-size:.85rem;color:#444;border-top:1px solid #eee;padding-top:12px;margin-top:16px">${esc(inv.notes)}</p>` : ''}`;
 
-  const bodyText = `Hi ${customerName},\n\nInvoice ${invNum} for $${total} is ready.\n${due ? 'Due: ' + due + '\n' : ''}${payLink ? '\nPay online: ' + payLink : ''}\n${portalUrl ? '\nView portal: ' + portalUrl : ''}`;
+  const bodyText = `Hi ${customerName},\n\nInvoice ${invNum} for $${total} is ready.\n${due ? 'Due: ' + due + '\n' : ''}${payLink ? '\nPay online: ' + payLink : ''}\n${portalUrl ? '\nView portal: ' + portalUrl : ''}${remittanceText()}`;
 
   // Show quick email dialog
   const existing = document.getElementById('invoiceEmailModal');
@@ -9152,6 +9246,7 @@ const DEFAULT_COMPANY_PROFILE = {
   email: '',
   website: '',
   address: '',
+  checkPayableTo: '',
   license: '',
   insurance: '',
   logo: '',
@@ -9353,6 +9448,7 @@ function populateSettingsForm() {
   setVal('settEmail', p.email);
   setVal('settWebsite', p.website);
   setVal('settAddress', p.address);
+  setVal('settCheckPayableTo', p.checkPayableTo);
   setVal('settLicense', p.license);
   setVal('settInsurance', p.insurance);
   setVal('settPayTerms', p.payTerms || 30);
@@ -9401,6 +9497,7 @@ function saveCompanyProfile() {
     email: document.getElementById('settEmail')?.value.trim() || '',
     website: document.getElementById('settWebsite')?.value.trim() || '',
     address: document.getElementById('settAddress')?.value.trim() || '',
+    checkPayableTo: document.getElementById('settCheckPayableTo')?.value.trim() || '',
     license: document.getElementById('settLicense')?.value.trim() || '',
     insurance: document.getElementById('settInsurance')?.value.trim() || '',
     logo: companyProfile.logo || '',
@@ -9587,6 +9684,8 @@ function printInvoiceData(inv, job, otherInvoices) {
       '<a href="' + inv.paymentLink + '" style="display:inline-block;background:#d97706;color:#fff;font-size:1.1rem;font-weight:800;padding:16px 48px;border-radius:12px;text-decoration:none;letter-spacing:.02em">💳 Pay Now</a>' +
       '<div style="font-size:.76rem;color:#9ca3af;margin-top:8px">Click to pay securely</div>' +
       '</div>' : '') +
+
+    remittanceHtml() +
 
     '<div style="margin-top:32px;padding-top:16px;border-top:1px solid #e5e7eb;text-align:center;color:#9ca3af;font-size:.75rem">' +
     (co.companyName||'') + (co.phone?' · '+co.phone:'') + (co.email?' · '+co.email:'') +
