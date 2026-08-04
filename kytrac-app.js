@@ -1361,30 +1361,42 @@ function conRenderStats() {
     });
   }
 
-  // Spent MTD — still from the QBO-synced cache, since bills and
-  // expenses genuinely live in QuickBooks with no JOBSMETRIX equivalent
-  // to compute them from directly. Net MTD is rendered above once BOTH
-  // this and the invoice-based Collected figure are in.
+  // Spent MTD — now computed from JOBSMETRIX's own vendor bills
+  // (companies/{id}/vendors/*/bills), same fix as Collected MTD and for
+  // the same reason: the old QBO-only cache had zero visibility into
+  // anything logged here — like a debit-card material purchase entered
+  // via "+ Add Expense" — unless it was separately pushed to
+  // QuickBooks. Sums amtPaid across every vendor's bills where billDate
+  // falls in the current month. billDate is used as the "when it was
+  // paid" proxy since bills don't carry a separate paidDate field —
+  // fine for the common case (paid same day, e.g. a debit card
+  // purchase), less precise for bills paid well after their billDate,
+  // but still far more accurate than a cache that can be entirely
+  // empty of real activity.
   if (conDb && currentCompanyId) {
-    coll('kpiCache').doc('mtd').get().then(doc => {
-      if (!doc.exists) {
-        // No QBO cache yet — Spent/Net show dashes, but Collected MTD
-        // still renders from real invoice data above regardless.
-        ['statSpentMTD','statNetMTD'].forEach(id => {
-          const el = document.getElementById(id);
-          if (el) el.textContent = '—';
-        });
-        return;
-      }
-      const d = doc.data();
-      const spent = d.spentMTD || 0;
-
+    const now2 = new Date();
+    const monthStart2 = new Date(now2.getFullYear(), now2.getMonth(), 1).toISOString().split('T')[0];
+    coll('vendors').get().then(vSnap => {
+      let spent = 0;
+      const billPromises = vSnap.docs.map(vDoc =>
+        vDoc.ref.collection('bills').get()
+          .then(bSnap => bSnap.forEach(bDoc => {
+            const b = bDoc.data();
+            if (b.billDate && b.billDate >= monthStart2 && b.amtPaid > 0) {
+              spent += b.amtPaid;
+            }
+          })).catch(() => {})
+      );
+      return Promise.all(billPromises).then(() => spent);
+    }).then(spent => {
       setTile('statSpentMTD', 'statSpentTile',
         '$' + Math.round(spent).toLocaleString(), '#f59e0b');
-
       _mtd.spent = spent;
       _maybeRenderNetMTD();
-    }).catch(() => {});
+    }).catch(() => {
+      const el = document.getElementById('statSpentMTD');
+      if (el) el.textContent = '—';
+    });
   }
 }
 
