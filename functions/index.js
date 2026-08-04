@@ -1233,13 +1233,34 @@ exports.stripeWebhook = functions.https.onRequest(async (req, res) => {
       amtPaid: newAmtPaid,
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       stripePaymentIntentId: session.payment_intent || null,
-      stripeLastPaidAt: admin.firestore.FieldValue.serverTimestamp()
+      stripeLastPaidAt: admin.firestore.FieldValue.serverTimestamp(),
+      paymentMethod: 'Card / Online (Stripe)'
     };
     if (newAmtPaid >= total) {
       update.status = 'Paid';
       update.paidDate = new Date().toISOString().split('T')[0];
     }
     await invRef.update(update);
+
+    // Log to the Activity feed — this is the ONLY payment path that
+    // doesn't go through the client's commitMarkPaid(), which normally
+    // writes this. Without this, webhook-driven (i.e. the actual real
+    // Stripe payment) confirmations were invisible in Activity even
+    // though Mark Paid entries showed up fine.
+    try {
+      const amtStr = amountPaidNow.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2});
+      await db.collection('companies').doc(companyId)
+        .collection('jobs').doc(jobId).collection('logs').add({
+          date: new Date().toISOString().split('T')[0],
+          notes: `Invoice ${inv.number || ''} paid — $${amtStr} (Stripe)`.replace('  ', ' ').trim(),
+          type: 'invoice_paid',
+          userName: 'Stripe (auto)',
+          companyId,
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+    } catch (logErr) {
+      console.error('stripeWebhook: activity log write failed (non-fatal):', logErr.message);
+    }
 
     // Sync to QBO for bookkeeping - best-effort. A QBO failure here
     // should never make Stripe think the webhook failed (which would
