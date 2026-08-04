@@ -2545,7 +2545,16 @@ function applyJobFinancialsDisplay(job, acOverride) {
   const inAppCollected = jobInvs.reduce((s,i) => s + (i.amtPaid||0), 0);
   const collected = (typeof job.collected === 'number') ? job.collected : inAppCollected;
   const balance = cv - collected;
-  const costToComplete = hasRealActual ? 0 : Math.max(0, ec - ac); // actualCost IS cost-to-date, nothing left to project without real estimate data
+  // Cost to Complete = estimated cost minus what's actually been spent
+  // so far. Previously hardcoded to $0 whenever hasRealActual was true,
+  // under the assumption that actualCost only ever arrived as a
+  // one-time CSV import representing a FINISHED job's final total cost
+  // — in which case "nothing left to complete" was correct. Now that ac
+  // is live/incremental (updates as bills and materials purchases come
+  // in throughout the job), that assumption breaks: a job that's spent
+  // $272 of an estimated $2,000 is very much not "done," and should
+  // show ~$1,728 left to complete, not $0.
+  const costToComplete = Math.max(0, ec - ac);
   const projProfit = profit;
   const projMargin = margin;
 
