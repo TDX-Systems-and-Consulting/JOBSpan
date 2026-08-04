@@ -9151,6 +9151,8 @@ function checkStripeConnectionStatus() {
   const el = document.getElementById('stripeConnectionStatus');
   const formEl = document.getElementById('stripeConnectForm');
   const disconnectBtn = document.getElementById('stripeDisconnectBtn');
+  const keyLabel = document.getElementById('stripeSecretKeyLabel');
+  const connectBtnEl = document.querySelector('#stripeConnectForm .btn-amber');
   if (!el || !conDb || !currentCompanyId) return;
   coll('settings').doc('stripe').get()
     .then(doc => {
@@ -9159,11 +9161,29 @@ function checkStripeConnectionStatus() {
         el.innerHTML = '<span style="color:#1dbb87;font-weight:700">✓ Connected</span>' +
           (data.keyMode === 'test' ? ' <span style="color:#f59e0b">(Test mode)</span>' : '') +
           (data.hasWebhook ? '' : ' <span style="color:#ef4444">— webhook secret not set yet, payments won\'t auto-confirm</span>');
-        if (formEl) formEl.style.display = 'none';
         if (disconnectBtn) disconnectBtn.style.display = '';
+        if (data.hasWebhook) {
+          // Fully set up — hide the form, nothing left to add.
+          if (formEl) formEl.style.display = 'none';
+        } else {
+          // Connected, but still missing the webhook secret. Previously
+          // this hid the whole form unconditionally the moment
+          // 'connected' became true, with no other way to add the
+          // webhook secret short of disconnecting the entire
+          // integration and starting over. connectStripeAccount()
+          // requires the secret key on every call (it re-verifies it
+          // each time), so re-entering it is unavoidable — but at
+          // least there's now a path to actually finish setup instead
+          // of a dead end.
+          if (formEl) formEl.style.display = '';
+          if (keyLabel) keyLabel.textContent = 'Stripe Secret Key (already connected — re-enter it here to add the webhook secret below)';
+          if (connectBtnEl) connectBtnEl.textContent = '💳 Update Stripe Connection';
+        }
       } else {
         el.innerHTML = '<span style="color:#9ca3af">Not connected yet.</span>';
         if (formEl) formEl.style.display = '';
+        if (keyLabel) keyLabel.textContent = 'Stripe Secret Key';
+        if (connectBtnEl) connectBtnEl.textContent = '💳 Connect Stripe';
         if (disconnectBtn) disconnectBtn.style.display = 'none';
       }
     })
