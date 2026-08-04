@@ -11721,14 +11721,12 @@ function renderVendorBills() {
   }).join('');
 }
 
-function openAddBillModal(billId) {
+function openAddBillModal(billId, presetJobId) {
   const bill = billId ? _vendorBills.find(b => b.id === billId) : null;
   _editingBillId = billId || null;
   document.getElementById('billId').value = billId || '';
-  document.getElementById('billVendorId').value = _currentVendorId || '';
   const setVal = (id, v) => { const el = document.getElementById(id); if(el) el.value = v||''; };
   setVal('billDesc', bill?.desc);
-  setVal('billJobId', bill?.jobId);
   setVal('billDate', bill?.billDate || new Date().toISOString().split('T')[0]);
   setVal('billDueDate', bill?.dueDate);
   setVal('billAmount', bill?.amount);
@@ -11736,14 +11734,41 @@ function openAddBillModal(billId) {
   setVal('billNotes', bill?.notes);
   document.getElementById('billStatus').value = bill?.status || 'Unpaid';
   document.getElementById('deleteBillBtn').style.display = bill ? 'inline-flex' : 'none';
+
+  // Vendor dropdown — was a hidden field that silently required having
+  // already navigated to a specific vendor's page first (_currentVendorId).
+  // That's the only reason expenses were hard to log from a job directly.
+  // Now it's a real selector, populated from allVendors, defaulting to
+  // whichever vendor context we actually have (existing bill's vendor,
+  // or the page we're currently on).
+  const vendorSel = document.getElementById('billVendorId');
+  if (vendorSel) {
+    const preselect = bill?.vendorId || _currentVendorId || '';
+    vendorSel.innerHTML = '<option value="">Select vendor…</option>' +
+      (allVendors || []).map(v => `<option value="${v.id}" ${v.id===preselect?'selected':''}>${esc(v.name)}</option>`).join('');
+  }
+
   // Populate job dropdown
   const jobSel = document.getElementById('billJobId');
   if (jobSel) {
+    const preselectJob = bill?.jobId || presetJobId || '';
     jobSel.innerHTML = '<option value="">No job linked</option>' +
-      conJobs.map(j => `<option value="${j.id}" ${j.id===(bill?.jobId||'')?'selected':''}>${esc(j.name)}</option>`).join('');
+      conJobs.map(j => `<option value="${j.id}" ${j.id===preselectJob?'selected':''}>${esc(j.name)}</option>`).join('');
   }
   kOpen('addBillModal');
 }
+
+// Shortcut from a job's Financials tab — same modal, pre-selects this
+// job so you're not forced to visit the vendor's own page first just to
+// log today's materials/expenses against a job.
+function openAddExpenseFromJob() {
+  if (!allVendors || !allVendors.length) {
+    alert('No vendors set up yet. Add a vendor first under Vendors, then you can log bills/expenses against jobs.');
+    return;
+  }
+  openAddBillModal(null, conCurrentJobId);
+}
+window.openAddExpenseFromJob = openAddExpenseFromJob;
 
 function saveBill() {
   const vendorId = document.getElementById('billVendorId')?.value;
@@ -11768,7 +11793,14 @@ function saveBill() {
   const col = coll('vendors').doc(vendorId).collection('bills');
   const promise = billId ? col.doc(billId).update(data)
     : col.add({ ...data, companyId: currentCompanyId, createdAt: firebase.firestore.FieldValue.serverTimestamp() });
-  promise.then(() => { kClose('addBillModal'); loadVendorBills(vendorId); })
+  promise.then(() => {
+    kClose('addBillModal');
+    loadVendorBills(vendorId);
+    // Also refresh the job Financials Hub if that's where we are —
+    // otherwise a bill added via the new "+ Add Expense" job shortcut
+    // wouldn't show up until you left the tab and came back.
+    if (conCurrentJobId) fhLoadJobBills(conCurrentJobId, () => { fhRenderBills(); const j = conJobs.find(x=>x.id===conCurrentJobId); if (j) fhRenderTotals(j); });
+  })
     .catch(e => alert('Error: ' + e.message));
 }
 
