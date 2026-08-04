@@ -8830,7 +8830,7 @@ async function doSendInvoiceEmail(jobId, invId) {
   if (btn) { btn.textContent = 'Sending…'; btn.disabled = true; }
 
   try {
-    const sendEmail = conFunctions.httpsCallable('sendJobsmetrixEmail');
+    const sendEmail = conFunctions.httpsCallable('sendJobspanEmail');
     await sendEmail({
       to,
       toName: modal?.dataset.customerName || '',
@@ -9104,7 +9104,7 @@ async function emailLienWaiver(waiverId, jobId, portalUrl, typeLabel, customerNa
 
   try {
     if (!conFunctions) throw new Error('Functions not available');
-    const sendEmail = conFunctions.httpsCallable('sendJobsmetrixEmail');
+    const sendEmail = conFunctions.httpsCallable('sendJobspanEmail');
     const btn = document.querySelector('#lienSendModal .btn-amber');
     if (btn) { btn.textContent = 'Sending…'; btn.disabled = true; }
 
