@@ -424,8 +424,8 @@ function renderJobsBoard() {
         ? `<div class="kt-job-meta" style="color:${col.color};font-weight:700;font-size:.7rem">${esc(job.status)}</div>`
         : '';
       card.innerHTML = `
-        <div class="kt-job-num" style="color:${col.color}">${esc(job.jobNumber||'')}</div>
-        <div class="kt-job-name">${esc(job.name)}</div>
+        <div class="kt-job-num" style="color:${col.color}">${esc(job.jobNumber||job.name||'')}</div>
+        ${job.notes?`<div class="kt-job-desc">${esc(job.notes.length > 70 ? job.notes.slice(0,70)+'…' : job.notes)}</div>`:''}
         ${statusBadge}
         ${job.client?`<div class="kt-job-meta">Customer: ${esc(job.client)}</div>`:''}
         ${job.statusDate||job.startDate?`<div class="kt-job-meta">Status Date: ${job.statusDate||job.startDate}</div>`:''}
