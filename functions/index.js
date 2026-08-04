@@ -1687,7 +1687,7 @@ async function runSLATriggers(db, companyId) {
     }
 
     // Scheduling SLA
-    if (['To Be Scheduled', 'Permitting', 'Approved'].includes(status)) {
+    if (['To Be Scheduled', 'Permitting'].includes(status)) {
       const days = daysSince(job.statusDate || job.approvedAt);
       if (days === null) continue;
       if (days >= 10) {
@@ -1738,7 +1738,7 @@ async function runSLATriggers(db, companyId) {
     // No daily log 2+ days on an active job — mirrors the 🟡 flag
     // already shown on the JOBSMETRIX home dashboard's Active Jobs
     // table, just surfaced proactively instead of only-if-you-look.
-    if (!['Closed Completed', 'Closed Lost', 'Submitted', 'To Be Scheduled', 'Permitting', 'Approved'].includes(status)) {
+    if (!['Closed Completed', 'Closed Lost', 'Submitted', 'To Be Scheduled', 'Permitting'].includes(status)) {
       const logDays = daysSince(job.lastLogDate);
       if (logDays !== null && logDays >= 3) {
         await createTodo(jobId, jobName,

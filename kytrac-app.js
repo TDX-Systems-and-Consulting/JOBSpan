@@ -680,7 +680,8 @@ let conFirebaseReady = false;
 const STATUS_MIGRATION_MAP = {
   'Hipshot Needed':     'New Lead',
   'Estimating':         'Building Estimate',
-  'Contracted':         'Approved',
+  'Contracted':         'To Be Scheduled',
+  'Approved':           'To Be Scheduled',
   'Design Phase':       'To Be Scheduled',
   'Work In Progress':   'In Progress',
   'Invoicing':          'Complete',
@@ -692,12 +693,15 @@ const STATUS_MIGRATION_MAP = {
 
 // ── Canonical status definitions (Firestore values) ────────────────────────
 // All valid status strings that may be written to Firestore.
+// 'Approved' removed as a distinct stage — signing a proposal now
+// advances straight from Submitted to To Be Scheduled, since Approved
+// was functionally redundant with the automation already in place
+// (customer signs -> job needs scheduling, no separate holding step).
 const KYTRAC_STATUSES = [
   {name:'New Lead',           color:'#f97316', group:'estimates'},
   {name:'Appointment Set',    color:'#f97316', group:'estimates'},
   {name:'Building Estimate',  color:'#d97706', group:'estimates'},
   {name:'Submitted',          color:'#d97706', group:'estimates'},
-  {name:'Approved',           color:'#16a34a', group:'active'},
   {name:'To Be Scheduled',    color:'#0d9488', group:'active'},
   {name:'Permitting',         color:'#0d9488', group:'active'},
   {name:'Scheduled',          color:'#3b82f6', group:'active'},
@@ -719,7 +723,6 @@ const KANBAN_COLUMNS = [
   {label:'Appointment Set',   color:'#f97316', statuses:['Appointment Set'],     dropStatus:'Appointment Set',   group:'estimates', hidden:false},
   {label:'Building Estimate', color:'#d97706', statuses:['Building Estimate'],   dropStatus:'Building Estimate', group:'estimates', hidden:false},
   {label:'Submitted',         color:'#d97706', statuses:['Submitted'],           dropStatus:'Submitted',         group:'estimates', hidden:false},
-  {label:'Approved',          color:'#16a34a', statuses:['Approved'],            dropStatus:'Approved',          group:'active',   hidden:false},
   {label:'To Be Scheduled',   color:'#0d9488', statuses:['To Be Scheduled','Permitting'], dropStatus:'To Be Scheduled', group:'active', hidden:false},
   {label:'Scheduled',         color:'#3b82f6', statuses:['Scheduled'],           dropStatus:'Scheduled',         group:'active',   hidden:false},
   {label:'In Progress',       color:'#3b82f6', statuses:['In Progress'],         dropStatus:'In Progress',       group:'active',   hidden:false},
@@ -729,11 +732,14 @@ const KANBAN_COLUMNS = [
   {label:'Closed Lost',       color:'#6b7280', statuses:['Closed Lost'],         dropStatus:'Closed Lost',       group:'closed',   hidden:true},
 ];
 
-// Pipeline strip bucket → which Firestore statuses belong to each group
+// Pipeline strip bucket → which Firestore statuses belong to each group.
+// 'approved' kept as an empty array (not deleted) so the ACTIVE_STATUSES/
+// ALL_OPEN_STATUSES spreads below don't break — nothing should ever
+// populate it going forward.
 const PIPELINE_BUCKETS = {
   estimates: ['New Lead', 'Appointment Set'],
   bidding:   ['Building Estimate', 'Submitted'],
-  approved:  ['Approved'],
+  approved:  [],
   scheduled: ['To Be Scheduled', 'Permitting', 'Scheduled'],
   inprogress:['In Progress', 'Inspection Pending'],
   closing:   ['Complete'],
@@ -3932,7 +3938,7 @@ function renderJCDKpis() {
   if (!el) return;
 
   const jobs = conJobs;
-  const active = jobs.filter(j => ['In Progress','Approved'].includes(j.status));
+  const active = jobs.filter(j => ['In Progress'].includes(j.status));
   const totalContract = jobs.reduce((s,j) => s + getJobValue(j), 0);
   const totalEst = jobs.reduce((s,j) => s + (j.estCost||0), 0);
   const totalActual = jobs.reduce((s,j) => s + getJobTotalActual(j.id), 0);
@@ -4351,7 +4357,7 @@ function commitJobStatusChange(newStatus) {
   // to a vacant property with no idea how to get in is exactly the
   // problem this exists to prevent. Required for every job, not just
   // ones flagged vacant.
-  if ((newStatus === 'Approved' || newStatus === 'Scheduled') && !(job.accessInfo && job.accessInfo.trim())) {
+  if ((newStatus === 'To Be Scheduled' || newStatus === 'Scheduled') && !(job.accessInfo && job.accessInfo.trim())) {
     alert('Entry Information is required before this job can move to "' + newStatus + '".\n\nGo to the "🔑 Entry Info" tab and fill in access/lockbox instructions first.');
     document.getElementById('detailStatusBadge').value = job.status || 'New Lead';
     return;
@@ -4435,7 +4441,14 @@ function switchDetailTab(tab, btn) {
     const btns = document.querySelectorAll('#jobDetailModal .con-subtab');
     if (btns[0]) btns[0].classList.add('active');
   }
-  if (tab === 'estimate') loadEstimate(conCurrentJobId);
+  if (tab === 'estimate') {
+    loadEstimate(conCurrentJobId);
+    // Clicking into the Estimate tab means you're actually starting to
+    // build one — auto-advance from New Lead/Appointment Set to
+    // Building Estimate. Forward-only (never regresses a job already
+    // further along), same helper used for the email->Submitted step.
+    advanceJobStatusIfEarlier(conCurrentJobId, 'Building Estimate', 'Started building estimate');
+  }
   if (tab === 'changeorders') renderCOList();
   if (tab === 'subs') { loadJobBidRequests(conCurrentJobId); renderSubList(); }
   if (tab === 'documents') { loadJobDocs(conCurrentJobId); loadJobPhotos(conCurrentJobId); }
@@ -6392,7 +6405,7 @@ async function renderMasterSchedulePage() {
 
   el.innerHTML = '<div class="small muted" style="padding:24px;font-style:italic">Loading all jobs...</div>';
 
-  const ACTIVE = ['Scheduled','In Progress','Approved','To Be Scheduled','Inspection Pending'];
+  const ACTIVE = ['Scheduled','In Progress','To Be Scheduled','Inspection Pending'];
   const activeJobs = conJobs.filter(j => ACTIVE.includes(j.status))
     .sort((a,b) => (a.startDate||'9999').localeCompare(b.startDate||'9999'));
 
@@ -6662,7 +6675,7 @@ function renderMasterGantt() {
   if (!el) return;
   const isFullscreen = card?.dataset.fullscreen === 'true';
 
-  const ACTIVE = ['Scheduled','In Progress','Approved','To Be Scheduled','Inspection Pending'];
+  const ACTIVE = ['Scheduled','In Progress','To Be Scheduled','Inspection Pending'];
   const allActive = conJobs.filter(j => ACTIVE.includes(j.status))
     .sort((a,b) => (a.startDate||'9999').localeCompare(b.startDate||'9999'));
   const jobs = allActive.filter(j => j.startDate && j.endDate);
@@ -6829,7 +6842,6 @@ function renderHomeDashboard() {
     const groups = [
       { label: 'Estimates', color: '#f97316', key: 'estimates', statuses: PIPELINE_BUCKETS.estimates },
       { label: 'Bidding',   color: '#d97706', key: 'bidding',   statuses: PIPELINE_BUCKETS.bidding },
-      { label: 'Approved',  color: '#16a34a', key: 'approved',  statuses: PIPELINE_BUCKETS.approved },
       { label: 'Scheduled', color: '#0d9488', key: 'scheduled', statuses: PIPELINE_BUCKETS.scheduled },
       { label: 'Active',color:'#3b82f6', key: 'inprogress',statuses: PIPELINE_BUCKETS.inprogress },
       { label: 'Closing',   color: '#7c3aed', key: 'closing',   statuses: PIPELINE_BUCKETS.closing },
@@ -8398,7 +8410,7 @@ async function pushInvoiceToQuickBooks(jobId, invId, btnEl) {
 window.pushInvoiceToQuickBooks = pushInvoiceToQuickBooks;
 
 async function quickMarkPaid(jobId, invId, total) {
-  if (!confirm('Mark this invoice as Paid in Full? This will also move the job to Approved and prep it for scheduling.')) return;
+  if (!confirm('Mark this invoice as Paid in Full? This will also move the job to To Be Scheduled and prep it for scheduling.')) return;
 
   try {
     // 0. Read the invoice first so we know if it's tied to a Change Order.
@@ -8414,17 +8426,18 @@ async function quickMarkPaid(jobId, invId, total) {
       updatedAt: firebase.firestore.FieldValue.serverTimestamp()
     });
 
-    // 2. Auto-advance job status to Approved, but only if it hasn't already
-    // progressed further in the pipeline (never move a job backwards).
+    // 2. Auto-advance job status to To Be Scheduled (Approved was removed
+    // as a distinct stage), but only if it hasn't already progressed
+    // further in the pipeline (never move a job backwards).
     const job = conJobs.find(j => j.id === jobId);
-    const approvedIdx = CON_JOB_STATUSES.indexOf('Approved');
+    const approvedIdx = CON_JOB_STATUSES.indexOf('To Be Scheduled');
     const currentIdx = job ? CON_JOB_STATUSES.indexOf(job.status) : -1;
     if (job && (currentIdx === -1 || currentIdx < approvedIdx)) {
       if (conCurrentJobId === jobId && typeof commitJobStatusChange === 'function') {
-        commitJobStatusChange('Approved');
+        commitJobStatusChange('To Be Scheduled');
       } else {
         await coll('jobs').doc(jobId).update({
-          status: 'Approved',
+          status: 'To Be Scheduled',
           statusDate: new Date().toISOString().split('T')[0],
           updatedAt: firebase.firestore.FieldValue.serverTimestamp()
         });
@@ -12557,7 +12570,6 @@ function renderPortalJob(job) {
   // Show simplified customer-facing stages
   const customerStages = [
     { label: 'Estimate', statuses: ['New Lead','Appointment Set','Building Estimate','Submitted'] },
-    { label: 'Approved', statuses: ['Approved'] },
     { label: 'Scheduled', statuses: ['To Be Scheduled','Permitting','Scheduled'] },
     { label: 'In Progress', statuses: ['In Progress','Inspection Pending'] },
     { label: 'Complete', statuses: ['Complete','Closed Completed'] },
@@ -13182,33 +13194,31 @@ function submitPortalSignature(proposalId, jobId, action) {
         // 1. Activity log — written after doc save so we can store docId
         // (done below after document write)
 
-        // 2. Auto-advance job to Approved — any pre-Approved canonical
-        // status advances. Previously used a stale hardcoded list
-        // ('Estimate Sent'/'Follow Up'/'Negotiating') that doesn't match
-        // any status this app has actually used since the pipeline was
-        // finalized (New Lead -> Appointment Set -> Building Estimate ->
-        // Submitted -> Approved -> ...) — meaning a job sitting at
-        // 'Submitted' (exactly where emailing a proposal now sets it)
-        // would silently fail to advance to Approved on signature.
-        const PORTAL_STATUS_ORDER = ['New Lead','Appointment Set','Building Estimate','Submitted','Approved'];
+        // 2. Auto-advance job to To Be Scheduled — any pre-To-Be-Scheduled
+        // canonical status advances. 'Approved' was removed as a distinct
+        // stage (signing now goes straight from Submitted to To Be
+        // Scheduled, skipping the old intermediate Approved column
+        // entirely) — see the pipeline change made when Approved was
+        // dropped from KYTRAC_STATUSES/KANBAN_COLUMNS.
+        const PORTAL_STATUS_ORDER = ['New Lead','Appointment Set','Building Estimate','Submitted','To Be Scheduled'];
         jobRef.get().then(snap => {
           if (!snap.exists) return;
           const curIdx = PORTAL_STATUS_ORDER.indexOf(snap.data().status);
-          const approvedIdx = PORTAL_STATUS_ORDER.indexOf('Approved');
-          if (curIdx !== -1 && curIdx < approvedIdx) {
-            jobRef.update({ status: 'Approved', statusDate: new Date().toISOString().split('T')[0],
+          const targetIdx = PORTAL_STATUS_ORDER.indexOf('To Be Scheduled');
+          if (curIdx !== -1 && curIdx < targetIdx) {
+            jobRef.update({ status: 'To Be Scheduled', statusDate: new Date().toISOString().split('T')[0],
               lastActivity: now, lastActivityNote: `Proposal signed by ${name}` })
               .then(() => {
                 jobRef.collection('logs').add({
                   type: 'status_auto_advanced',
-                  notes: `Job auto-advanced to Approved (was ${snap.data().status}) — customer signed proposal.`,
+                  notes: `Job auto-advanced to To Be Scheduled (was ${snap.data().status}) — customer signed proposal.`,
                   jobId, companyId, createdAt: now, createdMs: nowMs, date: todayDateStr, createdBy: 'customer-portal'
                 }).catch(()=>{});
               })
               .catch(e => {
                 jobRef.collection('logs').add({
                   type: 'status_advance_failed',
-                  notes: 'Auto-advance to Approved failed: ' + e.message,
+                  notes: 'Auto-advance to To Be Scheduled failed: ' + e.message,
                   jobId, companyId, createdAt: now, createdMs: nowMs, date: todayDateStr, createdBy: 'customer-portal'
                 }).catch(()=>{});
               });
@@ -16939,28 +16949,30 @@ function loadProposals(jobId) {
     .catch(e => console.error('Proposal history load error:', e));
 }
 
-// Auto-advances a job's pipeline status to "Approved" the first time one
-// of its proposals is approved — but never regresses a job that's already
-// further along the pipeline (e.g. already in Design Phase or beyond).
+// Auto-advances a job's pipeline status to "To Be Scheduled" the first
+// time one of its proposals is approved — but never regresses a job
+// that's already further along the pipeline. Function name kept as-is
+// since callers reference it directly; internally now targets To Be
+// Scheduled since Approved was removed as a distinct pipeline stage.
 // Triggered from the internal "Mark Approved" action (immediate) and from
 // loadProposals (catches portal-driven customer signatures).
 function maybeAdvanceJobStatusForApproval(jobId) {
   const job = conJobs.find(j => j.id === jobId);
   if (!job) return;
-  const APPROVED_NAME = 'Approved';
+  const TARGET_NAME = 'To Be Scheduled';
   const currentIdx = CON_JOB_STATUSES.indexOf(job.status);
-  const approvedIdx = CON_JOB_STATUSES.indexOf(APPROVED_NAME);
-  if (currentIdx === -1 || approvedIdx === -1 || currentIdx >= approvedIdx) return;
+  const targetIdx = CON_JOB_STATUSES.indexOf(TARGET_NAME);
+  if (currentIdx === -1 || targetIdx === -1 || currentIdx >= targetIdx) return;
 
   const prevStatus = job.status;
   coll('jobs').doc(jobId).update({
-    status: APPROVED_NAME,
+    status: TARGET_NAME,
     statusDate: new Date().toISOString().split('T')[0],
     updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
     updatedBy: conCurrentUser ? conCurrentUser.email : 'unknown'
   }).then(() => {
-    job.status = APPROVED_NAME;
-    logStatusChangeActivity(jobId, prevStatus, APPROVED_NAME, 'Auto-advanced: Proposal was approved/signed');
+    job.status = TARGET_NAME;
+    logStatusChangeActivity(jobId, prevStatus, TARGET_NAME, 'Auto-advanced: Proposal was approved/signed');
     if (typeof conRenderBoard === 'function') conRenderBoard();
     if (typeof renderJobsBoard === 'function') renderJobsBoard();
   }).catch(e => console.error('Auto-advance job status error:', e));
