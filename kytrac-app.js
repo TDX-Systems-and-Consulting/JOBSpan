@@ -423,15 +423,17 @@ function renderJobsBoard() {
       const statusBadge = job.status !== col.dropStatus
         ? `<div class="kt-job-meta" style="color:${col.color};font-weight:700;font-size:.7rem">${esc(job.status)}</div>`
         : '';
+      // Street only — addresses are stored as "street, city, state zip";
+      // take everything before the first comma so the card stays short.
+      const streetOnly = job.address ? job.address.split(',')[0].trim() : '';
       card.innerHTML = `
         <div class="kt-job-num" style="color:${col.color}">${esc(job.jobNumber||job.name||'')}</div>
-        ${job.address?`<div class="kt-job-addr">${esc(job.address)}</div>`:''}
+        ${streetOnly?`<div class="kt-job-addr">${esc(streetOnly)}</div>`:''}
         ${statusBadge}
         ${job.client?`<div class="kt-job-meta">Customer: ${esc(job.client)}</div>`:''}
         ${job.superintendent||job.teamLead||job.pm?`<div class="kt-job-meta">Team Lead: ${esc(job.superintendent||job.teamLead||job.pm)}</div>`:''}
         ${job.statusDate||job.startDate?`<div class="kt-job-meta">Status Date: ${job.statusDate||job.startDate}</div>`:''}
         ${job.notes?`<div class="kt-job-desc">${esc(job.notes.length > 70 ? job.notes.slice(0,70)+'…' : job.notes)}</div>`:''}
-        ${getJobValue(job)?`<div class="kt-job-value">$${Math.round(getJobValue(job)).toLocaleString()}</div>`:''}
       `;
       card.onclick = () => openJobDetail(job.id);
       el.appendChild(card);
