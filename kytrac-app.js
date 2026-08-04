@@ -8314,21 +8314,34 @@ function importEstimateToInvoice() {
       // imports at 100% same as before.
       const jobSnap = await jobRef.get();
       const schedule = jobSnap.exists ? jobSnap.data().paymentSchedule : null;
+      // Match the exact type strings savePaymentSchedule() writes:
+      // 'full', '50/50', '50/25/25', '10/40/25/25', or 'custom'.
       let stagePcts = null;
+      let stageNames = null;
       if (schedule) {
         if (schedule.type === 'custom' && Array.isArray(schedule.customPcts) && schedule.customPcts.length > 1) {
           stagePcts = schedule.customPcts;
-        } else if (schedule.type === '502525') {
+        } else if (schedule.type === '50/50') {
+          stagePcts = [50, 50];
+          stageNames = ['Deposit', 'Final Payment'];
+        } else if (schedule.type === '50/25/25') {
           stagePcts = [50, 25, 25];
-        } else if (schedule.type === '333334') {
-          stagePcts = [33.33, 33.33, 33.34];
+          stageNames = ['Deposit', 'Progress Payment', 'Final Payment'];
+        } else if (schedule.type === '10/40/25/25') {
+          stagePcts = [10, 40, 25, 25];
+          stageNames = ['Deposit', 'Materials & Mobilization', 'Progress Payment', 'Final Payment'];
         }
+        // 'full' and 'none' → stagePcts stays null → imports 100% (correct).
       }
 
       let finalLines = combinedLines;
       if (stagePcts) {
-        const stageLabels = stagePcts.map((p, i) =>
-          (i + 1) + '. ' + p + '% ' + (i === 0 ? '(Deposit)' : i === stagePcts.length - 1 ? '(Final)' : '(Progress)'));
+        const stageLabels = stagePcts.map((p, i) => {
+          const name = stageNames && stageNames[i]
+            ? stageNames[i]
+            : (i === 0 ? 'Deposit' : i === stagePcts.length - 1 ? 'Final' : 'Progress');
+          return (i + 1) + '. ' + p + '% (' + name + ')';
+        });
         const choice = window.prompt(
           'This job has a saved Payment Schedule (' + stagePcts.join('/') + '). Which stage is this invoice for?\n\n' +
           stageLabels.join('\n') + '\n\nEnter a number, or Cancel to import the full 100% instead:'
@@ -8699,19 +8712,29 @@ async function emailInvoiceToCustomer(jobId, invId) {
   } catch(e) {}
   if (!inv) { alert('Invoice not found.'); return; }
 
-  // Generate a fresh Stripe payment link for whatever balance remains,
-  // so the emailed link is always current. Falls back silently to
-  // whatever paymentLink/qbPaymentLink already exists if Stripe isn't
-  // configured yet, or if the invoice has no remaining balance (already
-  // paid) — never blocks sending the invoice itself.
+  // STRIPE-ONLY: emailed invoices must carry a Stripe payment link and
+  // NOTHING from QuickBooks. Generate a fresh Stripe link for the
+  // remaining balance every send. If Stripe fails, we send with NO pay
+  // button rather than silently falling back to a QuickBooks link.
+  let stripePayLink = '';
   try {
     if (conFunctions && (inv.total || 0) > (inv.amtPaid || 0)) {
       const createLink = conFunctions.httpsCallable('createStripePaymentLink');
       const result = await createLink({ companyId: currentCompanyId, jobId, invoiceId: invId });
-      if (result.data?.url) inv.paymentLink = result.data.url;
+      if (result.data?.url) stripePayLink = result.data.url;
     }
   } catch (e) {
-    console.warn('Stripe payment link not generated (falling back to existing link):', e.message);
+    console.warn('Stripe payment link not generated:', e.message);
+  }
+
+  // If there's a balance owed but Stripe couldn't produce a link, stop
+  // and tell Travis rather than emailing a linkless (or worse, QB-linked)
+  // invoice.
+  if ((inv.total || 0) > (inv.amtPaid || 0) && !stripePayLink) {
+    alert('Could not generate a Stripe payment link for this invoice.\n\n'
+      + 'The invoice was NOT sent (to avoid emailing a QuickBooks link or no link at all).\n\n'
+      + 'Check that Stripe is connected under Settings, then try again.');
+    return;
   }
 
   const customerEmail = job.email || job.clientEmail || '';
@@ -8719,7 +8742,7 @@ async function emailInvoiceToCustomer(jobId, invId) {
   const invNum = inv.number || 'Invoice';
   const total = (inv.total || 0).toLocaleString(undefined, {minimumFractionDigits:2});
   const due = inv.dueDate || '';
-  const payLink = inv.paymentLink || inv.qbPaymentLink || '';
+  const payLink = stripePayLink; // Stripe only — never inv.qbPaymentLink
 
   // Get portal link for invoice viewing
   let portalUrl = '';
