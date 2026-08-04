@@ -1276,8 +1276,13 @@ function conRenderStats() {
   setTile('statContractTotal', 'statContractWrap',
     '$' + Math.round(totalContract).toLocaleString(), '#f59e0b');
 
-  // Avg Job Value
-  const avgJobVal = active.length ? totalContract / active.length : 0;
+  // Avg Job Value — only across jobs that actually have a value yet.
+  // Previously divided by every non-closed job (including brand-new
+  // leads still at $0), which understated the real average — a single
+  // $4,000 job showed as $667 when divided across 6 jobs, 5 of which
+  // had no estimate value at all yet.
+  const jobsWithValue = active.filter(j => getJobValue(j) > 0);
+  const avgJobVal = jobsWithValue.length ? totalContract / jobsWithValue.length : 0;
   const ajvColor = avgJobVal >= 8000 ? '#1dbb87' : avgJobVal >= 3000 ? '#f59e0b' : '#ef5350';
   setTile('statAvgJobVal', 'statAvgJobValTile',
     avgJobVal ? '$' + Math.round(avgJobVal).toLocaleString() : '—', ajvColor);
@@ -11829,8 +11834,8 @@ function fileToBase64(file) {
 
 function promptDocCategory() {
   return new Promise(resolve => {
-    const cats = ['Contract','Permit','Plans & Drawings','Inspection','Insurance','Invoice','Change Order','Photo','Other'];
-    const choice = window.prompt('Select category: 1.Contract 2.Permit 3.Plans 4.Inspection 5.Insurance 6.Invoice 7.Change Order 8.Photo 9.Other - Enter number:', '9');
+    const cats = ['Contract','Permit','Plans & Drawings','Inspection','Insurance','Invoice','Change Order','Receipt','Photo','Other'];
+    const choice = window.prompt('Select category: 1.Contract 2.Permit 3.Plans 4.Inspection 5.Insurance 6.Invoice 7.Change Order 8.Receipt 9.Photo 10.Other - Enter number:', '10');
     const idx = parseInt(choice) - 1;
     resolve(cats[idx] || 'Other');
   });
