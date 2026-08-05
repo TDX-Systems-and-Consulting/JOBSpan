@@ -16893,7 +16893,100 @@ function deleteSubgroup(groupId, subId) {
 }
 
 // ── ITEM MODAL ──
+// ── Full-catalog search for the Add Item modal ──
+// Smart Add's own search (wizardFilterItems) only searches within
+// whatever ONE trade the wizard has drilled into — real problem
+// reported: "caulk windows" IS in the catalog, just filed under
+// Painting trade, invisible while working under Doors & Windows.
+// This flattens the entire CATALOG_DATA (every trade) into one
+// searchable index, built once and cached, so a search here finds an
+// item regardless of which trade it's filed under.
+let _flatCatalogIndex = null;
+function getFlatCatalogIndex() {
+  if (_flatCatalogIndex) return _flatCatalogIndex;
+  _flatCatalogIndex = [];
+  Object.keys(CATALOG_DATA).forEach(trade => {
+    (CATALOG_DATA[trade] || []).forEach(item => {
+      _flatCatalogIndex.push({
+        name: item.name,
+        trade: item.costCodeName || trade,
+        materials: item.materials || null,
+        labor: item.labor || null,
+      });
+    });
+  });
+  return _flatCatalogIndex;
+}
+
+// Same multi-word AND matching as wizardFilterItems, just across the
+// flattened cross-trade index instead of one trade's item list.
+function filterEstItemCatalogSearch() {
+  const input = document.getElementById('estItemCatalogSearch');
+  const resultsEl = document.getElementById('estItemCatalogResults');
+  if (!input || !resultsEl) return;
+  const q = input.value.toLowerCase().trim();
+  if (!q) { resultsEl.innerHTML = ''; return; }
+  const words = q.split(/\s+/).filter(Boolean);
+  const index = getFlatCatalogIndex();
+  const matches = index.filter(i => {
+    const name = i.name.toLowerCase();
+    return words.every(w => name.includes(w));
+  }).slice(0, 15); // cap — a broad query like "labor" could match hundreds
+
+  if (!matches.length) {
+    resultsEl.innerHTML = '<div class="small muted" style="padding:8px;font-style:italic">No matches in the catalog.</div>';
+    return;
+  }
+  resultsEl.innerHTML = matches.map((m, i) => {
+    const hasMat = !!m.materials, hasLab = !!m.labor;
+    const priceStr = hasMat ? '$' + Number(m.materials.unitCost||0).toFixed(2) : (hasLab ? '$' + Number(m.labor.unitCost||0).toFixed(2) : '');
+    return `<div onclick="selectEstItemCatalogResult(${i})" style="padding:8px 10px;border-radius:8px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:8px" onmouseover="this.style.background='rgba(217,119,6,.15)'" onmouseout="this.style.background='transparent'">
+      <div style="min-width:0">
+        <div style="font-size:.84rem;font-weight:600;color:#eaf0fb;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(m.name)}</div>
+        <div style="font-size:.7rem;color:var(--amber)">${esc(m.trade)}${hasMat&&hasLab?' · materials + labor':hasLab?' · labor':' · materials'}</div>
+      </div>
+      <div style="font-size:.82rem;color:var(--muted);white-space:nowrap;flex-shrink:0">${priceStr}</div>
+    </div>`;
+  }).join('');
+  // Stash the matches (not just indices) so the click handler doesn't
+  // need to re-run the search/filter to know what was clicked.
+  window._estItemCatalogMatches = matches;
+}
+window.filterEstItemCatalogSearch = filterEstItemCatalogSearch;
+
+// Prefills the existing manual-entry fields from the chosen catalog
+// entry rather than adding directly — keeps ONE save path (the
+// existing Save Item button/validation), search is just a faster way
+// to fill the form instead of typing everything by hand. Uses the
+// materials side by default when both exist; if the item is
+// labor-only (e.g. "Caulk Labor"), uses that instead. Doesn't
+// silently drop the other side — flags it in a note so nothing about
+// this catalog entry gets lost, just not auto-added as a second line.
+function selectEstItemCatalogResult(i) {
+  const m = (window._estItemCatalogMatches || [])[i];
+  if (!m) return;
+  const primary = m.materials || m.labor;
+  const isLaborPrimary = !m.materials && !!m.labor;
+  const setVal = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+  setVal('estItemDesc', primary.desc || m.name);
+  setVal('estItemUnit', primary.unit || 'ea');
+  setVal('estItemUnitCost', primary.unitCost || '');
+  document.getElementById('estItemCostType').value = isLaborPrimary ? 'Labor' : 'Materials';
+  onEstItemCostTypeChange();
+  if (m.materials && m.labor) {
+    setVal('estItemNotes', 'Catalog also has a labor line for this item ("' + m.labor.desc + '") — add it separately if needed.');
+  }
+  document.getElementById('estItemCatalogSearch').value = '';
+  document.getElementById('estItemCatalogResults').innerHTML = '';
+  calcEstItemPreview();
+}
+window.selectEstItemCatalogResult = selectEstItemCatalogResult;
+
 function openAddEstItemModal(itemId, groupId, subgroupId, subSubgroupId) {
+  const catSearchEl = document.getElementById('estItemCatalogSearch');
+  const catResultsEl = document.getElementById('estItemCatalogResults');
+  if (catSearchEl) catSearchEl.value = '';
+  if (catResultsEl) catResultsEl.innerHTML = '';
   _editingEstItemId = itemId || null;
   _editingGroupId = groupId || null;
   _editingSubgroupId = subgroupId || null;
