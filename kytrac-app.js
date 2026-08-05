@@ -16439,6 +16439,30 @@ function getPaymentScheduleRows(paymentSchedule, grandTotal) {
     }
   }
   if (!stages) return [];
+
+  // Proposal-specific wording: any stage genuinely labeled "Progress
+  // Payment" (with or without a trailing number) gets a construction-
+  // completion milestone attached — e.g. "Progress Payment 1 due upon
+  // 50% completion". Deposit, Final, "Materials & Mobilization", and
+  // custom schedules ("Payment N") are untouched by design — Travis
+  // confirmed that wording is already correct as-is; this only applies
+  // to stages that are actually progress payments. Scoped to THIS
+  // function (the proposal renderer) specifically, not
+  // resolveScheduleStages() itself, since the invoice stage-picker and
+  // estimate importer use that shared resolver too and don't need this
+  // more verbose customer-facing phrasing.
+  //
+  // Completion milestones are evenly spaced by halving the remaining
+  // distance to 100% for each successive progress stage: 50%, 75%,
+  // 87.5%, ... -- matches the given example (1st → 50%, 2nd → 75%)
+  // and generalizes cleanly to schedules with 3+ progress payments.
+  const progressIdxs = stages.reduce((arr, s, i) => { if (/^Progress Payment(\s\d+)?$/.test(s.label)) arr.push(i); return arr; }, []);
+  progressIdxs.forEach((idx, n) => {
+    const completionPct = Math.round((100 - 100 / Math.pow(2, n + 1)) * 10) / 10;
+    const num = progressIdxs.length > 1 ? ' ' + (n + 1) : '';
+    stages[idx].label = `Progress Payment${num} due upon ${completionPct}% completion`;
+  });
+
   return stages.map(s => ({ label: s.label, pct: s.pct, amount: grandTotal * (s.pct / 100) }));
 }
 
