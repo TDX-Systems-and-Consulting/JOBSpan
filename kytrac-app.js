@@ -21846,19 +21846,32 @@ async function wizardAddToEstimate() {
           .collection('items').add(matData)
       );
     }
-    // Always add a labor line — $100/hr per man, qty = number of men
-    {
-      const laborMarkup = getDefaultMarkupForCostType('Labor');
-      const laborUnitCost = 100;
+    // Labor: use the catalog's REAL labor data when it exists (many
+    // items genuinely have accurate install-labor pricing baked in —
+    // e.g. "Labor to install Deadbolt" at $25/hr). Previously this
+    // block ran UNCONDITIONALLY regardless of item.labor, fabricating
+    // a blind $100/hr guess on top of every single item added —
+    // including subcontractor flat-fee services (e.g. a cleaning
+    // company's quote) where that "materials" line already represents
+    // the whole job, labor included. Bolting a fake labor line onto
+    // those double-counted labor and produced a wrong total. Now: real
+    // labor data if the catalog has it, otherwise none at all — no
+    // more guessing. If a specific item genuinely needs a separate
+    // labor line the catalog doesn't have, add one manually via + Item.
+    if (item.labor) {
+      const labUnitCost = item.labor.unitCost || 0;
+      const labUnitPrice = item.labor.unitPrice || 0;
       const labData = {
-        desc: 'Labor - ' + item.name,
-        qty: 1,
-        unit: 'men',
+        desc: item.labor.desc || ('Labor - ' + item.name),
+        qty: item.labor.qty || 1,
+        unit: item.labor.unit || 'hr',
         costType: 'Labor',
-        unitCost: laborUnitCost,
-        markup: laborMarkup,
-        unitPrice: laborUnitCost * (1 + laborMarkup / 100),
-        notes: 'Change qty to number of men on this task',
+        unitCost: labUnitCost,
+        markup: (labUnitCost > 0 && labUnitPrice > 0)
+          ? Math.round((labUnitPrice / labUnitCost - 1) * 100)
+          : getDefaultMarkupForCostType('Labor'),
+        unitPrice: labUnitPrice,
+        notes: '',
         order: order++,
         createdAt: firebase.firestore.FieldValue.serverTimestamp()
       };
