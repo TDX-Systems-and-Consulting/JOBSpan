@@ -2599,18 +2599,34 @@ function applyJobFinancialsDisplay(job, acOverride) {
   setFin('fbarCollected', collected);
   setFin('fbarBalance', balance);
   setFin('fbarCostComplete', costToComplete);
-  setFin('fbarProfit', projProfit);
+  // fbarProfit's color was hardcoded green (#a3f2d2) directly in the
+  // HTML template and never touched again -- setFin() only ever set
+  // .textContent. A genuine loss (e.g. -$60,011 on a job with no
+  // approved price yet but real projected costs) displayed in green,
+  // which reads as "good" when it's the opposite. Same 3-way
+  // green/red/neutral-amber pattern already used correctly elsewhere
+  // in this file (e.g. Financials Hub net cash position).
+  const fbarP = document.getElementById('fbarProfit');
+  if (fbarP) { fbarP.textContent = fmt(projProfit); fbarP.style.color = projProfit > 0 ? '#a3f2d2' : projProfit < 0 ? '#f87171' : '#f59e0b'; }
   const fbarM = document.getElementById('fbarMargin');
-  if (fbarM) { fbarM.textContent = projMargin.toFixed(1) + '%'; fbarM.style.color = projMargin > 0 ? '#a3f2d2' : '#f87171'; }
+  // Was `projMargin > 0` -- a genuinely flat 0% margin (not a loss,
+  // just break-even or no revenue basis yet) fell into the red branch
+  // right alongside real negative margins. >= 0 treats true zero as
+  // neutral instead of alarming.
+  if (fbarM) { fbarM.textContent = projMargin.toFixed(1) + '%'; fbarM.style.color = projMargin > 0 ? '#a3f2d2' : projMargin < 0 ? '#f87171' : '#f59e0b'; }
 
   // Dashboard right panel
   setFin('dashFinApproved', cv);
   setFin('dashFinCollected', collected);
   setFin('dashFinBalance', balance);
   setFin('dashFinCost', bestCost);
-  setFin('dashFinProfit', projProfit);
+  // Same hardcoded-green bug as fbarProfit above -- this panel's Proj.
+  // Profit and Margin were also frozen green (#a3f2d2) in the HTML,
+  // never updated for a real loss.
+  const dashP = document.getElementById('dashFinProfit');
+  if (dashP) { dashP.textContent = fmt(projProfit); dashP.style.color = projProfit > 0 ? '#a3f2d2' : projProfit < 0 ? '#f87171' : '#f59e0b'; }
   const dashM = document.getElementById('dashFinMargin');
-  if (dashM) dashM.textContent = projMargin.toFixed(1) + '%';
+  if (dashM) { dashM.textContent = projMargin.toFixed(1) + '%'; dashM.style.color = projMargin > 0 ? '#a3f2d2' : projMargin < 0 ? '#f87171' : '#f59e0b'; }
 
   // Financials tab est/actual block
   setFin('finContract', cv);
