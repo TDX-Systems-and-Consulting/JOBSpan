@@ -4612,6 +4612,28 @@ function switchDetailTab(tab, btn) {
     const el = document.getElementById(key);
     if (el) el.style.display = t === tab ? 'block' : 'none';
   });
+  // The big job-dashboard header (job number/status/name/contact/action
+  // buttons) and the financial stat bar are genuinely useful on most
+  // tabs, but on Estimate specifically they push the actual working
+  // area (KPIs, Smart Add, the line-item tree) below the fold —
+  // exactly the "I have to scroll past a dashboard to get to my
+  // estimate" complaint. Hide both for Estimate only; every other tab
+  // keeps them. Estimate gets its own compact header instead (job
+  // number/name/status + a way back), populated from the same data
+  // right below, so context isn't lost.
+  const headerBlock = document.getElementById('jobDetailHeaderBlock');
+  const finBar = document.getElementById('jobFinBar');
+  const isEstimate = tab === 'estimate';
+  if (headerBlock) headerBlock.style.display = isEstimate ? 'none' : '';
+  if (finBar) finBar.style.display = isEstimate ? 'none' : 'grid';
+  if (isEstimate) {
+    const setTxt = (id, srcId) => { const el = document.getElementById(id); const src = document.getElementById(srcId); if (el && src) el.textContent = src.textContent; };
+    setTxt('estCompactJobNum', 'detailJobNum');
+    setTxt('estCompactJobName', 'detailJobName');
+    const statusEl = document.getElementById('estCompactStatus');
+    const statusSrc = document.getElementById('detailStatusBadge');
+    if (statusEl && statusSrc) statusEl.textContent = statusSrc.value;
+  }
   document.querySelectorAll('#jobDetailModal .con-subtab').forEach(b => b.classList.remove('active'));
   if (btn) {
     btn.classList.add('active');
