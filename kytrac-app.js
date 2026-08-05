@@ -4623,9 +4623,15 @@ function switchDetailTab(tab, btn) {
   // right below, so context isn't lost.
   const headerBlock = document.getElementById('jobDetailHeaderBlock');
   const finBar = document.getElementById('jobFinBar');
+  const tabRow = document.getElementById('jobDetailTabRow');
   const isEstimate = tab === 'estimate';
   if (headerBlock) headerBlock.style.display = isEstimate ? 'none' : '';
   if (finBar) finBar.style.display = isEstimate ? 'none' : 'grid';
+  // Tab row too — with the compact header's own "← Dashboard" button
+  // providing a way back, the full 15-tab row is just clutter while
+  // heads-down building an estimate. One click on "← Dashboard" (or
+  // any nav action that lands back on another tab) restores it.
+  if (tabRow) tabRow.style.display = isEstimate ? 'none' : '';
   if (isEstimate) {
     const setTxt = (id, srcId) => { const el = document.getElementById(id); const src = document.getElementById(srcId); if (el && src) el.textContent = src.textContent; };
     setTxt('estCompactJobNum', 'detailJobNum');
