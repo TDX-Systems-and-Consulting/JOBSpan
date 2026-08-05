@@ -9210,64 +9210,60 @@ async function emailInvoiceToCustomer(jobId, invId) {
 
   const bodyText = `Hi ${customerName},\n\nInvoice ${invNum} for $${total} is ready.\n${due ? 'Due: ' + due + '\n' : ''}${payLink ? '\nPay online: ' + payLink : ''}\n${portalUrl ? '\nView portal: ' + portalUrl : ''}${remittanceText()}`;
 
-  // Show quick email dialog
-  const existing = document.getElementById('invoiceEmailModal');
-  if (existing) existing.remove();
+  // Same preview-before-send pattern as sendProposalViaEmail(): render
+  // the ACTUAL invoice document — the thing a customer clicking "Pay
+  // Now"/viewing the portal really sees — into the shared preview
+  // modal's iframe, not just the wrapper email text. Was previously a
+  // small custom modal with only a "Customer Email" field and no way
+  // to see what was actually about to be sent.
+  let otherInvoices = [];
+  try {
+    const allSnap = await coll('jobs').doc(jobId).collection('invoices').get();
+    allSnap.forEach(d => { if (d.id !== invId) otherInvoices.push(d.data()); });
+  } catch (e) {}
+  const invoiceHtml = renderInvoiceDocumentHtml(inv, job, otherInvoices, false);
+  document.getElementById('emailPreviewProposalFrame').srcdoc = invoiceHtml;
 
-  const modal = document.createElement('div');
-  modal.id = 'invoiceEmailModal';
-  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px';
-  modal.innerHTML = `
-    <div style="background:#0d1f35;border:1px solid var(--line);border-radius:16px;padding:28px;max-width:480px;width:100%">
-      <div style="font-size:1.1rem;font-weight:800;color:#eaf0fb;margin-bottom:4px">✉️ Email Invoice ${invNum}</div>
-      <div style="font-size:.8rem;color:var(--muted);margin-bottom:20px">$${total} · ${customerName}</div>
-      <div style="margin-bottom:14px">
-        <label style="font-size:.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-weight:700;display:block;margin-bottom:6px">Customer Email</label>
-        <input id="invEmailTo" value="${esc(customerEmail)}" placeholder="customer@email.com"
-          style="width:100%;padding:9px 12px;border-radius:8px;border:1px solid var(--line);background:rgba(8,18,36,.6);color:#eaf0fb;font-size:.9rem;box-sizing:border-box">
-      </div>
-      <div style="display:flex;gap:10px;flex-wrap:wrap">
-        <button id="invEmailSendBtn" onclick="doSendInvoiceEmail('${jobId}','${invId}')" class="btn-amber" style="flex:1;padding:10px;font-weight:700">✉️ Send Invoice</button>
-        <button onclick="document.getElementById('invoiceEmailModal').remove()" class="btn" style="padding:10px">Cancel</button>
-      </div>
-    </div>`;
-  modal.dataset.subject = subject;
-  modal.dataset.bodyHtml = bodyHtml;
-  modal.dataset.bodyText = bodyText;
-  modal.dataset.customerName = customerName;
-  document.body.appendChild(modal);
+  _pendingInvoiceEmail = { jobId, invId, to: customerEmail, toName: customerName, subject, bodyHtml, bodyText };
+  document.getElementById('emailPreviewTo').textContent = customerEmail + (customerName ? ' (' + customerName + ')' : '');
+  document.getElementById('emailPreviewSubject').textContent = subject;
+  document.getElementById('emailPreviewBody').innerHTML = bodyHtml;
+
+  // The shared modal's Confirm button is hardcoded in HTML to call the
+  // proposal's confirm function — repoint it here rather than touch
+  // that markup, so the proposal flow is completely undisturbed.
+  const confirmBtn = document.getElementById('emailPreviewConfirmBtn');
+  if (confirmBtn) confirmBtn.onclick = confirmSendInvoiceEmailFromPreview;
+
+  kOpen('emailPreviewModal');
 }
 window.emailInvoiceToCustomer = emailInvoiceToCustomer;
 
-async function doSendInvoiceEmail(jobId, invId) {
-  const modal = document.getElementById('invoiceEmailModal');
-  const to = document.getElementById('invEmailTo')?.value.trim();
-  if (!to) { alert('Please enter an email address.'); return; }
+let _pendingInvoiceEmail = null;
 
-  const btn = document.getElementById('invEmailSendBtn');
+async function confirmSendInvoiceEmailFromPreview() {
+  if (!_pendingInvoiceEmail) return;
+  const { jobId, invId, to, toName, subject, bodyHtml, bodyText } = _pendingInvoiceEmail;
+  if (!to) { alert('This job has no customer email on file. Add one in the job details first.'); return; }
+
+  const btn = document.getElementById('emailPreviewConfirmBtn');
   if (btn) { btn.textContent = 'Sending…'; btn.disabled = true; }
 
   try {
     const sendEmail = conFunctions.httpsCallable('sendJobspanEmail');
-    await sendEmail({
-      to,
-      toName: modal?.dataset.customerName || '',
-      subject: modal?.dataset.subject || 'Your Invoice',
-      bodyHtml: modal?.dataset.bodyHtml || '',
-      bodyText: modal?.dataset.bodyText || '',
-      docType: 'invoice',
-      jobId
-    });
-    modal?.remove();
+    await sendEmail({ to, toName, subject, bodyHtml, bodyText, docType: 'invoice', jobId });
+    kClose('emailPreviewModal');
     alert(`✅ Invoice sent to ${to}`);
     logInvoiceActivity(jobId, 'invoice_emailed', `Invoice emailed to ${to}`);
     loadJobInvoices(jobId);
-  } catch(e) {
-    if (btn) { btn.textContent = '✉️ Send Invoice'; btn.disabled = false; }
+  } catch (e) {
     alert('Email send failed: ' + e.message);
+  } finally {
+    if (btn) { btn.textContent = '✅ Confirm & Send'; btn.disabled = false; }
+    _pendingInvoiceEmail = null;
   }
 }
-window.doSendInvoiceEmail = doSendInvoiceEmail;
+window.confirmSendInvoiceEmailFromPreview = confirmSendInvoiceEmailFromPreview;
 
 // ════════════════════════════════════════════════════
 // ── LIEN WAIVER SYSTEM ──
@@ -9926,9 +9922,8 @@ function updateSidebarUserInfo() {
 
 // ── Patch printInvoiceData to use company profile ──
 const _origPrintInvoiceData = printInvoiceData;
-function printInvoiceData(inv, job, otherInvoices) {
+function renderInvoiceDocumentHtml(inv, job, otherInvoices, forPrint) {
   const co = companyProfile;
-  const win = window.open('', '_blank');
   const fmt = v => '$' + Number(v||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
 
   // Determine if this is a payment schedule invoice
@@ -9969,7 +9964,7 @@ function printInvoiceData(inv, job, otherInvoices) {
     '</div></div>'
   ) : '';
 
-  win.document.write('<!DOCTYPE html><html><head><title>Invoice ' + (inv.number||'') + '</title>' +
+  return '<!DOCTYPE html><html><head><title>Invoice ' + (inv.number||'') + '</title>' +
     '<style>' +
     '@import url(\'https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap\');' +
     '* { box-sizing: border-box; }' +
@@ -10041,7 +10036,16 @@ function printInvoiceData(inv, job, otherInvoices) {
     (co.companyName||'') + (co.phone?' · '+co.phone:'') + (co.email?' · '+co.email:'') +
     '<br>Powered by JOBSMETRIX Construction Management' +
     '</div>' +
-    '<script>window.print();<\/script></body></html>');
+    (forPrint ? '<script>window.print();<\/script>' : '') + '</body></html>';
+}
+
+// Thin wrapper: opens the print popup and writes the same HTML the
+// email preview iframe renders via renderInvoiceDocumentHtml() above
+// -- one source of truth for what an invoice document actually looks
+// like, whether it's being printed or previewed before emailing.
+function printInvoiceData(inv, job, otherInvoices) {
+  const win = window.open('', '_blank');
+  win.document.write(renderInvoiceDocumentHtml(inv, job, otherInvoices, true));
   win.document.close();
 }
 window.printInvoiceData = printInvoiceData;
