@@ -16483,6 +16483,7 @@ function renderSubgroupHTML(groupId, sub) {
         <button onclick="toggleSubgroupVisibility('${groupId}','${sub.id}')" class="btn" style="padding:1px 6px;font-size:.68rem" title="${sub.visibleToCustomer===false?'Hidden from customer - click to show':'Visible to customer - click to hide'}">${sub.visibleToCustomer===false?'🚫':'👁️'}</button>
         <button onclick="openAddSubSubgroupModal('${groupId}','${sub.id}')" class="btn" style="padding:1px 6px;font-size:.68rem">+ Sub</button>
         <button onclick="openAddEstItemModal(null,'${groupId}','${sub.id}')" class="btn" style="padding:1px 6px;font-size:.68rem">+ Item</button>
+        <button onclick="duplicateSubgroup('${groupId}','${sub.id}')" class="btn" style="padding:1px 6px;font-size:.68rem" title="Duplicate this subgroup and all its line items">⧉ Duplicate</button>
         <button onclick="openEditSubgroupModal('${groupId}','${sub.id}')" class="btn" style="padding:1px 6px;font-size:.68rem">✏️</button>
         <button onclick="deleteSubgroup('${groupId}','${sub.id}')" class="btn btn-danger" style="padding:1px 6px;font-size:.68rem">✕</button>
       </div>
@@ -16716,14 +16717,104 @@ function updateGroup(groupId, name) {
     }).catch(e => alert('Error: ' + e.message));
 }
 
-function deleteGroup(groupId) {
+// ── Undo for accidental deletes (Group / Subgroup / Sub-subgroup / Item) ──
+// Two problems solved at once here:
+//
+// 1. Deleting a Group or Subgroup was a single doc.delete() — Firestore
+//    NEVER cascades deletes to subcollections automatically. That left
+//    every item and nested sub-subgroup underneath silently orphaned in
+//    Firestore forever: invisible in the UI, but still real data sitting
+//    there (and still billed for). Same bug class as the earlier
+//    job-deletion issue, just one level down in the estimate tree.
+// 2. No way to recover from an accidental delete at all.
+//
+// snapshotSubtree/deleteSubtree/restoreSubtree below are generic across
+// Group/Subgroup/Sub-subgroup, since all three share the same shape
+// (own data + an items collection + a nested subgroups collection).
+
+async function snapshotSubtree(ref) {
+  const doc = await ref.get();
+  const data = doc.exists ? doc.data() : null;
+  const itemsSnap = await ref.collection('items').get().catch(() => null);
+  const items = [];
+  if (itemsSnap) itemsSnap.forEach(d => items.push({ id: d.id, data: d.data() }));
+  const subsSnap = await ref.collection('subgroups').get().catch(() => null);
+  const subgroups = [];
+  if (subsSnap) {
+    for (const subDoc of subsSnap.docs) {
+      subgroups.push(await snapshotSubtree(ref.collection('subgroups').doc(subDoc.id)));
+    }
+  }
+  return { id: ref.id, data, items, subgroups };
+}
+
+async function deleteSubtree(ref) {
+  const itemsSnap = await ref.collection('items').get().catch(() => null);
+  if (itemsSnap) await Promise.all(itemsSnap.docs.map(d => d.ref.delete()));
+  const subsSnap = await ref.collection('subgroups').get().catch(() => null);
+  if (subsSnap) await Promise.all(subsSnap.docs.map(d => deleteSubtree(ref.collection('subgroups').doc(d.id))));
+  await ref.delete();
+}
+
+async function restoreSubtree(ref, snapshot) {
+  if (!snapshot.data) return;
+  await ref.set(snapshot.data);
+  for (const it of snapshot.items) {
+    await ref.collection('items').doc(it.id).set(it.data);
+  }
+  for (const sub of snapshot.subgroups) {
+    await restoreSubtree(ref.collection('subgroups').doc(sub.id), sub);
+  }
+}
+
+// The single pending undo — captured on delete, cleared once used or
+// once a new delete happens (only ever offers undo for the MOST recent
+// delete, not a full history; matches what Jason actually asked for).
+let _pendingUndo = null;
+
+function showUndoToast(label) {
+  document.getElementById('undoToast')?.remove();
+  const toast = document.createElement('div');
+  toast.id = 'undoToast';
+  toast.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#0d1f35;border:1px solid var(--amber-border);border-radius:12px;padding:12px 16px;display:flex;align-items:center;gap:14px;box-shadow:0 12px 32px rgba(0,0,0,.5);z-index:999999;font-size:.86rem';
+  toast.innerHTML = `<span style="color:#eaf0fb">${esc(label)} deleted.</span>
+    <button onclick="performUndo()" style="background:var(--amber);border:none;color:#fff;font-weight:800;padding:6px 14px;border-radius:8px;cursor:pointer;font-size:.84rem">↩ Undo</button>
+    <button onclick="document.getElementById('undoToast')?.remove()" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:1rem;padding:0 2px">✕</button>`;
+  document.body.appendChild(toast);
+  // Auto-dismiss — the undo option is a safety net for the moment right
+  // after a slip, not a permanent history to dig through later.
+  setTimeout(() => { if (document.getElementById('undoToast') === toast) toast.remove(); }, 12000);
+}
+
+async function performUndo() {
+  document.getElementById('undoToast')?.remove();
+  if (!_pendingUndo) return;
+  const { ref, snapshot } = _pendingUndo;
+  _pendingUndo = null;
+  try {
+    await restoreSubtree(ref, snapshot);
+    loadEstimate(conCurrentJobId);
+  } catch (e) {
+    alert('Undo failed: ' + e.message);
+  }
+}
+window.performUndo = performUndo;
+
+async function deleteGroup(groupId) {
   if (!confirm('Delete this group and ALL its items?')) return;
-  coll('jobs').doc(conCurrentJobId).collection('estimateGroups').doc(groupId)
-    .delete().then(() => {
-      estGroups = estGroups.filter(g => g.id !== groupId);
-      renderEstimateTree();
-      updateEstimateSummary();
-    }).catch(e => alert('Error: ' + e.message));
+  const ref = coll('jobs').doc(conCurrentJobId).collection('estimateGroups').doc(groupId);
+  const group = estGroups.find(g => g.id === groupId);
+  try {
+    const snapshot = await snapshotSubtree(ref);
+    await deleteSubtree(ref);
+    estGroups = estGroups.filter(g => g.id !== groupId);
+    renderEstimateTree();
+    updateEstimateSummary();
+    _pendingUndo = { ref, snapshot };
+    showUndoToast('Group "' + (group?.name || '') + '"');
+  } catch (e) {
+    alert('Error: ' + e.message);
+  }
 }
 
 // ── SUBGROUP CRUD ──
@@ -16865,31 +16956,101 @@ function openEditSubSubgroupModal(groupId, subgroupId, subSubId) {
 }
 window.openEditSubSubgroupModal = openEditSubSubgroupModal;
 
-function deleteSubSubgroup(groupId, subgroupId, subSubId) {
+async function deleteSubSubgroup(groupId, subgroupId, subSubId) {
   if (!confirm('Delete this sub-subgroup and all its items?')) return;
-  coll('jobs').doc(conCurrentJobId).collection('estimateGroups')
+  const ref = coll('jobs').doc(conCurrentJobId).collection('estimateGroups')
     .doc(groupId).collection('subgroups').doc(subgroupId)
-    .collection('subgroups').doc(subSubId).delete()
-    .then(() => {
-      const group = estGroups.find(g => g.id === groupId);
-      const sub = group?.subgroups?.find(s => s.id === subgroupId);
-      if (sub) sub.subgroups = (sub.subgroups||[]).filter(ss => ss.id !== subSubId);
-      renderEstimateTree();
-      updateEstimateSummary();
-    }).catch(e => alert('Error: ' + e.message));
+    .collection('subgroups').doc(subSubId);
+  const group = estGroups.find(g => g.id === groupId);
+  const sub = group?.subgroups?.find(s => s.id === subgroupId);
+  const subsub = sub?.subgroups?.find(ss => ss.id === subSubId);
+  try {
+    const snapshot = await snapshotSubtree(ref);
+    await deleteSubtree(ref);
+    if (sub) sub.subgroups = (sub.subgroups||[]).filter(ss => ss.id !== subSubId);
+    renderEstimateTree();
+    updateEstimateSummary();
+    _pendingUndo = { ref, snapshot };
+    showUndoToast('Sub-subgroup "' + (subsub?.name || '') + '"');
+  } catch (e) {
+    alert('Error: ' + e.message);
+  }
 }
 window.deleteSubSubgroup = deleteSubSubgroup;
 
-function deleteSubgroup(groupId, subId) {
+// Clones a subgroup (all its line items, and any nested sub-subgroups
+// with THEIR items too) into a new subgroup in the same group. Built
+// for the exact case of "Bathroom 1" and "Bathroom 2" needing the same
+// scope of work — duplicate once, then just rename and tweak the
+// specifics instead of rebuilding line-by-line.
+async function duplicateSubgroup(groupId, subId) {
+  const group = estGroups.find(g => g.id === groupId);
+  const sub = group?.subgroups?.find(s => s.id === subId);
+  if (!sub) return;
+
+  const newName = prompt('Name for the duplicate:', sub.name + ' (Copy)');
+  if (!newName || !newName.trim()) return;
+
+  try {
+    const baseRef = coll('jobs').doc(conCurrentJobId).collection('estimateGroups').doc(groupId);
+    const newSubRef = await baseRef.collection('subgroups').add({
+      name: newName.trim(),
+      order: group.subgroups.length,
+      visibleToCustomer: sub.visibleToCustomer !== false,
+      scopeNotes: sub.scopeNotes || '',
+      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+    });
+    const newSubId = newSubRef.id;
+
+    // Copy this subgroup's own line items
+    const itemFields = it => ({
+      desc: it.desc || '', qty: it.qty || 1, unit: it.unit || 'ea',
+      costType: it.costType || 'Labor', unitCost: it.unitCost || 0,
+      markup: it.markup || 0, unitPrice: it.unitPrice || 0,
+      notes: it.notes || '', phase: it.phase || '',
+      order: it.order || 0, createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+    });
+    for (const it of (sub.items || [])) {
+      await baseRef.collection('subgroups').doc(newSubId).collection('items').add(itemFields(it));
+    }
+
+    // Copy any nested sub-subgroups and their items too
+    for (const ss of (sub.subgroups || [])) {
+      const newSsRef = await baseRef.collection('subgroups').doc(newSubId)
+        .collection('subgroups').add({
+          name: ss.name, order: ss.order || 0,
+          createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+        });
+      for (const it of (ss.items || [])) {
+        await baseRef.collection('subgroups').doc(newSubId)
+          .collection('subgroups').doc(newSsRef.id).collection('items').add(itemFields(it));
+      }
+    }
+
+    if (typeof loadEstimate === 'function') loadEstimate(conCurrentJobId);
+  } catch (e) {
+    alert('Error duplicating subgroup: ' + e.message);
+  }
+}
+window.duplicateSubgroup = duplicateSubgroup;
+
+async function deleteSubgroup(groupId, subId) {
   if (!confirm('Delete this subgroup and all its items?')) return;
-  coll('jobs').doc(conCurrentJobId).collection('estimateGroups')
-    .doc(groupId).collection('subgroups').doc(subId)
-    .delete().then(() => {
-      const group = estGroups.find(g => g.id === groupId);
-      if (group) group.subgroups = group.subgroups.filter(s => s.id !== subId);
-      renderEstimateTree();
-      updateEstimateSummary();
-    }).catch(e => alert('Error: ' + e.message));
+  const ref = coll('jobs').doc(conCurrentJobId).collection('estimateGroups')
+    .doc(groupId).collection('subgroups').doc(subId);
+  const group = estGroups.find(g => g.id === groupId);
+  const sub = group?.subgroups?.find(s => s.id === subId);
+  try {
+    const snapshot = await snapshotSubtree(ref);
+    await deleteSubtree(ref);
+    if (group) group.subgroups = group.subgroups.filter(s => s.id !== subId);
+    renderEstimateTree();
+    updateEstimateSummary();
+    _pendingUndo = { ref, snapshot };
+    showUndoToast('Subgroup "' + (sub?.name || '') + '"');
+  } catch (e) {
+    alert('Error: ' + e.message);
+  }
 }
 
 // ── ITEM MODAL ──
@@ -17282,7 +17443,17 @@ function deleteEstItem(itemId, groupId, subgroupId, subSubgroupId) {
   } else {
     colRef = jobRef.collection('estimateGroups').doc(groupId).collection('items');
   }
-  colRef.doc(itemId).delete().then(() => loadEstimate(conCurrentJobId)).catch(e => alert('Error: ' + e.message));
+  const ref = colRef.doc(itemId);
+  ref.get().then(doc => {
+    const itemData = doc.exists ? doc.data() : null;
+    return ref.delete().then(() => {
+      loadEstimate(conCurrentJobId);
+      if (itemData) {
+        _pendingUndo = { ref, snapshot: { id: itemId, data: itemData, items: [], subgroups: [] } };
+        showUndoToast('Line item "' + (itemData.desc || '') + '"');
+      }
+    });
+  }).catch(e => alert('Error: ' + e.message));
 }
 
 function importFromCatalogModal() {
@@ -21303,6 +21474,12 @@ function wizSelectTemplate(templateId) {
         </div>
 
         <div style="margin-bottom:16px">
+          <div style="font-size:.72rem;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:8px">Notes for this batch (optional)</div>
+          <textarea id="wizTmplNotes" placeholder="e.g. Guest bathroom — applies to every line added below" style="width:100%;box-sizing:border-box;min-height:52px;padding:9px 12px;border-radius:8px;border:1px solid var(--line);background:rgba(8,18,36,.6);color:#eaf0fb;font-size:.84rem;font-family:inherit;resize:vertical"></textarea>
+          <div style="font-size:.68rem;color:var(--muted);margin-top:4px">Added to every line below — saves editing each one individually afterward.</div>
+        </div>
+
+        <div style="margin-bottom:16px">
           <div style="font-size:.72rem;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:8px">Lines to add:</div>
           ${linesHtml}
         </div>
@@ -21328,6 +21505,7 @@ function wizChangeQty(delta) {
 async function wizAddTemplateToEstimate(templateId) {
   const t = window._wizTemplateData;
   const qty = window._wizTemplateQty || 1;
+  const sharedNotes = document.getElementById('wizTmplNotes')?.value.trim() || '';
   if (!t || !conCurrentJobId) return;
   if (!_wizardRoom && !_wizardCategory) {
     alert('Lost track of which room/trade this belongs to. Please close Smart Add and start again from the beginning rather than retrying from here.');
@@ -21373,7 +21551,7 @@ async function wizAddTemplateToEstimate(templateId) {
       unitCost: line.unitCost || 0,
       unitPrice: line.unitPrice || 0,
       markup: line.markup || 0,
-      notes: '',
+      notes: sharedNotes,
       order: order++,
       createdAt: firebase.firestore.FieldValue.serverTimestamp(),
     };
