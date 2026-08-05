@@ -8722,12 +8722,28 @@ function importEstimateToInvoice() {
         const idx = parseInt(choice) - 1;
         if (choice !== null && idx >= 0 && idx < stagePcts.length) {
           const pct = stagePcts[idx];
-          finalLines = combinedLines.map(l => ({
-            ...l,
-            rate: Math.round(l.rate * pct / 100 * 100) / 100
-          }));
+          const stageLabel = stageNames && stageNames[idx]
+            ? stageNames[idx]
+            : (idx === 0 ? 'Deposit' : idx === stagePcts.length - 1 ? 'Final Payment' : 'Progress Payment');
+          // ONE consolidated line for the selected stage, matching the
+          // Proposal's own clean "Total Project Investment / Payment
+          // Schedule" summary — not one line per room/subgroup scaled
+          // down. That itemized breakdown makes sense when billing the
+          // full job (100%, the Cancel path below, is unchanged), but
+          // for a deposit/progress payment the customer just needs to
+          // see what this specific payment covers, not a room-by-room
+          // accounting of a percentage of unfinished work.
+          const grandTotal = combinedLines.reduce((s, l) => s + (l.qty || 1) * (l.rate || 0), 0);
+          const stageAmount = Math.round(grandTotal * pct / 100 * 100) / 100;
+          const jobData = jobSnap.data();
+          // Prefer the address — job.name is now usually just the
+          // auto-generated job number (JOB-2026-XXX) since job naming
+          // changed earlier, which would make a poor customer-facing
+          // invoice line description on its own.
+          const jobLabel = jobData?.address || jobData?.name || 'Project';
+          finalLines = [{ desc: jobLabel + ' — ' + stageLabel + ' (' + pct + '%)', qty: 1, rate: stageAmount }];
         }
-        // choice === null (Cancel) or invalid entry falls through to full 100% import
+        // choice === null (Cancel) or invalid entry falls through to full 100% import (itemized, unchanged)
       }
 
       _invLineItems = [...finalLines];
