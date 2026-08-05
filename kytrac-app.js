@@ -8696,18 +8696,25 @@ function importEstimateToInvoice() {
         return;
       }
 
-      // Respect the job's saved Payment Schedule (set on the Estimate tab)
-      // instead of always importing 100% — if a multi-stage schedule
-      // exists, ask which stage this invoice is for and scale every line
-      // down accordingly. Single-stage (Full Payment) or no schedule set
-      // imports at 100% same as before.
+      // Whether to show a room-by-room breakdown or one consolidated
+      // line is controlled by the SAME "Itemized (bank/lender request
+      // only)" checkbox the Proposal document already uses
+      // (proposalItemizedToggle) — not by which payment stage was
+      // picked. That's a single, consistent control the user already
+      // has, not something to infer from context.
+      const itemized = !!document.getElementById('proposalItemizedToggle')?.checked;
+
       const jobSnap = await jobRef.get();
-      const schedule = jobSnap.exists ? jobSnap.data().paymentSchedule : null;
+      const jobData = jobSnap.exists ? jobSnap.data() : {};
+      const schedule = jobData.paymentSchedule || null;
       const stages = resolveScheduleStages(schedule);
       const stagePcts = stages.length ? stages.map(s => s.pct) : null;
       const stageNames = stages.length ? stages.map(s => s.label) : null;
+      // Address reads better than job.name on a customer invoice line —
+      // name is usually just the auto-generated job number now.
+      const jobLabel = jobData.address || jobData.name || 'Project';
 
-      let finalLines = combinedLines;
+      let pct = 100, stageLabel = null;
       if (stagePcts) {
         const stageLabels = stagePcts.map((p, i) => {
           const name = stageNames && stageNames[i]
@@ -8721,29 +8728,28 @@ function importEstimateToInvoice() {
         );
         const idx = parseInt(choice) - 1;
         if (choice !== null && idx >= 0 && idx < stagePcts.length) {
-          const pct = stagePcts[idx];
-          const stageLabel = stageNames && stageNames[idx]
+          pct = stagePcts[idx];
+          stageLabel = stageNames && stageNames[idx]
             ? stageNames[idx]
             : (idx === 0 ? 'Deposit' : idx === stagePcts.length - 1 ? 'Final Payment' : 'Progress Payment');
-          // ONE consolidated line for the selected stage, matching the
-          // Proposal's own clean "Total Project Investment / Payment
-          // Schedule" summary — not one line per room/subgroup scaled
-          // down. That itemized breakdown makes sense when billing the
-          // full job (100%, the Cancel path below, is unchanged), but
-          // for a deposit/progress payment the customer just needs to
-          // see what this specific payment covers, not a room-by-room
-          // accounting of a percentage of unfinished work.
-          const grandTotal = combinedLines.reduce((s, l) => s + (l.qty || 1) * (l.rate || 0), 0);
-          const stageAmount = Math.round(grandTotal * pct / 100 * 100) / 100;
-          const jobData = jobSnap.data();
-          // Prefer the address — job.name is now usually just the
-          // auto-generated job number (JOB-2026-XXX) since job naming
-          // changed earlier, which would make a poor customer-facing
-          // invoice line description on its own.
-          const jobLabel = jobData?.address || jobData?.name || 'Project';
-          finalLines = [{ desc: jobLabel + ' — ' + stageLabel + ' (' + pct + '%)', qty: 1, rate: stageAmount }];
         }
-        // choice === null (Cancel) or invalid entry falls through to full 100% import (itemized, unchanged)
+        // choice === null (Cancel) or invalid entry falls through to 100%, no stage label
+      }
+
+      let finalLines;
+      if (itemized) {
+        // Room-by-room breakdown, each line scaled to the chosen %
+        // (100% if no stage was picked).
+        finalLines = combinedLines.map(l => ({ ...l, rate: Math.round(l.rate * pct / 100 * 100) / 100 }));
+      } else {
+        // ONE consolidated line — matches the Proposal's own default
+        // (non-itemized) summary. Covers both "bill the whole job"
+        // (100%, no stage label) and "bill a specific stage" (scaled,
+        // with the stage name in the description) the same way.
+        const grandTotal = combinedLines.reduce((s, l) => s + (l.qty || 1) * (l.rate || 0), 0);
+        const amount = Math.round(grandTotal * pct / 100 * 100) / 100;
+        const desc = stageLabel ? jobLabel + ' — ' + stageLabel + ' (' + pct + '%)' : jobLabel;
+        finalLines = [{ desc, qty: 1, rate: amount }];
       }
 
       _invLineItems = [...finalLines];
