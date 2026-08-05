@@ -8334,6 +8334,9 @@ function resolveScheduleStages(paymentSchedule) {
   if (ps.type === '10/40/25/25') {
     return [{ pct:10, label:'Deposit' }, { pct:40, label:'Materials & Mobilization' }, { pct:25, label:'Progress Payment' }, { pct:25, label:'Final Payment' }];
   }
+  if (ps.type === '35/25/25/15') {
+    return [{ pct:35, label:'Deposit' }, { pct:25, label:'Progress Payment' }, { pct:25, label:'Progress Payment 2' }, { pct:15, label:'Final Payment' }];
+  }
   if (ps.type === 'custom' && Array.isArray(ps.customPcts) && ps.customPcts.length > 1) {
     return ps.customPcts.map((pct, i) => {
       const isLast = i === ps.customPcts.length - 1;
@@ -16412,26 +16415,30 @@ window.savePaymentSchedule = savePaymentSchedule;
 // array of { label, pct, amount } rows ready to print. Returns [] for
 // 'none' or when there's nothing usable to show — printProposal skips the
 // whole table in that case rather than printing an empty box.
+//
+// Now built on resolveScheduleStages() — the same shared resolver the
+// invoice picker and estimate importer already use — instead of
+// maintaining its own separate hardcoded list of schedule types. That
+// second list had already drifted out of sync once (missing
+// 10/40/25/25's proper labels) and would have silently missed every
+// new schedule type added going forward, including this one
+// (35/25/25/15), if left as its own copy.
 function getPaymentScheduleRows(paymentSchedule, grandTotal) {
   const ps = paymentSchedule || { type: 'none' };
   let stages = null;
   if (ps.type === 'full') {
-    stages = [['Payment in Full (Due Upon Completion)', 100]];
-  } else if (ps.type === '50/50') {
-    stages = [['Deposit', 50], ['Final Payment (Due Upon Completion)', 50]];
-  } else if (ps.type === '50/25/25') {
-    stages = [['Deposit', 50], ['Progress Payment', 25], ['Final Payment (Due Upon Completion)', 25]];
-  } else if (ps.type === '10/40/25/25') {
-    stages = [['Deposit', 10], ['Materials & Mobilization', 40], ['Progress Payment', 25], ['Final Payment (Due Upon Completion)', 25]];
-  } else if (ps.type === 'custom' && Array.isArray(ps.customPcts) && ps.customPcts.length) {
-    stages = ps.customPcts.map((pct, i) => {
-      const isLast = i === ps.customPcts.length - 1;
-      const label = i === 0 ? 'Deposit' : (isLast ? 'Final Payment (Due Upon Completion)' : `Payment ${i + 1}`);
-      return [label, pct];
-    });
+    stages = [{ label: 'Due On Completion (DOC)', pct: 100 }];
+  } else {
+    const resolved = resolveScheduleStages(ps);
+    if (resolved.length) {
+      stages = resolved.map((s, i) => ({
+        label: i === resolved.length - 1 ? s.label + ' (Due Upon Completion)' : s.label,
+        pct: s.pct,
+      }));
+    }
   }
   if (!stages) return [];
-  return stages.map(([label, pct]) => ({ label, pct, amount: grandTotal * (pct / 100) }));
+  return stages.map(s => ({ label: s.label, pct: s.pct, amount: grandTotal * (s.pct / 100) }));
 }
 
 // ── Render the estimate tree ──
