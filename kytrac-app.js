@@ -16258,6 +16258,7 @@ function _scheduleEstimateRerender(jobId) {
     updateEstimateSummary();
     loadLaborBurdenBasis(conJobs.find(j => j.id === jobId));
     renderPaymentScheduleControls(jobId);
+    renderFFDiscountControl(jobId);
     loadProposals(jobId);
   }, 60);
 }
@@ -16606,6 +16607,142 @@ function calcGroupTotals(items) {
   const profit = price - cost;
   const margin = price > 0 ? profit/price*100 : 0;
   return { cost, price, profit, margin };
+}
+
+// ── Friends & Family Labor Discount ──────────────────────────────────
+// Reduces the CUSTOMER-FACING price on every Labor line item by a flat
+// %, while leaving unitCost untouched — so real labor cost/margin
+// tracking stays accurate, only the price charged goes down. Applied
+// as an actual write to each line item's markup/unitPrice (not a
+// display-time overlay), specifically because it needs to flow through
+// to invoices generated via "Import from Estimate" later, which read
+// the real stored unitPrice/qty off each item — a display-only
+// discount on the Estimate summary total would never reach those.
+// Reversible: the pre-discount values are snapshotted onto the job doc
+// before any line item is touched, so "Remove Discount" can restore
+// exact original pricing.
+
+function walkEstimateLaborItems() {
+  // Returns [{ item, groupId, subgroupId, subSubgroupId }] for every
+  // Labor cost-type line item across the whole tree (direct group
+  // items, subgroup items, and sub-subgroup items).
+  const out = [];
+  estGroups.forEach(g => {
+    (g.directItems || []).forEach(item => {
+      if (item.costType === 'Labor') out.push({ item, groupId: g.id, subgroupId: null, subSubgroupId: null });
+    });
+    (g.subgroups || []).forEach(sub => {
+      (sub.items || []).forEach(item => {
+        if (item.costType === 'Labor') out.push({ item, groupId: g.id, subgroupId: sub.id, subSubgroupId: null });
+      });
+      (sub.subgroups || []).forEach(subsub => {
+        (subsub.items || []).forEach(item => {
+          if (item.costType === 'Labor') out.push({ item, groupId: g.id, subgroupId: sub.id, subSubgroupId: subsub.id });
+        });
+      });
+    });
+  });
+  return out;
+}
+
+function laborItemRef(jobId, groupId, subgroupId, subSubgroupId, itemId) {
+  const jobRef = coll('jobs').doc(jobId);
+  if (subSubgroupId) {
+    return jobRef.collection('estimateGroups').doc(groupId).collection('subgroups').doc(subgroupId)
+      .collection('subgroups').doc(subSubgroupId).collection('items').doc(itemId);
+  }
+  if (subgroupId) {
+    return jobRef.collection('estimateGroups').doc(groupId).collection('subgroups').doc(subgroupId).collection('items').doc(itemId);
+  }
+  return jobRef.collection('estimateGroups').doc(groupId).collection('items').doc(itemId);
+}
+
+async function applyLaborDiscount() {
+  const input = document.getElementById('ffDiscountPct');
+  const pct = parseFloat(input?.value);
+  if (!pct || pct <= 0 || pct >= 100) { alert('Enter a discount percentage between 1 and 99.'); return; }
+
+  const laborItems = walkEstimateLaborItems();
+  if (!laborItems.length) { alert('No labor line items found on this estimate yet.'); return; }
+
+  const currentTotal = laborItems.reduce((s, li) => s + (li.item.unitPrice || 0) * (li.item.qty || 1), 0);
+  const newTotal = currentTotal * (1 - pct / 100);
+  if (!confirm(`Apply a ${pct}% friends & family discount to ${laborItems.length} labor line item${laborItems.length===1?'':'s'}?\n\nLabor total: $${Math.round(currentTotal).toLocaleString()} → $${Math.round(newTotal).toLocaleString()}\n\nThis changes the actual price on each labor line (not just a display total), so it carries through to the Proposal and to any invoice you later import from this estimate. Your real labor cost/margin tracking is untouched — only the customer-facing price drops. Reversible with "Remove Discount."`)) return;
+
+  try {
+    // Snapshot originals BEFORE touching anything, so this is
+    // reversible even if applied more than once (each apply overwrites
+    // the backup with what was live at that moment, which is correct —
+    // "remove" should undo the CURRENT discount, not stack backups).
+    const backup = laborItems.map(li => ({
+      groupId: li.groupId, subgroupId: li.subgroupId, subSubgroupId: li.subSubgroupId, itemId: li.item.id,
+      unitCost: li.item.unitCost, markup: li.item.markup, unitPrice: li.item.unitPrice,
+    }));
+
+    for (const li of laborItems) {
+      const oldPrice = li.item.unitPrice || 0;
+      const unitCost = li.item.unitCost || 0;
+      const newPrice = Math.round(oldPrice * (1 - pct / 100) * 100) / 100;
+      const newMarkup = unitCost > 0 ? Math.round((newPrice / unitCost - 1) * 100) : li.item.markup;
+      await laborItemRef(conCurrentJobId, li.groupId, li.subgroupId, li.subSubgroupId, li.item.id)
+        .update({ unitPrice: newPrice, markup: newMarkup });
+    }
+
+    await coll('jobs').doc(conCurrentJobId).update({
+      laborDiscount: { pct, appliedAt: new Date().toISOString(), backup }
+    });
+    const job = conJobs.find(j => j.id === conCurrentJobId);
+    if (job) job.laborDiscount = { pct, appliedAt: new Date().toISOString(), backup };
+
+    if (typeof loadEstimate === 'function') loadEstimate(conCurrentJobId);
+  } catch (e) {
+    alert('Error applying discount: ' + e.message);
+  }
+}
+window.applyLaborDiscount = applyLaborDiscount;
+
+async function removeLaborDiscount() {
+  const job = conJobs.find(j => j.id === conCurrentJobId);
+  const backup = job?.laborDiscount?.backup;
+  if (!backup || !backup.length) {
+    // No backup to restore from (e.g. loaded fresh from a doc missing
+    // it) — just clear the flag rather than leave a broken "applied"
+    // state with nothing to undo.
+    await coll('jobs').doc(conCurrentJobId).update({ laborDiscount: firebase.firestore.FieldValue.delete() });
+    if (job) delete job.laborDiscount;
+    if (typeof loadEstimate === 'function') loadEstimate(conCurrentJobId);
+    return;
+  }
+  if (!confirm('Restore original labor pricing on ' + backup.length + ' line item' + (backup.length===1?'':'s') + '?')) return;
+
+  try {
+    for (const b of backup) {
+      await laborItemRef(conCurrentJobId, b.groupId, b.subgroupId, b.subSubgroupId, b.itemId)
+        .update({ unitCost: b.unitCost, markup: b.markup, unitPrice: b.unitPrice })
+        .catch(() => {}); // item may have been deleted since — skip rather than fail the whole restore
+    }
+    await coll('jobs').doc(conCurrentJobId).update({ laborDiscount: firebase.firestore.FieldValue.delete() });
+    if (job) delete job.laborDiscount;
+    if (typeof loadEstimate === 'function') loadEstimate(conCurrentJobId);
+  } catch (e) {
+    alert('Error removing discount: ' + e.message);
+  }
+}
+window.removeLaborDiscount = removeLaborDiscount;
+
+function renderFFDiscountControl(jobId) {
+  const wrap = document.getElementById('ffDiscountWrap');
+  if (!wrap) return;
+  const job = conJobs.find(j => j.id === (jobId || conCurrentJobId));
+  const discount = job?.laborDiscount;
+  if (discount) {
+    wrap.innerHTML = `<span class="small" style="color:#a3f2d2;font-weight:700">🎁 ${discount.pct}% F&amp;F discount applied</span>
+      <button class="btn" onclick="removeLaborDiscount()" style="padding:6px 10px;font-size:.78rem">Remove Discount</button>`;
+  } else {
+    wrap.innerHTML = `<span class="small muted">🎁 F&amp;F Discount</span>
+      <input id="ffDiscountPct" type="number" min="1" max="99" placeholder="%" style="width:56px;padding:3px 6px;font-size:.8rem" />
+      <button class="btn" onclick="applyLaborDiscount()" style="padding:6px 10px;font-size:.78rem" title="Reduces every labor line's price by this %. Real labor cost stays the same -- only the customer price drops.">Apply to Labor</button>`;
+  }
 }
 
 function updateEstimateSummary() {
