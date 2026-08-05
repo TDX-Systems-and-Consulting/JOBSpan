@@ -16940,7 +16940,7 @@ function filterEstItemCatalogSearch() {
   resultsEl.innerHTML = matches.map((m, i) => {
     const hasMat = !!m.materials, hasLab = !!m.labor;
     const priceStr = hasMat ? '$' + Number(m.materials.unitCost||0).toFixed(2) : (hasLab ? '$' + Number(m.labor.unitCost||0).toFixed(2) : '');
-    return `<div onclick="selectEstItemCatalogResult(${i})" style="padding:8px 10px;border-radius:8px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:8px" onmouseover="this.style.background='rgba(217,119,6,.15)'" onmouseout="this.style.background='transparent'">
+    return `<div onclick="selectEstItemCatalogResult(${i})" class="est-catalog-result-row" style="padding:10px;border-radius:8px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:8px">
       <div style="min-width:0">
         <div style="font-size:.84rem;font-weight:600;color:#eaf0fb;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(m.name)}</div>
         <div style="font-size:.7rem;color:var(--amber)">${esc(m.trade)}${hasMat&&hasLab?' · materials + labor':hasLab?' · labor':' · materials'}</div>
