@@ -8456,6 +8456,7 @@ function renderJobInvoiceList(jobId, invs) {
       </div>
       ${inv.notes?`<div style="font-size:.8rem;color:var(--muted);margin-bottom:8px">${esc(inv.notes)}</div>`:''}
       <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <button class="btn" style="padding:4px 10px;font-size:.76rem" onclick="viewInvoiceById('${jobId}','${inv.id}')">👁 View</button>
         <button class="btn" style="padding:4px 10px;font-size:.76rem" onclick="openEditInvoice('${jobId}','${inv.id}')">Edit</button>
         <button class="btn" style="padding:4px 10px;font-size:.76rem" onclick="quickMarkPaid('${jobId}','${inv.id}',${inv.total||0})"${inv.status==='Paid'?' disabled':''}>✓ Mark Paid</button>
         <button class="btn" style="padding:4px 10px;font-size:.76rem" onclick="printInvoiceById('${jobId}','${inv.id}')">🖨 Print</button>
@@ -9317,6 +9318,31 @@ function printInvoiceById(jobId, invId) {
     });
 }
 
+// "View" was missing entirely -- Print opens the browser's print
+// dialog immediately, which isn't what you want when you just need to
+// glance at what the customer actually received. Same underlying
+// renderInvoiceDocumentHtml() as Print and the Email preview (single
+// source of truth for what an invoice document looks like) — just
+// opened plain, no print dialog forced on top of it.
+function viewInvoiceById(jobId, invId) {
+  if (!conDb) return;
+  const jobRef = coll('jobs').doc(jobId);
+  Promise.all([
+    jobRef.collection('invoices').doc(invId).get(),
+    jobRef.collection('invoices').get()
+  ]).then(([doc, allSnap]) => {
+      if (!doc.exists) return;
+      const inv = doc.data();
+      const job = conJobs.find(j => j.id === jobId);
+      const otherInvoices = [];
+      allSnap.forEach(d => { if (d.id !== invId) otherInvoices.push(d.data()); });
+      const win = window.open('', '_blank');
+      win.document.write(renderInvoiceDocumentHtml(inv, job, otherInvoices, false));
+      win.document.close();
+    });
+}
+window.viewInvoiceById = viewInvoiceById;
+
 function printInvoice() {
   // Build from current modal state
   const jobId = document.getElementById('invJobId')?.value;
@@ -9572,6 +9598,20 @@ async function confirmSendInvoiceEmailFromPreview() {
     const sendEmail = conFunctions.httpsCallable('sendJobspanEmail');
     await sendEmail({ to, toName, subject, bodyHtml, bodyText, docType: 'invoice', jobId });
     kClose('emailPreviewModal');
+    // Was never updating invoice status at all -- an emailed invoice
+    // stayed stuck on "Draft" forever, indistinguishable from one that
+    // was never sent. Only advances FROM Draft specifically; resending
+    // an already-Sent/Paid/Partial invoice for someone's records
+    // shouldn't downgrade its real status back to something less
+    // advanced.
+    try {
+      const invDoc = await coll('jobs').doc(jobId).collection('invoices').doc(invId).get();
+      if (invDoc.exists && invDoc.data().status === 'Draft') {
+        await coll('jobs').doc(jobId).collection('invoices').doc(invId).update({ status: 'Sent' });
+      }
+    } catch (statusErr) {
+      console.error('Could not update invoice status to Sent:', statusErr.message);
+    }
     alert(`✅ Invoice sent to ${to}`);
     logInvoiceActivity(jobId, 'invoice_emailed', `Invoice emailed to ${to}`);
     loadJobInvoices(jobId);
