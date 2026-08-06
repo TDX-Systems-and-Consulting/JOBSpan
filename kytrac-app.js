@@ -9146,6 +9146,12 @@ function conLoadJobs() {
     loadGlobalLogs();
     loadGlobalPhases();
     loadCalendarEvents();
+    // Needed early (not just when visiting Settings) so
+    // getPersonBurdenRate() has real per-person rates available no
+    // matter which page loads first — job cost tracking shouldn't
+    // silently fall back to the flat company rate just because nobody
+    // happened to open Settings yet this session.
+    loadTeamMembers();
     loadPOs();
     loadTeamCache();
     renderHomeDashboard();
@@ -10430,14 +10436,20 @@ function loadTeamMembers() {
   if (!conDb) return;
   const list = document.getElementById('teamMemberList');
   const form = document.getElementById('addMemberForm');
-  if (!list) return;
 
-  // Only owners can manage team
+  // Previously this whole function returned early for non-Owners,
+  // which meant _lastTeamMemberList — and therefore every per-person
+  // burdened rate — never loaded at all for anyone but the literal
+  // Owner role. Jason (Director of Operations, full-access override,
+  // but role label "Sales") would silently get the flat fallback rate
+  // for cost calculations, with no indication his real rate data
+  // wasn't being used. The DATA needs to load for everyone; only the
+  // ability to SEE/EDIT the list (sensitive payroll info) stays
+  // Owner-restricted, below.
   if (currentUserRole !== 'Owner') {
     if (form) form.style.display = 'none';
     const section = document.getElementById('teamSection');
     if (section) section.style.display = 'none';
-    return;
   }
 
   coll('settings').doc('team').get()
@@ -10451,7 +10463,7 @@ function loadTeamMembers() {
       renderTeamMemberList();
     })
     .catch(() => {
-      list.innerHTML = '<div class="small muted">Could not load team members.</div>';
+      if (list) list.innerHTML = '<div class="small muted">Could not load team members.</div>';
     });
 }
 
@@ -10469,7 +10481,7 @@ function renderTeamMemberList() {
     const roleData = KYTRAC_ROLES[m.role] || { color: 'var(--muted)' };
     const isCurrentUser = (m.email || '').toLowerCase() === (conCurrentUser?.email || '').toLowerCase();
     const key = (m.email || '').replace(/\./g,'_');
-    const hasSavedInfo = !!(m.qbEmployeeId || m.phone);
+    const hasSavedInfo = !!(m.qbEmployeeId || m.phone || m.burdenedRate);
     const isOpen = _teamEditOpen[key] || !hasSavedInfo; // empty state always shows open inputs
 
     const editableFields = `
@@ -10483,6 +10495,16 @@ function renderTeamMemberList() {
           style="font-size:.72rem;padding:3px 8px;width:220px;background:rgba(8,19,37,.6);border:1px solid var(--line);border-radius:6px;color:var(--muted)" />
         <button class="btn" style="padding:2px 8px;font-size:.7rem" onclick="saveTeamMemberPhone('${key}')">Save</button>
       </div>
+      <div style="display:flex;align-items:center;gap:6px;margin-top:5px">
+        <span style="font-size:.72rem;color:var(--muted)">$</span>
+        <input id="rate_${key}" value="${m.burdenedRate!=null?m.burdenedRate:''}" placeholder="Burdened hourly rate (true cost)" type="number" step="0.01" min="0"
+          style="font-size:.72rem;padding:3px 8px;width:220px;background:rgba(8,19,37,.6);border:1px solid var(--line);border-radius:6px;color:var(--muted)" />
+        <span style="font-size:.7rem;color:var(--muted)">/hr</span>
+        <button class="btn" style="padding:2px 8px;font-size:.7rem" onclick="saveTeamMemberRate('${key}')">Save</button>
+      </div>
+      <div style="font-size:.66rem;color:var(--muted);margin-top:3px;max-width:340px;line-height:1.4">
+        Real all-in cost per hour (wage + payroll tax, insurance, workers comp, etc — the number JobsMetrix uses for true job-cost tracking, NOT the customer-facing bill rate). Overtime is computed automatically at this rate × your Overtime Multiplier setting — no separate OT rate needed.
+      </div>
       <div style="font-size:.66rem;color:var(--muted);margin-top:3px;max-width:340px;line-height:1.4">
         By saving your number you consent to receive SMS job notifications from JOBSMETRIX. Msg &amp; data rates may apply. Reply STOP to opt out.
         <a href="https://jobsmetrix.com/privacy" target="_blank" style="color:var(--amber);text-decoration:none">Privacy Policy</a>
@@ -10494,6 +10516,7 @@ function renderTeamMemberList() {
       <div style="display:flex;align-items:center;gap:10px;margin-top:5px;font-size:.76rem;color:var(--muted)">
         ${m.qbEmployeeId ? `<span>🧾 QB ID: ${esc(m.qbEmployeeId)}</span>` : ''}
         ${m.phone ? `<span>📱 ${esc(m.phone)}</span>` : ''}
+        ${m.burdenedRate!=null ? `<span>💰 $${Number(m.burdenedRate).toFixed(2)}/hr</span>` : ''}
         <button class="btn" style="padding:2px 8px;font-size:.7rem" onclick="toggleTeamMemberEdit('${key}')">✏️ Edit</button>
       </div>
     `;
@@ -10591,6 +10614,35 @@ function saveTeamMemberPhone(key) {
   }).catch(e => alert('Error saving phone number: ' + e.message));
 }
 window.saveTeamMemberPhone = saveTeamMemberPhone;
+
+// Per-person burdened hourly rate — the real all-in cost per hour
+// (wage + payroll tax, insurance, workers comp), NOT the customer bill
+// rate. This is the foundation "true job cost" tracking depends on:
+// previously the whole company shared ONE flat burden rate
+// (companyProfile.burdenRatePerManHour) for everyone, which is a rough
+// average at best. Per-person rates here are what getTrueLaborCost()
+// (below) actually uses when they exist, falling back to the old flat
+// rate for anyone without one saved yet so nothing breaks mid-rollout.
+// Overtime is NOT stored separately — it's computed as this rate ×
+// companyProfile.otMultiplier at calc time (JobTread's own OT rates
+// came out to exactly 1.5x Standard, matching the multiplier setting
+// already in Settings, so a second stored number would just be
+// redundant data that could drift out of sync with the multiplier).
+function saveTeamMemberRate(key) {
+  if (currentUserRole !== 'Owner') return;
+  const input = document.getElementById('rate_' + key);
+  if (!input) return;
+  const val = parseFloat(input.value);
+  const burdenedRate = isNaN(val) ? null : Math.round(val * 100) / 100;
+  coll('settings').doc('team').set(
+    { members: { [key]: { burdenedRate, updatedAt: new Date().toISOString() } } },
+    { merge: true }
+  ).then(() => {
+    input.style.borderColor = '#1dbb87';
+    setTimeout(() => { _teamEditOpen[key] = false; loadTeamMembers(); }, 700);
+  }).catch(e => alert('Error saving hourly rate: ' + e.message));
+}
+window.saveTeamMemberRate = saveTeamMemberRate;
 
 // Sets/clears the full-access override for a team member - Owner-only,
 // same security boundary as other team management actions (this is what
@@ -11469,7 +11521,6 @@ function weekStartOf(dateStr, weekStartDow) {
 
 function computeWeeklyOvertime(entries) {
   const { threshold, multiplier, weekStart } = getOtSettings();
-  const burdenRate = getBurdenRate();
   const buckets = {}; // key: userKey|weekStartDate
 
   entries.forEach(e => {
@@ -11478,7 +11529,11 @@ function computeWeeklyOvertime(entries) {
     const wkStart = weekStartOf(e.date, weekStart);
     const key = userKey + '|' + wkStart;
     if (!buckets[key]) {
-      buckets[key] = { userName: e.userName || e.userEmail || 'Unknown', weekStart: wkStart, hours: 0 };
+      // Per-person rate looked up once per bucket, not per-entry —
+      // same rate applies to every hour this person logged in this
+      // week regardless of which job/entry it came from.
+      buckets[key] = { userName: e.userName || e.userEmail || 'Unknown', weekStart: wkStart, hours: 0,
+        burdenRate: getPersonBurdenRate(e.userId, e.userEmail) };
     }
     buckets[key].hours += e.hours;
   });
@@ -11486,7 +11541,7 @@ function computeWeeklyOvertime(entries) {
   return Object.values(buckets).map(b => {
     const regHours = Math.min(b.hours, threshold);
     const otHours = Math.max(0, b.hours - threshold);
-    const cost = regHours * burdenRate + otHours * burdenRate * multiplier;
+    const cost = regHours * b.burdenRate + otHours * b.burdenRate * multiplier;
     return { ...b, regHours, otHours, cost, isOt: otHours > 0 };
   }).sort((a,b) => b.weekStart.localeCompare(a.weekStart) || b.hours - a.hours);
 }
@@ -11510,7 +11565,7 @@ function renderWeeklyOvertime() {
   }
 
   el.innerHTML = `
-    <div class="small muted" style="margin-bottom:8px">${threshold}h/week threshold · ${multiplier}× OT rate · $${getBurdenRate()}/man-hr burden</div>
+    <div class="small muted" style="margin-bottom:8px">${threshold}h/week threshold · ${multiplier}× OT rate · burden rate per person (Settings &gt; Team)</div>
     <table class="kt-table" style="font-size:.8rem">
       <thead><tr><th>Employee</th><th>Week Of</th><th style="text-align:right">Reg</th><th style="text-align:right">OT</th><th style="text-align:right">True Cost</th></tr></thead>
       <tbody>
@@ -16180,6 +16235,19 @@ const COST_TYPES = ['Labor','Materials','Subcontractor','Equipment','Permits & F
 // profit/margin become real everywhere without touching any calc code.
 function getBurdenRate() {
   return (companyProfile && companyProfile.burdenRatePerManHour > 0) ? companyProfile.burdenRatePerManHour : 60;
+}
+
+// Per-person true hourly cost, saved on the team member record
+// (Settings > Team). Falls back to the flat company-wide rate for
+// anyone who hasn't had a rate entered yet, so cost tracking degrades
+// gracefully during rollout instead of breaking for un-rated crew.
+function getPersonBurdenRate(userId, userEmail) {
+  const email = (userEmail || '').toLowerCase();
+  const member = (_lastTeamMemberList || []).find(m =>
+    (m.email || '').toLowerCase() === email || m.userId === userId
+  );
+  if (member && member.burdenedRate > 0) return member.burdenedRate;
+  return getBurdenRate();
 }
 
 function forEachLaborItem(cb) {
