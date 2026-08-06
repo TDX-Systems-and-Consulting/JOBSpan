@@ -5393,33 +5393,81 @@ function fhRenderTotals(job) {
   const netSub = document.getElementById('fhNetSub');
   if (netSub) netSub.textContent = `${fhMoney(owedUs)} still coming in · ${fhMoney(weOwe)} still going out`;
 
-  // Est. Materials / Est. Labor / Projected Profit — was a single
-  // "Est. Cost to Complete" number lumped into the same "Money Out"
-  // column as real cash (vendor bills, materials), making a job's
-  // internal cost basis look like actual money about to leave the
-  // account, with the profit margin invisible inside it. Split into
-  // its true parts and pulled profit out as its own clearly-labeled
-  // figure. Fresh fetch (unitCost, the estimate's TRUE cost basis —
-  // not unitPrice, the billed/sell price) rather than the possibly-
-  // stale estGroups global, same reliability fix applied everywhere
-  // else true-cost numbers get computed today.
+  // True Materials / Subcontractor Pay / Company Profit — worked out
+  // directly through Travis's own numbers on this job (the
+  // $67,879.91 estimate). Two DIFFERENT mechanisms, not the same
+  // markup logic applied twice:
+  //
+  // Materials: the billed price already includes a flat 15% markup,
+  // so true cost = billed / 1.15. (Confirmed against real dollars:
+  // $21,924.32 billed -> $19,064.63 true cost.)
+  //
+  // Labor: NOT a percentage markup at all, and NOT the estimate's
+  // internal unitCost field (that's Jason's per-line catalog guess,
+  // unrelated to what a subcontractor actually gets paid). Instead:
+  // Jason's estimate assumes a 3-man crew at $100/hr each (=$2,400/
+  // day) to arrive at the billed labor total. Reverse that to get
+  // estimated days, round up, then re-price at a FLAT $100/hr
+  // (regardless of actual crew size) to get what the subcontractor is
+  // offered. (Confirmed: $44,949.35 billed / $2,400/day = 18.73 days
+  // -> rounds to 19 as pure math.)
+  //
+  // The exact day count is then a real scheduling judgment call
+  // (a Friends & Family discount marker, crew availability, etc.)
+  // that this app has no way to know — so the rounded-up number is
+  // only ever a STARTING suggestion. Travis confirms/overrides it in
+  // the editable field below; Subcontractor Pay and Company Profit
+  // both recompute from whatever's actually confirmed there, not the
+  // raw suggestion.
+  const MATERIALS_MARKUP = 0.15;
+  const SUBCONTRACTOR_RATE = 100;
+  const CREW_SIZE = 3;
+  const HOURS_PER_DAY = 8;
   if (conCurrentJobId) {
-    fetchEstimateTrueCostSplit(conCurrentJobId).then(({ materials, laborAndOther }) => {
-      set('fhEstMaterials', materials);
-      set('fhEstLabor', laborAndOther);
-      const profit = contractTotal - materials - laborAndOther;
+    fetchEstimateCostSplitFresh(conCurrentJobId).then(({ materials, laborAndOther }) => {
+      const trueMaterials = materials / (1 + MATERIALS_MARKUP);
+      const suggestedDays = laborAndOther > 0 ? Math.ceil(laborAndOther / (CREW_SIZE * HOURS_PER_DAY * SUBCONTRACTOR_RATE)) : 0;
+      set('fhEstMaterials', trueMaterials);
+
+      const confirmed = job.confirmedLaborDays;
+      const daysToUse = (confirmed != null && confirmed !== '') ? Number(confirmed) : suggestedDays;
+      const subPay = daysToUse * HOURS_PER_DAY * SUBCONTRACTOR_RATE;
+      set('fhEstLabor', subPay);
+
+      const daysInput = document.getElementById('fhConfirmedDays');
+      if (daysInput && document.activeElement !== daysInput) {
+        daysInput.value = confirmed != null && confirmed !== '' ? confirmed : suggestedDays;
+      }
+      const daysHint = document.getElementById('fhDaysHint');
+      if (daysHint) daysHint.textContent = `Suggested: ${suggestedDays} day${suggestedDays===1?'':'s'} (${laborAndOther > 0 ? fhMoney(laborAndOther) : '$0'} billed labor ÷ ${CREW_SIZE}-man crew ÷ $${SUBCONTRACTOR_RATE}/hr) — adjust if you're scheduling this differently`;
+
+      const profit = contractTotal - trueMaterials - subPay;
       const margin = contractTotal > 0 ? (profit / contractTotal * 100) : 0;
       const profitEl = document.getElementById('fhProfitVal');
       const profitColor = profit > 0 ? '#a3f2d2' : profit < 0 ? '#f87171' : '#f59e0b';
       if (profitEl) { profitEl.textContent = (profit<0?'-':'')+fhMoney(Math.abs(profit)); profitEl.style.color = profitColor; }
       const profitSub = document.getElementById('fhProfitSub');
-      if (profitSub) profitSub.textContent = `${margin.toFixed(1)}% margin on ${fhMoney(contractTotal)} contract`;
+      if (profitSub) profitSub.textContent = `${margin.toFixed(1)}% margin on ${fhMoney(contractTotal)} contract — ${daysToUse} day${daysToUse===1?'':'s'} × ${CREW_SIZE}-man × $${SUBCONTRACTOR_RATE}/hr`;
     }).catch(() => {
       set('fhEstMaterials', 0);
       set('fhEstLabor', 0);
     });
   }
 }
+
+// Saves Travis's confirmed day count for subcontractor pay, and
+// recomputes Company Profit from it immediately.
+function saveConfirmedLaborDays() {
+  const input = document.getElementById('fhConfirmedDays');
+  const jobId = conCurrentJobId;
+  if (!input || !jobId) return;
+  const val = input.value === '' ? null : parseFloat(input.value);
+  coll('jobs').doc(jobId).update({ confirmedLaborDays: val }).then(() => {
+    const job = conJobs.find(j => j.id === jobId);
+    if (job) { job.confirmedLaborDays = val; fhRenderTotals(job); }
+  }).catch(e => alert('Error saving: ' + e.message));
+}
+window.saveConfirmedLaborDays = saveConfirmedLaborDays;
 
 
 
