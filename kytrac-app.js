@@ -4923,13 +4923,34 @@ function openAddMaterialsFromJob(expenseId) {
   setVal('matDesc', existing?.desc);
   setVal('matAmount', existing?.amount);
   setVal('matDate', existing?.date || new Date().toISOString().split('T')[0]);
-  setVal('matPurchasedBy', existing?.purchasedBy);
   setVal('matNotes', existing?.notes);
   document.getElementById('matPaidBy').value = existing?.paidBy || 'Debit Card';
   document.getElementById('deleteMatBtn').style.display = existing ? 'inline-flex' : 'none';
+
+  // "Who Purchased" dropdown — was free text, easy to typo/inconsistent
+  // (Jason Hudson vs J Hudson vs jason). Populated from the same team
+  // list used elsewhere, with an "Other" fallback for anyone not in
+  // the system yet (a customer, a one-off helper, etc).
+  const sel = document.getElementById('matPurchasedBy');
+  const existingName = existing?.purchasedBy || '';
+  const knownNames = (_lastTeamMemberList || []).map(m => m.name || m.email).filter(Boolean);
+  const isKnown = knownNames.includes(existingName);
+  sel.innerHTML = '<option value="">Select…</option>' +
+    knownNames.map(n => `<option value="${esc(n)}" ${n===existingName?'selected':''}>${esc(n)}</option>`).join('') +
+    `<option value="__other__" ${existingName && !isKnown ? 'selected' : ''}>Other…</option>`;
+  document.getElementById('matPurchasedByOther').value = (existingName && !isKnown) ? existingName : '';
+  document.getElementById('matPurchasedByOtherWrap').style.display = (existingName && !isKnown) ? '' : 'none';
+
   kOpen('addMaterialsModal');
 }
 window.openAddMaterialsFromJob = openAddMaterialsFromJob;
+
+function onMatPurchasedBySelectChange() {
+  const sel = document.getElementById('matPurchasedBy');
+  const wrap = document.getElementById('matPurchasedByOtherWrap');
+  if (wrap) wrap.style.display = sel.value === '__other__' ? '' : 'none';
+}
+window.onMatPurchasedBySelectChange = onMatPurchasedBySelectChange;
 
 function saveMaterialsPurchase() {
   const jobId = conCurrentJobId;
@@ -4941,11 +4962,15 @@ function saveMaterialsPurchase() {
   if (!desc) { alert('Description is required.'); return; }
   if (!amount) { alert('Amount is required.'); return; }
   const expenseId = document.getElementById('matExpenseId')?.value;
+  const purchasedBySel = document.getElementById('matPurchasedBy')?.value || '';
+  const purchasedBy = purchasedBySel === '__other__'
+    ? (document.getElementById('matPurchasedByOther')?.value.trim() || '')
+    : purchasedBySel;
   const data = {
     purchasedFrom, desc, amount,
     date: document.getElementById('matDate')?.value || new Date().toISOString().split('T')[0],
     paidBy: document.getElementById('matPaidBy')?.value || 'Debit Card',
-    purchasedBy: document.getElementById('matPurchasedBy')?.value.trim() || '',
+    purchasedBy,
     notes: document.getElementById('matNotes')?.value.trim() || '',
     companyId: currentCompanyId,
     updatedAt: firebase.firestore.FieldValue.serverTimestamp()
