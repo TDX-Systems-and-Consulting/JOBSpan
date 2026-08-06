@@ -1432,8 +1432,24 @@ function conRenderStats() {
           return s;
         }).catch(() => 0)
     )).then(arr => arr.reduce((a,b) => a+b, 0)).catch(() => 0);
-    Promise.all([billsPromise, materialsPromise]).then(([billsSpent, materialsSpent]) => {
-      const spent = billsSpent + materialsSpent;
+    const subPayPromise = Promise.all(conJobs.map(j =>
+      coll('jobs').doc(j.id).collection('subcontractorPayments').get()
+        .then(sSnap => {
+          let s = 0;
+          sSnap.forEach(sDoc => {
+            const p = sDoc.data();
+            // Cash-timing view, same as bills (amtPaid) and materials
+            // (always-paid-at-entry) above — only 'Paid' status counts
+            // as money actually spent this month. An 'Agreed' payment
+            // is real committed cost (counted in job Cost to Complete)
+            // but hasn't moved as cash yet.
+            if (p.date && p.date >= monthStart2 && p.amount > 0 && p.status === 'Paid') s += p.amount;
+          });
+          return s;
+        }).catch(() => 0)
+    )).then(arr => arr.reduce((a,b) => a+b, 0)).catch(() => 0);
+    Promise.all([billsPromise, materialsPromise, subPayPromise]).then(([billsSpent, materialsSpent, subPaySpent]) => {
+      const spent = billsSpent + materialsSpent + subPaySpent;
       setTile('statSpentMTD', 'statSpentTile',
         '$' + Math.round(spent).toLocaleString(), '#f59e0b');
       _mtd.spent = spent;
@@ -2538,10 +2554,10 @@ function refreshJobFinancials(job) {
 
   if (!conDb) return;
   const jobId = job.id;
-  let billsPaid = 0, materialsTotal = 0, doneCount = 0;
+  let billsPaid = 0, materialsTotal = 0, subPayTotal = 0, laborCost = 0, doneCount = 0;
   const maybeApplyLive = () => {
-    if (++doneCount < 2) return;
-    const liveActual = Math.round((billsPaid + materialsTotal) * 100) / 100;
+    if (++doneCount < 4) return;
+    const liveActual = Math.round((billsPaid + materialsTotal + subPayTotal + laborCost) * 100) / 100;
     // Only override if live tracking actually has data, or the stored
     // field is empty — never silently zero out a real imported number.
     if (liveActual > 0 || !(job.actualCost > 0)) {
@@ -2558,6 +2574,47 @@ function refreshJobFinancials(job) {
   }).catch(maybeApplyLive);
   coll('jobs').doc(jobId).collection('expenses').get()
     .then(eSnap => { eSnap.forEach(eDoc => { materialsTotal += (eDoc.data().amount || 0); }); maybeApplyLive(); })
+    .catch(maybeApplyLive);
+  // Subcontractor payments — ALL statuses count here (Agreed or Paid),
+  // since a committed flat-rate job price is real cost the moment it's
+  // agreed, regardless of whether cash has moved yet. (Net Cash
+  // Position in the Financials tab is the cash-timing view — this is
+  // the true-cost view, a deliberately different question.)
+  coll('jobs').doc(jobId).collection('subcontractorPayments').get()
+    .then(sSnap => { sSnap.forEach(sDoc => { subPayTotal += (sDoc.data().amount || 0); }); maybeApplyLive(); })
+    .catch(maybeApplyLive);
+  // Real labor cost: hours logged on THIS job × each hourly person's
+  // burdened rate. Flat-rate subcontractors are explicitly excluded —
+  // their hours are informational only (Estimated vs Actual), their
+  // real cost is the subcontractorPayments total above, not hours×rate.
+  //
+  // Simplification worth knowing: overtime is calculated per-job here
+  // (hours on THIS job vs the weekly OT threshold), not blended across
+  // a person's hours on OTHER jobs the same week. For a crew working
+  // one job at a time (the normal case), this is accurate. If someone
+  // splits a week across two jobs, this could slightly under- or
+  // over-count which job "caused" the overtime — a real edge case, but
+  // a rare one, and far more accurate than the $0 labor cost this
+  // replaced.
+  coll('timeentries').where('jobId', '==', jobId).get()
+    .then(tSnap => {
+      const byPerson = {};
+      tSnap.forEach(tDoc => {
+        const t = tDoc.data();
+        if (!t.hours) return;
+        if (isFlatRateSubcontractor(t.userId, t.userEmail)) return;
+        const key = t.userId || t.userEmail || 'unknown';
+        if (!byPerson[key]) byPerson[key] = { hours: 0, rate: getPersonBurdenRate(t.userId, t.userEmail) };
+        byPerson[key].hours += t.hours;
+      });
+      const { threshold, multiplier } = getOtSettings();
+      Object.values(byPerson).forEach(p => {
+        const reg = Math.min(p.hours, threshold);
+        const ot = Math.max(0, p.hours - threshold);
+        laborCost += reg * p.rate + ot * p.rate * multiplier;
+      });
+      maybeApplyLive();
+    })
     .catch(maybeApplyLive);
 }
 
@@ -4679,6 +4736,7 @@ function switchDetailTab(tab, btn) {
 let _fhInvoices = [];
 let _fhBills = [];
 let _fhMaterials = [];
+let _fhSubPayments = [];
 let _fhBillsLoadedFor = null;
 
 function finhubToggle(bodyId, headEl) {
@@ -4731,6 +4789,9 @@ function renderFinancialsHub(jobId) {
   // Materials purchases (direct, job-scoped, no vendor account)
   fhRenderMaterialsLoading();
   fhLoadJobMaterials(jobId, () => { fhRenderMaterials(); fhRenderTotals(job); });
+
+  // Subcontractor payments (1099 flat-rate job pay)
+  fhLoadJobSubPayments(jobId, () => { fhRenderSubPayments(); fhRenderTotals(job); });
 
   fhRenderEva();
 }
@@ -4912,6 +4973,138 @@ function deleteMaterialsPurchase() {
 }
 window.deleteMaterialsPurchase = deleteMaterialsPurchase;
 
+// ── Subcontractor Payments (1099 flat-rate job pay) ──
+// Mirrors the Materials Purchase pattern exactly — job-scoped, own
+// Firestore subcollection with its own security rule, no formal
+// vendor account required. This is the "what's actually owed" side of
+// the flat-rate subcontractor model: clock-in/out hours for these
+// people are informational only (Estimated vs Actual comparisons);
+// this is the real dollar cost that hits the job.
+function fhLoadJobSubPayments(jobId, cb) {
+  if (!conDb) { _fhSubPayments = []; cb && cb(); return; }
+  coll('jobs').doc(jobId).collection('subcontractorPayments').orderBy('date', 'desc').get()
+    .then(snap => { _fhSubPayments = []; snap.forEach(d => _fhSubPayments.push({ id: d.id, ...d.data() })); cb && cb(); })
+    .catch(() => { _fhSubPayments = []; cb && cb(); });
+}
+
+function fhRenderSubPayments() {
+  const el = document.getElementById('fhSubPaySec');
+  const cnt = document.getElementById('fhSubPayCount');
+  const sum = document.getElementById('fhSubPaySum');
+  if (!el) return;
+  const items = _fhSubPayments;
+  const total = items.reduce((s,p) => s + (p.amount||0), 0);
+  if (cnt) cnt.textContent = items.length;
+  if (sum) sum.textContent = items.length ? `${fhMoney(total)} total` : '';
+  if (!items.length) { el.innerHTML = '<div class="finhub-empty">No subcontractor payments logged for this job.</div>'; return; }
+  el.innerHTML = items.map(p => `
+    <div class="finhub-line" onclick="openAddSubPayFromJob('${p.id}')" style="cursor:pointer">
+      <div><div class="finhub-line-title">${esc(p.subName||'Subcontractor')}</div><div class="finhub-line-sub">${esc(p.desc||'')}</div></div>
+      <div class="finhub-line-amt">${fhMoney(p.amount)}</div>
+      <div class="finhub-line-bal" style="color:${p.status==='Paid'?'#a3f2d2':'#fde68a'}">${esc(p.status||'Agreed')}</div>
+      <div>${fhBadge('Subcontractor','#c084fc')}</div>
+    </div>`).join('');
+}
+
+function openAddSubPayFromJob(payId) {
+  const existing = payId ? _fhSubPayments.find(p => p.id === payId) : null;
+  document.getElementById('subPayId').value = payId || '';
+  const setVal = (id, v) => { const el = document.getElementById(id); if (el) el.value = v || ''; };
+
+  // Populate the dropdown with team members flagged as flat-rate
+  // subcontractors, plus a manual "Other" option for a one-off sub
+  // who was never added as a team member at all.
+  const sel = document.getElementById('subPaySelect');
+  const subMembers = (_lastTeamMemberList || []).filter(m => m.paymentType === 'subcontractor');
+  const existingSubKey = existing ? (existing.subKey || '') : '';
+  sel.innerHTML = '<option value="">Select…</option>' +
+    subMembers.map(m => `<option value="${esc((m.email||'').replace(/\./g,'_'))}" ${existingSubKey===(m.email||'').replace(/\./g,'_')?'selected':''}>${esc(m.name||m.email||'Unnamed')}</option>`).join('') +
+    `<option value="__other__" ${existing && !existingSubKey ? 'selected' : ''}>Other (not a team member)…</option>`;
+
+  setVal('subPayOtherName', existing && !existingSubKey ? existing.subName : '');
+  document.getElementById('subPayOtherWrap').style.display = (existing && !existingSubKey) ? '' : 'none';
+  setVal('subPayDesc', existing?.desc);
+  setVal('subPayAmount', existing?.amount);
+  setVal('subPayDate', existing?.date || new Date().toISOString().split('T')[0]);
+  setVal('subPayNotes', existing?.notes);
+  document.getElementById('subPayStatus').value = existing?.status || 'Agreed';
+  document.getElementById('deleteSubPayBtn').style.display = existing ? 'inline-flex' : 'none';
+  kOpen('addSubPayModal');
+}
+window.openAddSubPayFromJob = openAddSubPayFromJob;
+
+// Opens the Financials tab's shortcut with nothing pre-selected.
+function openAddSubPayFromJobShortcut() { openAddSubPayFromJob(null); }
+window.openAddSubPayFromJobShortcut = openAddSubPayFromJobShortcut;
+
+function onSubPaySelectChange() {
+  const sel = document.getElementById('subPaySelect');
+  const wrap = document.getElementById('subPayOtherWrap');
+  if (wrap) wrap.style.display = sel.value === '__other__' ? '' : 'none';
+}
+window.onSubPaySelectChange = onSubPaySelectChange;
+
+function saveSubcontractorPayment() {
+  const jobId = conCurrentJobId;
+  if (!jobId) { alert('No job open.'); return; }
+  const sel = document.getElementById('subPaySelect');
+  const selVal = sel?.value || '';
+  let subKey = '', subName = '';
+  if (selVal === '__other__') {
+    subName = document.getElementById('subPayOtherName')?.value.trim() || '';
+  } else if (selVal) {
+    const member = (_lastTeamMemberList || []).find(m => (m.email||'').replace(/\./g,'_') === selVal);
+    subKey = selVal;
+    subName = member?.name || member?.email || 'Subcontractor';
+  }
+  const desc = document.getElementById('subPayDesc')?.value.trim();
+  const amount = parseFloat(document.getElementById('subPayAmount')?.value) || 0;
+  if (!subName) { alert('Select a subcontractor or enter a name.'); return; }
+  if (!desc) { alert('Scope/description is required.'); return; }
+  if (!amount) { alert('Amount is required.'); return; }
+  const payId = document.getElementById('subPayId')?.value;
+  const data = {
+    subKey, subName, desc, amount,
+    date: document.getElementById('subPayDate')?.value || new Date().toISOString().split('T')[0],
+    status: document.getElementById('subPayStatus')?.value || 'Agreed',
+    notes: document.getElementById('subPayNotes')?.value.trim() || '',
+    companyId: currentCompanyId,
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+  };
+  const col = coll('jobs').doc(jobId).collection('subcontractorPayments');
+  const promise = payId ? col.doc(payId).update(data)
+    : col.add({ ...data, createdAt: firebase.firestore.FieldValue.serverTimestamp() });
+  promise.then(() => {
+    kClose('addSubPayModal');
+    fhLoadJobSubPayments(jobId, () => {
+      fhRenderSubPayments();
+      const j = conJobs.find(x=>x.id===jobId);
+      if (j) { fhRenderTotals(j); refreshJobFinancials(j); }
+    });
+    if (!payId) {
+      const amtStr = amount.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2});
+      logInvoiceActivity(jobId, 'subcontractor_payment', `Subcontractor payment — ${subName}: $${amtStr}`);
+    }
+  }).catch(e => alert('Error: ' + e.message));
+}
+window.saveSubcontractorPayment = saveSubcontractorPayment;
+
+function deleteSubcontractorPayment() {
+  const jobId = conCurrentJobId;
+  const payId = document.getElementById('subPayId')?.value;
+  if (!jobId || !payId || !confirm('Delete this subcontractor payment?')) return;
+  coll('jobs').doc(jobId).collection('subcontractorPayments').doc(payId).delete()
+    .then(() => {
+      kClose('addSubPayModal');
+      fhLoadJobSubPayments(jobId, () => {
+        fhRenderSubPayments();
+        const j = conJobs.find(x=>x.id===jobId);
+        if (j) { fhRenderTotals(j); refreshJobFinancials(j); }
+      });
+    }).catch(e => alert('Error: ' + e.message));
+}
+window.deleteSubcontractorPayment = deleteSubcontractorPayment;
+
 function openVendorFromBill(vendorId, billId) {
   // Best-effort: jump to vendor detail if available, else no-op
   if (typeof openVendorDetail === 'function' && vendorId) { openVendorDetail(vendorId); }
@@ -4939,9 +5132,13 @@ function fhRenderTotals(job) {
   // Materials purchases are always paid in full at time of purchase (no
   // partial/owed concept, unlike vendor bills) — pure money already out.
   const materialsTotal = _fhMaterials.reduce((s,m)=>s+(m.amount||0),0);
+  // Subcontractor payments: only count 'Paid' status as actual cash
+  // out here, matching the vendor-bill pattern (amtPaid, not amount) —
+  // an 'Agreed' payment is a real committed cost but hasn't moved yet.
+  const subPaymentsPaid = _fhSubPayments.filter(p=>p.status==='Paid').reduce((s,p)=>s+(p.amount||0),0);
   const ec = job.estCost||0, ac = job.actualCost||0;
   const costToComplete = Math.max(ec - ac, 0);
-  const net = collected - billsPaid - materialsTotal;
+  const net = collected - billsPaid - materialsTotal - subPaymentsPaid;
 
   const set = (id,v,color) => { const el=document.getElementById(id); if(el){ el.textContent=fhMoney(v); if(color)el.style.color=color; } };
   set('fhContract', contractTotal);
@@ -7642,6 +7839,8 @@ function renderActivityFeed(targetElId, itemCap) {
           items.push({ icon: '💰', text: l.notes || 'Invoice paid', sub: job ? job.name : '', jobId, ms });
         } else if (l.type === 'materials_purchase') {
           items.push({ icon: '🧱', text: l.notes || 'Materials purchase logged', sub: job ? job.name : '', jobId, ms });
+        } else if (l.type === 'subcontractor_payment') {
+          items.push({ icon: '💼', text: l.notes || 'Subcontractor payment logged', sub: job ? job.name : '', jobId, ms });
         } else if (l.type === 'vendor_bill') {
           items.push({ icon: '👷', text: l.notes || 'Vendor bill added', sub: job ? job.name : '', jobId, ms });
         } else if (l.type === 'photos_uploaded') {
@@ -7676,6 +7875,8 @@ function renderActivityFeed(targetElId, itemCap) {
               items.push({ icon: '💰', text: l.notes || 'Invoice paid', sub: job.name, jobId: job.id, ms });
             } else if (l.type === 'materials_purchase') {
               items.push({ icon: '🧱', text: l.notes || 'Materials purchase logged', sub: job.name, jobId: job.id, ms });
+            } else if (l.type === 'subcontractor_payment') {
+              items.push({ icon: '💼', text: l.notes || 'Subcontractor payment logged', sub: job.name, jobId: job.id, ms });
             } else if (l.type === 'vendor_bill') {
               items.push({ icon: '👷', text: l.notes || 'Vendor bill added', sub: job.name, jobId: job.id, ms });
             } else if (l.type === 'photos_uploaded') {

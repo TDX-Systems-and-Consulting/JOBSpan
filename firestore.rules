@@ -272,6 +272,14 @@ service cloud.firestore {
           // since it's money-sensitive.
           allow read, write: if inCompany(companyId) && hasFullAccess();
         }
+        match /subcontractorPayments/{payId} {
+          // Flat-rate 1099 job payments (e.g. Domingo Handyman LLC paid
+          // $20,400 for a defined scope) — separate from Vendor Bills
+          // (needs a formal vendor account) and from clock-in/out hours
+          // (for a flat-rate person, informational only, not what's
+          // owed). Same access tier as expenses above.
+          allow read, write: if inCompany(companyId) && hasFullAccess();
+        }
         match /changeorders/{coId} {
           allow read: if inCompany(companyId) && hasFullAccess() || request.auth == null;
           allow write: if inCompany(companyId) && hasFullAccess();
