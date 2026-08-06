@@ -4799,6 +4799,38 @@ function renderFinancialsHub(jobId) {
   fhRenderEva();
 }
 
+// Fresh from Firestore, not the estGroups global — that's only
+// populated once someone has actually clicked into the Estimate tab
+// this session. Financials is exactly the tab where that might never
+// have happened, and a wrong 50/50 fallback split looks like a real
+// number, not an obviously-empty one, which makes it dangerous to get
+// wrong silently.
+async function fetchEstimateCostSplitFresh(jobId) {
+  let materials = 0, laborAndOther = 0;
+  const addItem = data => {
+    const price = (data.unitPrice || 0) * (data.qty || 1);
+    if (data.costType === 'Materials') materials += price; else laborAndOther += price;
+  };
+  const groupsSnap = await coll('jobs').doc(jobId).collection('estimateGroups').get();
+  for (const gDoc of groupsSnap.docs) {
+    const gRef = gDoc.ref;
+    const directItems = await gRef.collection('items').get();
+    directItems.forEach(d => addItem(d.data()));
+    const subsSnap = await gRef.collection('subgroups').get();
+    for (const sDoc of subsSnap.docs) {
+      const sRef = sDoc.ref;
+      const subItems = await sRef.collection('items').get();
+      subItems.forEach(d => addItem(d.data()));
+      const subsubSnap = await sRef.collection('subgroups').get();
+      for (const ssDoc of subsubSnap.docs) {
+        const ssItems = await ssDoc.ref.collection('items').get();
+        ssItems.forEach(d => addItem(d.data()));
+      }
+    }
+  }
+  return { materials, laborAndOther };
+}
+
 function fhRenderInvoices() {
   const el = document.getElementById('fhInvSec');
   const cnt = document.getElementById('fhInvCount');
@@ -4811,18 +4843,55 @@ function fhRenderInvoices() {
   if (sum) sum.textContent = invs.length ? `${fhMoney(paid)} / ${fhMoney(total)} collected` : '';
   const today = new Date().toISOString().split('T')[0];
   if (!invs.length) { el.innerHTML = '<div class="finhub-empty">No invoices yet for this job.</div>'; return; }
+
+  const showSplits = currentUserRole === 'Owner' && invs.some(i => i.total > 0);
+
   el.innerHTML = invs.map(inv => {
     const bal = (inv.total||0) - (inv.amtPaid||0);
     let status = inv.status || 'Draft';
     if (status !== 'Paid' && inv.dueDate && inv.dueDate < today) status = 'Overdue';
     const color = FH_INV_COLORS[status] || '#8ea3c8';
-    return `<div class="finhub-line" onclick="openEditInvoice('${inv.jobId||conCurrentJobId}','${inv.id}')" style="cursor:pointer">
+    return `<div class="finhub-line" onclick="openEditInvoice('${inv.jobId||conCurrentJobId}','${inv.id}')" style="cursor:pointer;flex-wrap:wrap">
       <div><div class="finhub-line-title">${esc(inv.number||'Draft')}</div><div class="finhub-line-sub">${esc(inv.type||'Invoice')} · ${inv.date||'—'}${inv.dueDate?` · due ${inv.dueDate}`:''}</div></div>
       <div class="finhub-line-amt">${fhMoney(inv.total)}</div>
       <div class="finhub-line-bal" style="color:${bal>0?'#fde68a':'#a3f2d2'}">${bal>0?fhMoney(bal)+' due':'paid'}</div>
       <div>${fhBadge(status,color)}</div>
+      ${showSplits && inv.total > 0 ? `<div style="flex-basis:100%" id="fhInvSplit_${inv.id}" onclick="event.stopPropagation()"><div class="small muted" style="padding:4px 0 2px;font-style:italic">Loading split…</div></div>` : ''}
     </div>`;
   }).join('');
+
+  // One fresh estimate fetch for the whole invoice list, not one per
+  // invoice — then fill every split line in together once it resolves.
+  if (showSplits && conCurrentJobId) {
+    fetchEstimateCostSplitFresh(conCurrentJobId).then(({ materials, laborAndOther }) => {
+      const flexTotal = materials + laborAndOther;
+      const materialsShare = flexTotal > 0 ? materials / flexTotal : null;
+      const fixedPct = COO_BUDGET_PCTS.overhead + COO_BUDGET_PCTS.profit + COO_BUDGET_PCTS.marketing + COO_BUDGET_PCTS.flex;
+      invs.forEach(inv => {
+        const target = document.getElementById('fhInvSplit_' + inv.id);
+        if (!target || !inv.total) return;
+        if (materialsShare === null) {
+          target.innerHTML = '<div class="small muted" style="padding:4px 0 2px;font-style:italic">No estimate line items found yet — split unavailable.</div>';
+          return;
+        }
+        const remaining = inv.total * (1 - fixedPct);
+        const parts = [
+          ['Materials', remaining * materialsShare],
+          ['Labor/Subs', remaining * (1 - materialsShare)],
+          ['Overhead', inv.total * COO_BUDGET_PCTS.overhead],
+          ['Profit', inv.total * COO_BUDGET_PCTS.profit],
+          ['Marketing', inv.total * COO_BUDGET_PCTS.marketing],
+          ['Flex', inv.total * COO_BUDGET_PCTS.flex],
+        ];
+        target.innerHTML = `<div class="small muted" style="padding:4px 0 2px;font-style:italic">💡 Split: ${parts.map(([l,v])=>`${l} ${fhMoney(v)}`).join(' · ')}</div>`;
+      });
+    }).catch(() => {
+      invs.forEach(inv => {
+        const target = document.getElementById('fhInvSplit_' + inv.id);
+        if (target) target.innerHTML = '';
+      });
+    });
+  }
 }
 
 function fhRenderCOs() {
@@ -5215,6 +5284,8 @@ function fhRenderTotals(job) {
   set('fhOwedUs', owedUs, owedUs>0?'#fde68a':'#a3f2d2');
   set('fhBills', billsTotal);
   set('fhBillsPaid', billsPaid, '#a3f2d2');
+  set('fhMaterialsOut', materialsTotal, '#a3f2d2');
+  set('fhSubPayOut', subPaymentsPaid, '#a3f2d2');
   set('fhWeOwe', weOwe, weOwe>0?'#fca5a5':'#a3f2d2');
   set('fhCostComplete', costToComplete);
 
@@ -17167,10 +17238,17 @@ function getEstimateCostSplit() {
   return { materials, laborAndOther };
 }
 
-function computeCOOBudgetBreakdown(job) {
-  const revenue = getEstimateTotal ? getEstimateTotal() : getJobValue(job);
-  const { materials, laborAndOther } = getEstimateCostSplit();
+async function computeCOOBudgetBreakdown(job) {
+  const { materials, laborAndOther } = await fetchEstimateCostSplitFresh(job.id);
   const flexTotal = materials + laborAndOther;
+  // Revenue: prefer the signed contract value on the job itself
+  // (reliable regardless of what else is open); fall back to the
+  // fresh estimate total (materials + everything else) if there's no
+  // contract value yet — e.g. a job still in Estimating status.
+  // Previously this called getEstimateTotal(), which reads a hidden
+  // field that only exists INSIDE the invoice-creation modal — calling
+  // it from the Financials tab's own button read nothing, silently.
+  const revenue = (job?.contractValue || job?.approvedOrders || flexTotal || 0);
   // Fixed categories claim their share of revenue first; whatever
   // Materials/Labor actually totaled in the estimate split the
   // remainder in their real ratio — so the two flexible lines always
@@ -17215,43 +17293,44 @@ function formatCOOBudgetBody(b) {
 // "being diagnosed" — stacking another automatic trigger on the same
 // shaky mechanism would just add a second unreliable path. A button
 // Travis presses himself is slower but actually trustworthy.
-function generateCOOBudgetBreakdown() {
+async function generateCOOBudgetBreakdown() {
   if (currentUserRole !== 'Owner') { alert('Only the Owner can generate a COO budget breakdown.'); return; }
   const job = conJobs.find(j => j.id === conCurrentJobId);
   if (!job) return;
-  if (!estGroups || !estGroups.length) { alert('No estimate line items found on this job yet.'); return; }
 
-  const breakdown = computeCOOBudgetBreakdown(job);
-  coll('jobs').doc(job.id).update({ cooBudgetBreakdown: breakdown })
-    .then(() => {
-      job.cooBudgetBreakdown = breakdown;
-      renderCOOBudgetBreakdown();
-      // Push to PlannerXD — same bridge/collection already used for
-      // to-do notifications, already scoped to the Owner's account
-      // specifically (settings/company.ownerUid), so "only I see it"
-      // is inherent to this destination, not something extra to build.
-      return coll('settings').doc('company').get();
-    })
-    .then(settDoc => {
-      const ownerUid = settDoc?.exists ? settDoc.data().ownerUid : null;
-      if (!ownerUid) {
-        alert('Budget breakdown saved on the job, but could not push to PlannerXD — no PlannerXD account (ownerUid) is linked in Company Settings.');
-        return;
-      }
-      return conDb.collection('plannerxd_notifications').doc(ownerUid).collection('items').add({
-        type: 'coo_budget_breakdown',
-        title: 'COO Budget — ' + (job.address || job.name || 'Job'),
-        body: formatCOOBudgetBody(breakdown),
-        jobId: job.id,
-        companyId: currentCompanyId,
-        actionLabel: 'Open Job',
-        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-        createdMs: Date.now(),
-        read: false
-      });
-    })
-    .then(() => alert('✅ COO budget breakdown generated and sent to PlannerXD.'))
-    .catch(e => alert('Error generating breakdown: ' + e.message));
+  try {
+    const breakdown = await computeCOOBudgetBreakdown(job);
+    if (!breakdown.revenue) { alert('No estimate line items or contract value found on this job yet.'); return; }
+
+    await coll('jobs').doc(job.id).update({ cooBudgetBreakdown: breakdown });
+    job.cooBudgetBreakdown = breakdown;
+    renderCOOBudgetBreakdown();
+
+    // Push to PlannerXD — same bridge/collection already used for
+    // to-do notifications, already scoped to the Owner's account
+    // specifically (settings/company.ownerUid), so "only I see it"
+    // is inherent to this destination, not something extra to build.
+    const settDoc = await coll('settings').doc('company').get();
+    const ownerUid = settDoc?.exists ? settDoc.data().ownerUid : null;
+    if (!ownerUid) {
+      alert('Budget breakdown saved on the job, but could not push to PlannerXD — no PlannerXD account (ownerUid) is linked in Company Settings.');
+      return;
+    }
+    await conDb.collection('plannerxd_notifications').doc(ownerUid).collection('items').add({
+      type: 'coo_budget_breakdown',
+      title: 'COO Budget — ' + (job.address || job.name || 'Job'),
+      body: formatCOOBudgetBody(breakdown),
+      jobId: job.id,
+      companyId: currentCompanyId,
+      actionLabel: 'Open Job',
+      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      createdMs: Date.now(),
+      read: false
+    });
+    alert('✅ COO budget breakdown generated and sent to PlannerXD.');
+  } catch (e) {
+    alert('Error generating breakdown: ' + e.message);
+  }
 }
 window.generateCOOBudgetBreakdown = generateCOOBudgetBreakdown;
 
