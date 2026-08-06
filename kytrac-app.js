@@ -2895,6 +2895,12 @@ function openJobDetail(jobId, defaultTab) {
   _editingSubgroupId = null;
   _editingSubSubgroupId = null;
 
+  // Financials tab button — hidden entirely for anyone but Travis
+  // (switchDetailTab also hard-blocks the content itself, this just
+  // avoids a dead button sitting in the nav for everyone else).
+  const finTabBtn = document.querySelector('#jobDetailModal .con-subtab[onclick*="\'financials\'"]');
+  if (finTabBtn) finTabBtn.style.display = canViewFinancialsTab() ? '' : 'none';
+
   const fmt = v => '$' + Number(v||0).toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:0});
 
   // Header
@@ -4662,7 +4668,24 @@ function saveEntryInfo() {
 }
 window.saveEntryInfo = saveEntryInfo;
 
+// Financials tab is locked to Travis's specific login, not just
+// "Owner role" — he was explicit this needs to be airtight regardless
+// of how roles get assigned/reassigned later. Hardcoded email check,
+// not a role flag, so there's no ambiguity about who this applies to.
+const FINANCIALS_TAB_ALLOWED_EMAIL = 'travis@7pillarsgroup.org';
+function canViewFinancialsTab() {
+  return (conCurrentUser?.email || '').toLowerCase() === FINANCIALS_TAB_ALLOWED_EMAIL;
+}
+
 function switchDetailTab(tab, btn) {
+  // Hard block, checked BEFORE anything else renders — refuses even a
+  // direct/forced switchDetailTab('financials') call (e.g. from the
+  // browser console), not just hiding the button. Silently redirects
+  // to Dashboard instead, no error message revealing the tab exists.
+  if (tab === 'financials' && !canViewFinancialsTab()) {
+    tab = 'dashboard';
+    btn = document.querySelector('#jobDetailModal .con-subtab');
+  }
   const allTabs = ['dashboard','financials','estimate','changeorders','subs','phases','logs','invoices','documents','activity','retrospective','todos','selections','specifications','plans','messages','reports','jobnotes','entryinfo'];
   allTabs.forEach(t => {
     const key = 'detail' + t.charAt(0).toUpperCase() + t.slice(1);
@@ -4810,6 +4833,38 @@ async function fetchEstimateCostSplitFresh(jobId) {
   const addItem = data => {
     const price = (data.unitPrice || 0) * (data.qty || 1);
     if (data.costType === 'Materials') materials += price; else laborAndOther += price;
+  };
+  const groupsSnap = await coll('jobs').doc(jobId).collection('estimateGroups').get();
+  for (const gDoc of groupsSnap.docs) {
+    const gRef = gDoc.ref;
+    const directItems = await gRef.collection('items').get();
+    directItems.forEach(d => addItem(d.data()));
+    const subsSnap = await gRef.collection('subgroups').get();
+    for (const sDoc of subsSnap.docs) {
+      const sRef = sDoc.ref;
+      const subItems = await sRef.collection('items').get();
+      subItems.forEach(d => addItem(d.data()));
+      const subsubSnap = await sRef.collection('subgroups').get();
+      for (const ssDoc of subsubSnap.docs) {
+        const ssItems = await ssDoc.ref.collection('items').get();
+        ssItems.forEach(d => addItem(d.data()));
+      }
+    }
+  }
+  return { materials, laborAndOther };
+}
+
+// Same traversal, but sums unitCost (the estimate's TRUE cost basis)
+// instead of unitPrice (the billed/sell price). This is the number
+// that answers "what will this job actually cost us" — the other
+// function above answers "what does the customer see billed."
+// Conflating the two was the exact confusion behind the whole
+// billed-vs-true-cost thread running through today's session.
+async function fetchEstimateTrueCostSplit(jobId) {
+  let materials = 0, laborAndOther = 0;
+  const addItem = data => {
+    const cost = (data.unitCost || 0) * (data.qty || 1);
+    if (data.costType === 'Materials') materials += cost; else laborAndOther += cost;
   };
   const groupsSnap = await coll('jobs').doc(jobId).collection('estimateGroups').get();
   for (const gDoc of groupsSnap.docs) {
@@ -5303,6 +5358,12 @@ function fhRenderTotals(job) {
   const invoiced = _fhInvoices.reduce((s,i)=>s+(i.total||0),0);
   const collected = _fhInvoices.reduce((s,i)=>s+(i.amtPaid||0),0);
   const owedUs = invoiced - collected;
+  // "Owed to Us" only ever meant invoiced-but-not-collected — it was
+  // never the full remaining contract value, but showing it alone (on
+  // a job invoiced 50%) reads as "that's all we're owed." Not Yet
+  // Invoiced makes the rest of the picture visible: collected +
+  // owedUs + notYetInvoiced should always sum back to contractTotal.
+  const notYetInvoiced = Math.max(0, contractTotal - invoiced);
   const billsTotal = _fhBills.reduce((s,b)=>s+(b.amount||0),0);
   const billsPaid = _fhBills.reduce((s,b)=>s+(b.amtPaid||0),0);
   const weOwe = billsTotal - billsPaid;
@@ -5313,8 +5374,6 @@ function fhRenderTotals(job) {
   // out here, matching the vendor-bill pattern (amtPaid, not amount) —
   // an 'Agreed' payment is a real committed cost but hasn't moved yet.
   const subPaymentsPaid = _fhSubPayments.filter(p=>p.status==='Paid').reduce((s,p)=>s+(p.amount||0),0);
-  const ec = job.estCost||0, ac = job.actualCost||0;
-  const costToComplete = Math.max(ec - ac, 0);
   const net = collected - billsPaid - materialsTotal - subPaymentsPaid;
 
   const set = (id,v,color) => { const el=document.getElementById(id); if(el){ el.textContent=fhMoney(v); if(color)el.style.color=color; } };
@@ -5322,17 +5381,44 @@ function fhRenderTotals(job) {
   set('fhInvoiced', invoiced);
   set('fhCollected', collected, '#a3f2d2');
   set('fhOwedUs', owedUs, owedUs>0?'#fde68a':'#a3f2d2');
+  set('fhNotInvoiced', notYetInvoiced, '#8ea3c8');
   set('fhBills', billsTotal);
   set('fhBillsPaid', billsPaid, '#a3f2d2');
   set('fhMaterialsOut', materialsTotal, '#a3f2d2');
   set('fhSubPayOut', subPaymentsPaid, '#a3f2d2');
   set('fhWeOwe', weOwe, weOwe>0?'#fca5a5':'#a3f2d2');
-  set('fhCostComplete', costToComplete);
 
   const netEl = document.getElementById('fhNet');
   if (netEl) { netEl.textContent = (net<0?'-':'')+fhMoney(Math.abs(net)); netEl.style.color = net>=0?'#a3f2d2':'#fca5a5'; }
   const netSub = document.getElementById('fhNetSub');
   if (netSub) netSub.textContent = `${fhMoney(owedUs)} still coming in · ${fhMoney(weOwe)} still going out`;
+
+  // Est. Materials / Est. Labor / Projected Profit — was a single
+  // "Est. Cost to Complete" number lumped into the same "Money Out"
+  // column as real cash (vendor bills, materials), making a job's
+  // internal cost basis look like actual money about to leave the
+  // account, with the profit margin invisible inside it. Split into
+  // its true parts and pulled profit out as its own clearly-labeled
+  // figure. Fresh fetch (unitCost, the estimate's TRUE cost basis —
+  // not unitPrice, the billed/sell price) rather than the possibly-
+  // stale estGroups global, same reliability fix applied everywhere
+  // else true-cost numbers get computed today.
+  if (conCurrentJobId) {
+    fetchEstimateTrueCostSplit(conCurrentJobId).then(({ materials, laborAndOther }) => {
+      set('fhEstMaterials', materials);
+      set('fhEstLabor', laborAndOther);
+      const profit = contractTotal - materials - laborAndOther;
+      const margin = contractTotal > 0 ? (profit / contractTotal * 100) : 0;
+      const profitEl = document.getElementById('fhProfitVal');
+      const profitColor = profit > 0 ? '#a3f2d2' : profit < 0 ? '#f87171' : '#f59e0b';
+      if (profitEl) { profitEl.textContent = (profit<0?'-':'')+fhMoney(Math.abs(profit)); profitEl.style.color = profitColor; }
+      const profitSub = document.getElementById('fhProfitSub');
+      if (profitSub) profitSub.textContent = `${margin.toFixed(1)}% margin on ${fhMoney(contractTotal)} contract`;
+    }).catch(() => {
+      set('fhEstMaterials', 0);
+      set('fhEstLabor', 0);
+    });
+  }
 }
 
 
