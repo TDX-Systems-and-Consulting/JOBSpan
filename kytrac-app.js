@@ -4844,7 +4844,13 @@ function fhRenderInvoices() {
   const today = new Date().toISOString().split('T')[0];
   if (!invs.length) { el.innerHTML = '<div class="finhub-empty">No invoices yet for this job.</div>'; return; }
 
-  const showSplits = currentUserRole === 'Owner' && invs.some(i => i.total > 0);
+  // The cost split is NEVER shown here, or anywhere in the JOBSMETRIX
+  // UI, even Owner-gated — Travis was explicit that this is private
+  // margin information and doesn't belong anywhere near the invoice
+  // itself, even behind a role check. It's delivered as a PlannerXD
+  // notification instead (sendInvoiceSplitToPlannerXD below), a
+  // genuinely separate destination only the Owner's account receives.
+  const canSend = currentUserRole === 'Owner';
 
   el.innerHTML = invs.map(inv => {
     const bal = (inv.total||0) - (inv.amtPaid||0);
@@ -4856,43 +4862,77 @@ function fhRenderInvoices() {
       <div class="finhub-line-amt">${fhMoney(inv.total)}</div>
       <div class="finhub-line-bal" style="color:${bal>0?'#fde68a':'#a3f2d2'}">${bal>0?fhMoney(bal)+' due':'paid'}</div>
       <div>${fhBadge(status,color)}</div>
-      ${showSplits && inv.total > 0 ? `<div style="flex-basis:100%" id="fhInvSplit_${inv.id}" onclick="event.stopPropagation()"><div class="small muted" style="padding:4px 0 2px;font-style:italic">Loading split…</div></div>` : ''}
+      ${canSend && inv.total > 0 ? `<div style="flex-basis:100%" onclick="event.stopPropagation()"><button class="btn" style="padding:3px 8px;font-size:.7rem;margin-top:4px" onclick="sendInvoiceSplitToPlannerXD('${inv.id}')">📤 Send split to PlannerXD (private)</button></div>` : ''}
     </div>`;
   }).join('');
+}
 
-  // One fresh estimate fetch for the whole invoice list, not one per
-  // invoice — then fill every split line in together once it resolves.
-  if (showSplits && conCurrentJobId) {
-    fetchEstimateCostSplitFresh(conCurrentJobId).then(({ materials, laborAndOther }) => {
-      const flexTotal = materials + laborAndOther;
-      const materialsShare = flexTotal > 0 ? materials / flexTotal : null;
-      const fixedPct = COO_BUDGET_PCTS.overhead + COO_BUDGET_PCTS.profit + COO_BUDGET_PCTS.marketing + COO_BUDGET_PCTS.flex;
-      invs.forEach(inv => {
-        const target = document.getElementById('fhInvSplit_' + inv.id);
-        if (!target || !inv.total) return;
-        if (materialsShare === null) {
-          target.innerHTML = '<div class="small muted" style="padding:4px 0 2px;font-style:italic">No estimate line items found yet — split unavailable.</div>';
-          return;
-        }
-        const remaining = inv.total * (1 - fixedPct);
-        const parts = [
-          ['Materials', remaining * materialsShare],
-          ['Labor/Subs', remaining * (1 - materialsShare)],
-          ['Overhead', inv.total * COO_BUDGET_PCTS.overhead],
-          ['Profit', inv.total * COO_BUDGET_PCTS.profit],
-          ['Marketing', inv.total * COO_BUDGET_PCTS.marketing],
-          ['Flex', inv.total * COO_BUDGET_PCTS.flex],
-        ];
-        target.innerHTML = `<div class="small muted" style="padding:4px 0 2px;font-style:italic">💡 Split: ${parts.map(([l,v])=>`${l} ${fhMoney(v)}`).join(' · ')}</div>`;
-      });
-    }).catch(() => {
-      invs.forEach(inv => {
-        const target = document.getElementById('fhInvSplit_' + inv.id);
-        if (target) target.innerHTML = '';
-      });
+// Sends a private cost-split breakdown for ONE specific invoice to
+// PlannerXD — never shown anywhere in JOBSMETRIX itself, even
+// Owner-gated. Same pattern as generateCOOBudgetBreakdown but scoped
+// to a single invoice amount instead of the whole job's estimate
+// total, and delivered exclusively rather than also displayed inline.
+async function sendInvoiceSplitToPlannerXD(invId) {
+  if (currentUserRole !== 'Owner') { alert('Only the Owner can send this.'); return; }
+  const jobId = conCurrentJobId;
+  const job = conJobs.find(j => j.id === jobId);
+  const inv = _fhInvoices.find(i => i.id === invId);
+  if (!job || !inv || !inv.total) return;
+
+  const btn = document.querySelector(`button[onclick="sendInvoiceSplitToPlannerXD('${invId}')"]`);
+  if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }
+
+  try {
+    const { materials, laborAndOther } = await fetchEstimateCostSplitFresh(jobId);
+    const flexTotal = materials + laborAndOther;
+    const materialsShare = flexTotal > 0 ? materials / flexTotal : 0.5;
+    const fixedPct = COO_BUDGET_PCTS.overhead + COO_BUDGET_PCTS.profit + COO_BUDGET_PCTS.marketing + COO_BUDGET_PCTS.flex;
+    const remaining = inv.total * (1 - fixedPct);
+    const parts = {
+      materials: remaining * materialsShare,
+      labor: remaining * (1 - materialsShare),
+      overhead: inv.total * COO_BUDGET_PCTS.overhead,
+      profit: inv.total * COO_BUDGET_PCTS.profit,
+      marketing: inv.total * COO_BUDGET_PCTS.marketing,
+      flex: inv.total * COO_BUDGET_PCTS.flex,
+    };
+    const taxes = parts.profit * COO_BUDGET_TAX_RATE;
+    const fmt = v => '$' + v.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2});
+    const body = `Invoice ${inv.number || ''} — ${fmt(inv.total)}\n\n`
+      + `Materials: ${fmt(parts.materials)}\n`
+      + `Labor/Subs: ${fmt(parts.labor)}\n`
+      + `Overhead: ${fmt(parts.overhead)}\n`
+      + `Profit/Retained Earnings: ${fmt(parts.profit)}\n`
+      + `Marketing: ${fmt(parts.marketing)}\n`
+      + `Flex/Overrun buffer: ${fmt(parts.flex)}\n`
+      + `Taxes (from Profit line): ${fmt(taxes)}`;
+
+    const settDoc = await coll('settings').doc('company').get();
+    const ownerUid = settDoc?.exists ? settDoc.data().ownerUid : null;
+    if (!ownerUid) {
+      alert('Could not send — no PlannerXD account (ownerUid) is linked in Company Settings.');
+      return;
+    }
+    await conDb.collection('plannerxd_notifications').doc(ownerUid).collection('items').add({
+      type: 'invoice_split',
+      title: 'Invoice Split — ' + (job.address || job.name || 'Job') + ' · ' + (inv.number || ''),
+      body,
+      jobId,
+      invId,
+      companyId: currentCompanyId,
+      actionLabel: 'Open Job',
+      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      createdMs: Date.now(),
+      read: false
     });
+    alert('✅ Sent to PlannerXD.');
+  } catch (e) {
+    alert('Error: ' + e.message);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '📤 Send split to PlannerXD (private)'; }
   }
 }
+window.sendInvoiceSplitToPlannerXD = sendInvoiceSplitToPlannerXD;
 
 function fhRenderCOs() {
   const el = document.getElementById('fhCOSec');
