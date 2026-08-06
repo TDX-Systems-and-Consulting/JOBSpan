@@ -4793,6 +4793,9 @@ function renderFinancialsHub(jobId) {
   // Subcontractor payments (1099 flat-rate job pay)
   fhLoadJobSubPayments(jobId, () => { fhRenderSubPayments(); fhRenderTotals(job); });
 
+  // Owner-only COO budget breakdown
+  renderCOOBudgetBreakdown();
+
   fhRenderEva();
 }
 
@@ -17056,6 +17059,169 @@ function calcGroupTotals(items) {
 // Reversible: the pre-discount values are snapshotted onto the job doc
 // before any line item is touched, so "Remove Discount" can restore
 // exact original pricing.
+
+// ── COO Budget Breakdown ──────────────────────────────────────────
+// Splits a job's estimate into a category breakdown: Materials and
+// Labor/Subs flex per-job (derived from THIS estimate's real
+// composition), while Overhead/Profit/Marketing/Flex stay FIXED
+// company-wide percentages — the framework worked out with Travis:
+// discipline on every dollar, without forcing every job into an
+// identical ratio that doesn't reflect what the job actually is.
+// Taxes are computed off the PROFIT line, not off revenue — taxing
+// revenue directly overstates the real tax liability substantially.
+//
+// These company-wide percentages are intentionally hardcoded here for
+// now rather than a Settings field — they're a business decision
+// Travis is still tuning, not yet a stable configuration value. Move
+// to Settings once these numbers settle.
+const COO_BUDGET_PCTS = {
+  overhead: 0.15,
+  profit: 0.12,
+  marketing: 0.03,
+  flex: 0.05,
+};
+const COO_BUDGET_TAX_RATE = 0.275; // midpoint of the 25-30% SE+income tax range discussed, applied to Profit only
+
+function getEstimateCostSplit() {
+  // Materials vs everything-else (Labor, Subcontractor, Equipment,
+  // etc.) across the whole live estimate tree — same traversal shape
+  // as walkEstimateLaborItems, just bucketed differently.
+  let materials = 0, laborAndOther = 0;
+  const addItem = item => {
+    const price = (item.unitPrice || 0) * (item.qty || 1);
+    if (item.costType === 'Materials') materials += price;
+    else laborAndOther += price;
+  };
+  estGroups.forEach(g => {
+    (g.directItems || []).forEach(addItem);
+    (g.subgroups || []).forEach(sub => {
+      (sub.items || []).forEach(addItem);
+      (sub.subgroups || []).forEach(subsub => (subsub.items || []).forEach(addItem));
+    });
+  });
+  return { materials, laborAndOther };
+}
+
+function computeCOOBudgetBreakdown(job) {
+  const revenue = getEstimateTotal ? getEstimateTotal() : getJobValue(job);
+  const { materials, laborAndOther } = getEstimateCostSplit();
+  const flexTotal = materials + laborAndOther;
+  // Fixed categories claim their share of revenue first; whatever
+  // Materials/Labor actually totaled in the estimate split the
+  // remainder in their real ratio — so the two flexible lines always
+  // sum correctly to "revenue minus the fixed categories," not to
+  // some arbitrary separate total.
+  const fixedTotal = revenue * (COO_BUDGET_PCTS.overhead + COO_BUDGET_PCTS.profit + COO_BUDGET_PCTS.marketing + COO_BUDGET_PCTS.flex);
+  const remaining = Math.max(0, revenue - fixedTotal);
+  const materialsShare = flexTotal > 0 ? materials / flexTotal : 0.5;
+  const overhead = revenue * COO_BUDGET_PCTS.overhead;
+  const profit = revenue * COO_BUDGET_PCTS.profit;
+  const marketing = revenue * COO_BUDGET_PCTS.marketing;
+  const flex = revenue * COO_BUDGET_PCTS.flex;
+  const taxes = profit * COO_BUDGET_TAX_RATE;
+  return {
+    revenue: Math.round(revenue * 100) / 100,
+    materials: Math.round(remaining * materialsShare * 100) / 100,
+    labor: Math.round(remaining * (1 - materialsShare) * 100) / 100,
+    overhead: Math.round(overhead * 100) / 100,
+    profit: Math.round(profit * 100) / 100,
+    marketing: Math.round(marketing * 100) / 100,
+    flex: Math.round(flex * 100) / 100,
+    taxes: Math.round(taxes * 100) / 100,
+    generatedAt: new Date().toISOString(),
+  };
+}
+
+function formatCOOBudgetBody(b) {
+  const fmt = v => '$' + v.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2});
+  return `Revenue: ${fmt(b.revenue)}\n`
+    + `Materials: ${fmt(b.materials)}\n`
+    + `Labor/Subs: ${fmt(b.labor)}\n`
+    + `Overhead: ${fmt(b.overhead)}\n`
+    + `Profit/Retained Earnings: ${fmt(b.profit)}\n`
+    + `Marketing: ${fmt(b.marketing)}\n`
+    + `Flex/Overrun buffer: ${fmt(b.flex)}\n`
+    + `Taxes (from Profit line): ${fmt(b.taxes)}`;
+}
+
+// Owner-only, manual trigger — deliberately NOT wired to a status
+// change or automatic event. The existing proposal-signature ->
+// PlannerXD bridge is flagged elsewhere in this file as unreliable and
+// "being diagnosed" — stacking another automatic trigger on the same
+// shaky mechanism would just add a second unreliable path. A button
+// Travis presses himself is slower but actually trustworthy.
+function generateCOOBudgetBreakdown() {
+  if (currentUserRole !== 'Owner') { alert('Only the Owner can generate a COO budget breakdown.'); return; }
+  const job = conJobs.find(j => j.id === conCurrentJobId);
+  if (!job) return;
+  if (!estGroups || !estGroups.length) { alert('No estimate line items found on this job yet.'); return; }
+
+  const breakdown = computeCOOBudgetBreakdown(job);
+  coll('jobs').doc(job.id).update({ cooBudgetBreakdown: breakdown })
+    .then(() => {
+      job.cooBudgetBreakdown = breakdown;
+      renderCOOBudgetBreakdown();
+      // Push to PlannerXD — same bridge/collection already used for
+      // to-do notifications, already scoped to the Owner's account
+      // specifically (settings/company.ownerUid), so "only I see it"
+      // is inherent to this destination, not something extra to build.
+      return coll('settings').doc('company').get();
+    })
+    .then(settDoc => {
+      const ownerUid = settDoc?.exists ? settDoc.data().ownerUid : null;
+      if (!ownerUid) {
+        alert('Budget breakdown saved on the job, but could not push to PlannerXD — no PlannerXD account (ownerUid) is linked in Company Settings.');
+        return;
+      }
+      return conDb.collection('plannerxd_notifications').doc(ownerUid).collection('items').add({
+        type: 'coo_budget_breakdown',
+        title: 'COO Budget — ' + (job.address || job.name || 'Job'),
+        body: formatCOOBudgetBody(breakdown),
+        jobId: job.id,
+        companyId: currentCompanyId,
+        actionLabel: 'Open Job',
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+        createdMs: Date.now(),
+        read: false
+      });
+    })
+    .then(() => alert('✅ COO budget breakdown generated and sent to PlannerXD.'))
+    .catch(e => alert('Error generating breakdown: ' + e.message));
+}
+window.generateCOOBudgetBreakdown = generateCOOBudgetBreakdown;
+
+// Renders the saved breakdown (if any) in the Financials Hub —
+// Owner-only, so it persists and is reviewable in JOBSMETRIX itself,
+// not just as a PlannerXD notification that gets dismissed and lost.
+function renderCOOBudgetBreakdown() {
+  const wrap = document.getElementById('fhCooBudgetWrap');
+  if (!wrap) return;
+  if (currentUserRole !== 'Owner') { wrap.style.display = 'none'; return; }
+  wrap.style.display = '';
+  const job = conJobs.find(j => j.id === conCurrentJobId);
+  const b = job?.cooBudgetBreakdown;
+  const genBtn = `<button class="btn" onclick="generateCOOBudgetBreakdown()" style="padding:4px 10px;font-size:.72rem">${b ? '↻ Regenerate' : '📊 Generate Breakdown'}</button>`;
+  if (!b) {
+    wrap.innerHTML = `<div class="finhub-sec-head" style="cursor:default"><span>📊 COO Budget Breakdown <span class="small muted">(Owner only)</span></span>${genBtn}</div>
+      <div class="finhub-sec-body"><div class="finhub-empty">Not generated yet for this job.</div></div>`;
+    return;
+  }
+  const fmt = v => '$' + v.toLocaleString(undefined, {minimumFractionDigits:0, maximumFractionDigits:0});
+  const rows = [
+    ['Materials', b.materials, '#fb923c'],
+    ['Labor/Subs', b.labor, '#60a5fa'],
+    ['Overhead', b.overhead, '#a3a3a3'],
+    ['Profit/Retained Earnings', b.profit, '#1dbb87'],
+    ['Marketing', b.marketing, '#c084fc'],
+    ['Flex/Overrun buffer', b.flex, '#fde68a'],
+  ];
+  wrap.innerHTML = `<div class="finhub-sec-head" style="cursor:default"><span>📊 COO Budget Breakdown <span class="small muted">(Owner only) — Revenue ${fmt(b.revenue)}</span></span>${genBtn}</div>
+    <div class="finhub-sec-body">
+      ${rows.map(([label, val, color]) => `<div class="finhub-line"><div class="finhub-line-title" style="color:${color}">${label}</div><div class="finhub-line-amt">${fmt(val)}</div></div>`).join('')}
+      <div class="finhub-line" style="border-top:1px solid rgba(110,145,210,.15);padding-top:8px;margin-top:4px"><div class="finhub-line-title" style="font-style:italic">Taxes (from Profit line)</div><div class="finhub-line-amt" style="font-style:italic">${fmt(b.taxes)}</div></div>
+    </div>`;
+}
+window.renderCOOBudgetBreakdown = renderCOOBudgetBreakdown;
 
 function walkEstimateLaborItems() {
   // Returns [{ item, groupId, subgroupId, subSubgroupId }] for every
