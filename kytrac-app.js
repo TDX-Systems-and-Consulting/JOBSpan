@@ -10496,14 +10496,23 @@ function renderTeamMemberList() {
         <button class="btn" style="padding:2px 8px;font-size:.7rem" onclick="saveTeamMemberPhone('${key}')">Save</button>
       </div>
       <div style="display:flex;align-items:center;gap:6px;margin-top:5px">
+        <span style="font-size:.72rem;color:var(--muted);min-width:90px">Payment Type</span>
+        <select id="payType_${key}" onchange="saveTeamMemberPaymentType('${key}')"
+          style="font-size:.72rem;padding:3px 8px;width:220px;background:rgba(8,19,37,.6);border:1px solid var(--line);border-radius:6px;color:var(--muted)">
+          <option value="hourly" ${(m.paymentType||'hourly')==='hourly'?'selected':''}>Hourly (W-2 — hours × rate = cost)</option>
+          <option value="subcontractor" ${m.paymentType==='subcontractor'?'selected':''}>Flat-Rate Subcontractor (1099 — paid a job price, not by the hour)</option>
+        </select>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;margin-top:5px">
         <span style="font-size:.72rem;color:var(--muted)">$</span>
-        <input id="rate_${key}" value="${m.burdenedRate!=null?m.burdenedRate:''}" placeholder="Burdened hourly rate (true cost)" type="number" step="0.01" min="0"
+        <input id="rate_${key}" value="${m.burdenedRate!=null?m.burdenedRate:''}" placeholder="Rate" type="number" step="0.01" min="0"
           style="font-size:.72rem;padding:3px 8px;width:220px;background:rgba(8,19,37,.6);border:1px solid var(--line);border-radius:6px;color:var(--muted)" />
         <span style="font-size:.7rem;color:var(--muted)">/hr</span>
         <button class="btn" style="padding:2px 8px;font-size:.7rem" onclick="saveTeamMemberRate('${key}')">Save</button>
       </div>
       <div style="font-size:.66rem;color:var(--muted);margin-top:3px;max-width:340px;line-height:1.4">
-        Real all-in cost per hour (wage + payroll tax, insurance, workers comp, etc — the number JobsMetrix uses for true job-cost tracking, NOT the customer-facing bill rate). Overtime is computed automatically at this rate × your Overtime Multiplier setting — no separate OT rate needed.
+        <strong>Hourly people:</strong> this IS their true cost — hours logged × this rate = real job cost, automatically.
+        <strong>Flat-rate subcontractors:</strong> this is just your target/budgeted rate for figuring out what to OFFER them (e.g. 240 hrs × $85 = a $20,400 job offer) — it does NOT drive actual cost. Their real cost is the agreed price you enter per job (Financials tab, Subcontractor line). Clock-in/out still works for them either way — for a flat-rate person their hours feed Estimated vs. Actual comparisons only, so you can tell whether your pricing was right, without it changing what you owe.
       </div>
       <div style="font-size:.66rem;color:var(--muted);margin-top:3px;max-width:340px;line-height:1.4">
         By saving your number you consent to receive SMS job notifications from JOBSMETRIX. Msg &amp; data rates may apply. Reply STOP to opt out.
@@ -10517,6 +10526,7 @@ function renderTeamMemberList() {
         ${m.qbEmployeeId ? `<span>🧾 QB ID: ${esc(m.qbEmployeeId)}</span>` : ''}
         ${m.phone ? `<span>📱 ${esc(m.phone)}</span>` : ''}
         ${m.burdenedRate!=null ? `<span>💰 $${Number(m.burdenedRate).toFixed(2)}/hr</span>` : ''}
+        ${m.paymentType==='subcontractor' ? `<span>📄 1099 Flat-Rate</span>` : ''}
         <button class="btn" style="padding:2px 8px;font-size:.7rem" onclick="toggleTeamMemberEdit('${key}')">✏️ Edit</button>
       </div>
     `;
@@ -10643,6 +10653,28 @@ function saveTeamMemberRate(key) {
   }).catch(e => alert('Error saving hourly rate: ' + e.message));
 }
 window.saveTeamMemberRate = saveTeamMemberRate;
+
+// Hourly vs flat-rate-subcontractor classification. Doesn't change how
+// clock-in/out works at all (same button, same feature, for anyone
+// with app access) — it only changes how that clocked time gets
+// INTERPRETED when computing job cost: hourly people's hours × rate
+// IS their real cost; a flat-rate subcontractor's hours are informational
+// only (feeds Estimated vs. Actual comparisons for future pricing
+// accuracy) since what's actually owed is a separately-agreed job
+// price, not hours worked.
+function saveTeamMemberPaymentType(key) {
+  if (currentUserRole !== 'Owner') return;
+  const sel = document.getElementById('payType_' + key);
+  if (!sel) return;
+  coll('settings').doc('team').set(
+    { members: { [key]: { paymentType: sel.value, updatedAt: new Date().toISOString() } } },
+    { merge: true }
+  ).then(() => {
+    sel.style.borderColor = '#1dbb87';
+    setTimeout(() => loadTeamMembers(), 500);
+  }).catch(e => alert('Error saving payment type: ' + e.message));
+}
+window.saveTeamMemberPaymentType = saveTeamMemberPaymentType;
 
 // Sets/clears the full-access override for a team member - Owner-only,
 // same security boundary as other team management actions (this is what
@@ -11533,7 +11565,8 @@ function computeWeeklyOvertime(entries) {
       // same rate applies to every hour this person logged in this
       // week regardless of which job/entry it came from.
       buckets[key] = { userName: e.userName || e.userEmail || 'Unknown', weekStart: wkStart, hours: 0,
-        burdenRate: getPersonBurdenRate(e.userId, e.userEmail) };
+        burdenRate: getPersonBurdenRate(e.userId, e.userEmail),
+        isSubcontractor: isFlatRateSubcontractor(e.userId, e.userEmail) };
     }
     buckets[key].hours += e.hours;
   });
@@ -11541,7 +11574,12 @@ function computeWeeklyOvertime(entries) {
   return Object.values(buckets).map(b => {
     const regHours = Math.min(b.hours, threshold);
     const otHours = Math.max(0, b.hours - threshold);
-    const cost = regHours * b.burdenRate + otHours * b.burdenRate * multiplier;
+    // Flat-rate subcontractors: hours still show (useful for checking
+    // estimating accuracy later), but hours×rate is NOT their real
+    // cost — that's a separately-agreed job price entered elsewhere —
+    // so cost stays 0 here rather than silently implying a dollar
+    // figure nobody actually owes.
+    const cost = b.isSubcontractor ? 0 : (regHours * b.burdenRate + otHours * b.burdenRate * multiplier);
     return { ...b, regHours, otHours, cost, isOt: otHours > 0 };
   }).sort((a,b) => b.weekStart.localeCompare(a.weekStart) || b.hours - a.hours);
 }
@@ -11570,11 +11608,11 @@ function renderWeeklyOvertime() {
       <thead><tr><th>Employee</th><th>Week Of</th><th style="text-align:right">Reg</th><th style="text-align:right">OT</th><th style="text-align:right">True Cost</th></tr></thead>
       <tbody>
         ${weeks.map(w => `<tr${w.isOt ? ' style="background:rgba(217,119,6,.08)"' : ''}>
-          <td>${esc(w.userName)}</td>
+          <td>${esc(w.userName)}${w.isSubcontractor ? ' <span style="font-size:.68rem;color:var(--muted)">(1099 flat-rate)</span>' : ''}</td>
           <td>${w.weekStart}</td>
           <td style="text-align:right">${w.regHours.toFixed(1)}h</td>
           <td style="text-align:right;${w.isOt ? 'color:var(--amber);font-weight:700' : 'color:var(--muted)'}">${w.otHours > 0 ? w.otHours.toFixed(1)+'h' : '—'}</td>
-          <td style="text-align:right;font-weight:700;color:#a3f2d2">$${w.cost.toFixed(0)}</td>
+          <td style="text-align:right;font-weight:700;${w.isSubcontractor ? 'color:var(--muted);font-style:italic;font-weight:400' : 'color:#a3f2d2'}">${w.isSubcontractor ? 'flat-rate — see job cost' : '$'+w.cost.toFixed(0)}</td>
         </tr>`).join('')}
       </tbody>
     </table>`;
@@ -16248,6 +16286,20 @@ function getPersonBurdenRate(userId, userEmail) {
   );
   if (member && member.burdenedRate > 0) return member.burdenedRate;
   return getBurdenRate();
+}
+
+// Hourly (default) vs 1099 Flat-Rate Subcontractor — see
+// saveTeamMemberPaymentType() for the full explanation. This is what
+// lets clock-in/out stay open to everyone (so a subcontractor crew can
+// track their own hours for estimating-accuracy purposes) WITHOUT
+// their hours silently turning into a fake dollar cost via hours×rate,
+// when what they're actually owed is a separately-agreed job price.
+function isFlatRateSubcontractor(userId, userEmail) {
+  const email = (userEmail || '').toLowerCase();
+  const member = (_lastTeamMemberList || []).find(m =>
+    (m.email || '').toLowerCase() === email || m.userId === userId
+  );
+  return member?.paymentType === 'subcontractor';
 }
 
 function forEachLaborItem(cb) {
