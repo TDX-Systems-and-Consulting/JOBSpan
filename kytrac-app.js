@@ -4996,14 +4996,54 @@ function fhRenderSubPayments() {
   const total = items.reduce((s,p) => s + (p.amount||0), 0);
   if (cnt) cnt.textContent = items.length;
   if (sum) sum.textContent = items.length ? `${fhMoney(total)} total` : '';
-  if (!items.length) { el.innerHTML = '<div class="finhub-empty">No subcontractor payments logged for this job.</div>'; return; }
-  el.innerHTML = items.map(p => `
+
+  const paymentsHtml = !items.length
+    ? '<div class="finhub-empty">No subcontractor payments logged for this job.</div>'
+    : items.map(p => `
     <div class="finhub-line" onclick="openAddSubPayFromJob('${p.id}')" style="cursor:pointer">
       <div><div class="finhub-line-title">${esc(p.subName||'Subcontractor')}</div><div class="finhub-line-sub">${esc(p.desc||'')}</div></div>
       <div class="finhub-line-amt">${fhMoney(p.amount)}</div>
       <div class="finhub-line-bal" style="color:${p.status==='Paid'?'#a3f2d2':'#fde68a'}">${esc(p.status||'Agreed')}</div>
       <div>${fhBadge('Subcontractor','#c084fc')}</div>
     </div>`).join('');
+
+  el.innerHTML = `<div id="fhSubHoursSummary" style="padding:8px 0;font-size:.8rem;color:var(--muted);font-style:italic">Loading crew hours…</div>` + paymentsHtml;
+  fhLoadSubcontractorHours(conCurrentJobId);
+}
+
+// The actual reason to have Domingo, Rosario, AND Francisco all
+// clocking in individually (not just the crew lead): true man-hours
+// for comparing against what the estimate assumed (e.g. "3-man crew,
+// 8hrs, 10 days = 240 man-hours"). One person's clock only ever
+// captures one person's presence — this sums everyone flagged
+// Flat-Rate Subcontractor who logged time on this specific job.
+function fhLoadSubcontractorHours(jobId) {
+  const target = document.getElementById('fhSubHoursSummary');
+  if (!target || !conDb || !jobId) return;
+  coll('timeentries').where('jobId', '==', jobId).get()
+    .then(snap => {
+      const byPerson = {};
+      let totalHours = 0;
+      snap.forEach(d => {
+        const t = d.data();
+        if (!t.hours || !isFlatRateSubcontractor(t.userId, t.userEmail)) return;
+        const name = t.userName || t.userEmail || 'Unknown';
+        byPerson[name] = (byPerson[name] || 0) + t.hours;
+        totalHours += t.hours;
+      });
+      const stillTarget = document.getElementById('fhSubHoursSummary');
+      if (!stillTarget) return;
+      if (!totalHours) {
+        stillTarget.innerHTML = '<span style="font-style:italic">No crew clock-in hours logged yet for this job.</span>';
+        return;
+      }
+      const breakdown = Object.entries(byPerson).map(([n,h]) => `${esc(n)}: ${h.toFixed(1)}h`).join(' · ');
+      stillTarget.innerHTML = `<strong style="color:var(--text);font-style:normal">👷 ${totalHours.toFixed(1)} total crew man-hours logged</strong> — ${breakdown}`;
+    })
+    .catch(() => {
+      const stillTarget = document.getElementById('fhSubHoursSummary');
+      if (stillTarget) stillTarget.textContent = '';
+    });
 }
 
 function openAddSubPayFromJob(payId) {
