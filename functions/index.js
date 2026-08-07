@@ -422,6 +422,35 @@ exports.pushPersonalEventToGCal = functions.firestore
       return null;
     }
 
+    // Was reading after.endTime directly -- but the client-side save
+    // function (saveCalendarEvent) never actually saves a field with
+    // that name. It computes and saves `duration` (minutes) instead --
+    // e.g. 8am to 4pm becomes { time: '08:00', duration: 480 }, never
+    // an endTime field. after.endTime was therefore ALWAYS undefined,
+    // silently falling back to after.time on every single timed event
+    // ever pushed here -- not just this one. Every past sync of a
+    // timed personal event has shown up on Google Calendar as a zero-
+    // duration start=end event regardless of what duration the user
+    // actually picked. Computing the real end time from start +
+    // duration instead, matching what the client actually saves.
+    let endDateTime = after.date;
+    if (after.time && after.duration) {
+      const [sh, sm] = after.time.split(':').map(Number);
+      let totalMin = sh * 60 + sm + Number(after.duration);
+      let endDate = after.date;
+      if (totalMin >= 1440) {
+        // Rolled past midnight -- advance the calendar date, same as
+        // the client's own wrap-around handling for an overnight event.
+        totalMin -= 1440;
+        const d = new Date(after.date + 'T00:00:00');
+        d.setDate(d.getDate() + 1);
+        endDate = d.toISOString().split('T')[0];
+      }
+      const eh = String(Math.floor(totalMin / 60)).padStart(2, '0');
+      const em = String(totalMin % 60).padStart(2, '0');
+      endDateTime = `${endDate}T${eh}:${em}:00`;
+    }
+
     const eventBody = {
       summary: after.title || 'JOBSpan Event',
       description: after.meetLink ? `Meet link: ${after.meetLink}` : (after.notes || undefined),
@@ -430,7 +459,7 @@ exports.pushPersonalEventToGCal = functions.firestore
         ? { dateTime: `${after.date}T${after.time}:00`, timeZone: 'America/Chicago' }
         : { date: after.date },
       end: after.time
-        ? { dateTime: `${after.date}T${after.endTime || after.time}:00`, timeZone: 'America/Chicago' }
+        ? { dateTime: endDateTime, timeZone: 'America/Chicago' }
         : { date: after.date }
     };
 
