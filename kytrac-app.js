@@ -9207,55 +9207,90 @@ function importEstimateToInvoice() {
   // under one Feature (subgroup) into a SINGLE customer-facing line —
   // customers should see "what" and "how much," not a materials/labor
   // cost breakdown per part.
-  jobRef.collection('estimateGroups').get()
-    .then(async groupSnap => {
-      const groupDocs = groupSnap.docs.slice().sort((a,b) => (a.data().order ?? 0) - (b.data().order ?? 0));
-      for (const groupDoc of groupDocs) {
-        const group = groupDoc.data();
+  //
+  // Was doing one Firestore round-trip at a time, sequentially — every
+  // group's direct-items fetch, then its subgroups-list fetch, then
+  // ONE MORE round-trip per subgroup for that subgroup's items, each
+  // one waiting for the previous to fully finish. For a job with many
+  // rooms and subgroups that's dozens of sequential round-trips. Fast
+  // enough to not notice on desktop wifi; on mobile's higher per-request
+  // latency, that's exactly what stretched into 20+ seconds before the
+  // stage-selection prompt even appeared. Now: fetch everything that CAN
+  // happen at once, in parallel, and only do the actual assembly
+  // (which needs correct ordering, not correct timing) afterward.
+  Promise.all([
+    jobRef.get(),
+    jobRef.collection('estimateGroups').get()
+  ]).then(async ([jobSnapEarly, groupSnap]) => {
+    const groupDocs = groupSnap.docs.slice().sort((a,b) => (a.data().order ?? 0) - (b.data().order ?? 0));
 
-        // Direct items sitting right on the group (no subgroup) — combine
-        // them all into one line named after the room/group.
-        const directSnap = await jobRef.collection('estimateGroups').doc(groupDoc.id).collection('items').get();
-        let directTotal = 0;
-        directSnap.forEach(d => {
-          const item = d.data();
-          directTotal += (item.qty || 1) * (item.unitPrice || 0);
-        });
-        if (directTotal > 0) {
-          combinedLines.push({ desc: group.name || 'General', qty: 1, rate: Math.round(directTotal * 100) / 100 });
-        }
+    // Wave 1: for every group, in parallel, fetch its direct items AND
+    // its subgroups list. Groups don't depend on each other at all.
+    const groupResults = await Promise.all(groupDocs.map(async groupDoc => {
+      const [directSnap, subSnapRaw] = await Promise.all([
+        jobRef.collection('estimateGroups').doc(groupDoc.id).collection('items').get(),
+        jobRef.collection('estimateGroups').doc(groupDoc.id).collection('subgroups').get()
+      ]);
+      const subDocs = subSnapRaw.docs.slice().sort((a,b) => (a.data().order ?? 0) - (b.data().order ?? 0));
+      return { groupDoc, directSnap, subDocs };
+    }));
 
-        // Subgroups (Features) — one combined line each.
-        const subSnapRaw = await jobRef.collection('estimateGroups').doc(groupDoc.id).collection('subgroups').get();
-        const subDocs = subSnapRaw.docs.slice().sort((a,b) => (a.data().order ?? 0) - (b.data().order ?? 0));
-        for (const subDoc of subDocs) {
-          const sub = subDoc.data();
-          const itemSnap = await jobRef.collection('estimateGroups').doc(groupDoc.id)
-            .collection('subgroups').doc(subDoc.id).collection('items').get();
+    // Wave 2: for EVERY subgroup across ALL groups, in parallel, fetch
+    // its items. Flattened into one batch rather than nested per-group
+    // loops — a subgroup's items don't depend on any other subgroup's.
+    const allSubFetches = [];
+    groupResults.forEach(({ subDocs }) => {
+      subDocs.forEach(subDoc => {
+        allSubFetches.push(
+          jobRef.collection('estimateGroups').doc(subDoc.ref.parent.parent.id)
+            .collection('subgroups').doc(subDoc.id).collection('items').get()
+            .then(itemSnap => ({ subDocId: subDoc.id, itemSnap }))
+        );
+      });
+    });
+    const subItemResults = await Promise.all(allSubFetches);
+    const subItemsById = {};
+    subItemResults.forEach(({ subDocId, itemSnap }) => { subItemsById[subDocId] = itemSnap; });
 
-          let subTotal = 0;
-          let primaryItemDesc = '';
-          itemSnap.forEach(d => {
-            const item = d.data();
-            subTotal += (item.qty || 1) * (item.unitPrice || 0);
-            // Prefer the first non-labor (materials) line for the descriptive
-            // detail — that's usually the actual product (with its size/model
-            // baked into the description already).
-            if (!primaryItemDesc && item.costType !== 'Labor' && item.desc) primaryItemDesc = item.desc;
-          });
-          if (subTotal <= 0) continue;
+    // Assembly — pure synchronous work now, everything's already fetched.
+    // Same logic as before, just no more awaits in this part.
+    for (const { groupDoc, directSnap, subDocs } of groupResults) {
+      const group = groupDoc.data();
 
-          let desc = sub.name || group.name || 'Work';
-          if (group.name && sub.name && group.name.toLowerCase() !== sub.name.toLowerCase()) {
-            desc = sub.name + ' — ' + group.name;
-          }
-          const detailParts = [];
-          if (primaryItemDesc && primaryItemDesc.toLowerCase() !== (sub.name||'').toLowerCase()) detailParts.push(primaryItemDesc);
-          if (detailParts.length) desc += ' (' + detailParts.join(' — ') + ')';
-
-          combinedLines.push({ desc, qty: 1, rate: Math.round(subTotal * 100) / 100 });
-        }
+      let directTotal = 0;
+      directSnap.forEach(d => {
+        const item = d.data();
+        directTotal += (item.qty || 1) * (item.unitPrice || 0);
+      });
+      if (directTotal > 0) {
+        combinedLines.push({ desc: group.name || 'General', qty: 1, rate: Math.round(directTotal * 100) / 100 });
       }
+
+      for (const subDoc of subDocs) {
+        const sub = subDoc.data();
+        const itemSnap = subItemsById[subDoc.id];
+        if (!itemSnap) continue;
+
+        let subTotal = 0;
+        let primaryItemDesc = '';
+        itemSnap.forEach(d => {
+          const item = d.data();
+          subTotal += (item.qty || 1) * (item.unitPrice || 0);
+          if (!primaryItemDesc && item.costType !== 'Labor' && item.desc) primaryItemDesc = item.desc;
+        });
+        if (subTotal <= 0) continue;
+
+        let desc = sub.name || group.name || 'Work';
+        if (group.name && sub.name && group.name.toLowerCase() !== sub.name.toLowerCase()) {
+          desc = sub.name + ' — ' + group.name;
+        }
+        const detailParts = [];
+        if (primaryItemDesc && primaryItemDesc.toLowerCase() !== (sub.name||'').toLowerCase()) detailParts.push(primaryItemDesc);
+        if (detailParts.length) desc += ' (' + detailParts.join(' — ') + ')';
+
+        combinedLines.push({ desc, qty: 1, rate: Math.round(subTotal * 100) / 100 });
+      }
+    }
 
       if (!combinedLines.length) {
         alert('No estimate line items found on this job. Add items in the Estimate tab first.');
@@ -9270,7 +9305,7 @@ function importEstimateToInvoice() {
       // has, not something to infer from context.
       const itemized = !!document.getElementById('proposalItemizedToggle')?.checked;
 
-      const jobSnap = await jobRef.get();
+      const jobSnap = jobSnapEarly;
       const jobData = jobSnap.exists ? jobSnap.data() : {};
       const schedule = jobData.paymentSchedule || null;
       const stages = resolveScheduleStages(schedule);
@@ -9625,6 +9660,10 @@ window.commitMarkPaid = commitMarkPaid;
 // ── Print Invoice ──
 function printInvoiceById(jobId, invId) {
   if (!conDb) return;
+  // Same mobile popup-blocker fix as viewInvoiceById -- open
+  // synchronously first, before the async fetch below.
+  const win = window.open('', '_blank');
+  if (win) win.document.write('<html><body style="font-family:sans-serif;padding:40px;text-align:center;color:#666">Loading invoice…</body></html>');
   const jobRef = coll('jobs').doc(jobId);
   Promise.all([
     jobRef.collection('invoices').doc(invId).get(),
@@ -9635,7 +9674,7 @@ function printInvoiceById(jobId, invId) {
       const job = conJobs.find(j => j.id === jobId);
       const otherInvoices = [];
       allSnap.forEach(d => { if (d.id !== invId) otherInvoices.push(d.data()); });
-      printInvoiceData(inv, job, otherInvoices);
+      printInvoiceData(inv, job, otherInvoices, win);
     });
 }
 
@@ -9647,6 +9686,17 @@ function printInvoiceById(jobId, invId) {
 // opened plain, no print dialog forced on top of it.
 function viewInvoiceById(jobId, invId) {
   if (!conDb) return;
+  // Open the window FIRST, synchronously, before any async work — this
+  // is what "on mobile, View does nothing" actually was. Mobile Safari/
+  // Chrome only allow window.open() to succeed when it happens directly
+  // within the same tap that triggered it; once there's an await/.then()
+  // delay before it (the Firestore fetch below), the popup is silently
+  // blocked — no error, no visible warning, just nothing happens. Opening
+  // immediately with a placeholder, then writing the real content into
+  // that already-open window once the fetch resolves, works reliably.
+  const win = window.open('', '_blank');
+  if (win) win.document.write('<html><body style="font-family:sans-serif;padding:40px;text-align:center;color:#666">Loading invoice…</body></html>');
+
   const jobRef = coll('jobs').doc(jobId);
   Promise.all([
     jobRef.collection('invoices').doc(invId).get(),
@@ -9657,7 +9707,8 @@ function viewInvoiceById(jobId, invId) {
       const job = conJobs.find(j => j.id === jobId);
       const otherInvoices = [];
       allSnap.forEach(d => { if (d.id !== invId) otherInvoices.push(d.data()); });
-      const win = window.open('', '_blank');
+      if (!win) { alert('Your browser blocked the popup — check your popup/pop-up blocker settings for this site and try again.'); return; }
+      win.document.open();
       win.document.write(renderInvoiceDocumentHtml(inv, job, otherInvoices, false));
       win.document.close();
     });
@@ -10723,8 +10774,10 @@ function renderInvoiceDocumentHtml(inv, job, otherInvoices, forPrint) {
 // email preview iframe renders via renderInvoiceDocumentHtml() above
 // -- one source of truth for what an invoice document actually looks
 // like, whether it's being printed or previewed before emailing.
-function printInvoiceData(inv, job, otherInvoices) {
-  const win = window.open('', '_blank');
+function printInvoiceData(inv, job, otherInvoices, preOpenedWin) {
+  const win = preOpenedWin || window.open('', '_blank');
+  if (!win) { alert('Your browser blocked the popup — check your popup/pop-up blocker settings for this site and try again.'); return; }
+  win.document.open();
   win.document.write(renderInvoiceDocumentHtml(inv, job, otherInvoices, true));
   win.document.close();
 }
