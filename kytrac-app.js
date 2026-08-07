@@ -3150,6 +3150,7 @@ async function renderJobGantt(jobId) {
       tasks: room.tasks || [],
     })),
   }));
+  buildGanttNumbering();
 
   // Determine overall date range
   const allDates = [];
@@ -3267,6 +3268,7 @@ function renderGanttLeft(jobId, job) {
         html += `<div class="gantt-left-row room-row" onclick="ganttToggleRoom('${room.id}')">
           <div class="gantt-name-cell" style="padding-left:24px;color:#e2e8f0">
             <span class="gantt-collapse-btn">${roomCollapsed ? '▶' : '▼'}</span>
+            <span style="color:var(--muted);font-size:.68rem;margin-right:4px" title="Room #${room._ganttNum} — reference this number when setting dependencies elsewhere">#${room._ganttNum}</span>
             ${esc(room.name)}
             ${isOwner ? `<button onclick="event.stopPropagation();openRoomScheduleModal('${phase.id}','${room.id}')" title="${depCount ? depCount+' dependenc'+(depCount===1?'y':'ies')+' set' : 'Set duration and dependencies'}" style="background:none;border:1px solid rgba(110,145,210,.25);border-radius:6px;color:${depCount?'var(--amber)':'var(--muted)'};cursor:pointer;font-size:.68rem;margin-left:6px;padding:1px 5px;flex-shrink:0">🔗${depCount?' '+depCount:''}</button>` : ''}
             ${statusWarning ? `<span title="${esc(statusWarning)}" style="margin-left:6px;font-size:.72rem;color:#f59e0b;cursor:help">⚠</span>` : ''}
@@ -3300,17 +3302,25 @@ function renderGanttLeft(jobId, job) {
           }
           displayTasks.forEach(task => {
             const isDone = task.taskStatus === 'done';
+            const isReal = !task.fromScopeNotes;
+            const { start: taskStart, end: taskEnd, circular: taskCircular } = isReal
+              ? getTaskDates(task, room, phase)
+              : { start: roomStart, end: roomEnd, circular: false };
+            const taskDays = isReal ? dateDiff(taskStart, taskEnd) : 1;
+            const taskDepCount = isReal ? (task.dependsOn || []).length : 0;
             html += `<div class="gantt-left-row task-row">
               <div class="gantt-name-cell" style="padding-left:44px;color:${isDone?'var(--muted)':'#cbd5e1'}">
                 <input type="checkbox" ${isDone?'checked':''} 
                   onchange="toggleGanttTask('${phase.id}','${room.id}','${task.id}',this.checked)"
                   style="margin-right:6px;cursor:pointer;accent-color:var(--amber)"
                   onclick="event.stopPropagation()">
+                ${isReal ? `<span style="color:var(--muted);font-size:.68rem;margin-right:4px" title="Task #${task._ganttNum} — reference this number when setting dependencies elsewhere">#${task._ganttNum}</span>` : ''}
                 <span style="${isDone?'text-decoration:line-through;opacity:.5':''}">${esc(task.name)}</span>
+                ${isReal ? `<button onclick="event.stopPropagation();openTaskScheduleModal('${phase.id}','${room.id}','${task.id}')" title="${taskDepCount ? taskDepCount+' dependenc'+(taskDepCount===1?'y':'ies')+' set' : 'Set duration and dependencies'}" style="background:none;border:1px solid rgba(110,145,210,.25);border-radius:6px;color:${taskDepCount?'var(--amber)':'var(--muted)'};cursor:pointer;font-size:.65rem;margin-left:6px;padding:0 4px;flex-shrink:0">🔗${taskDepCount?' '+taskDepCount:''}</button>` : ''}
               </div>
-              <div class="gantt-days-cell">1d</div>
-              <div class="gantt-date-cell" style="color:rgba(110,145,210,.4)">${roomStart||'—'}</div>
-              <div class="gantt-date-cell" style="color:rgba(110,145,210,.4)">${roomEnd||'—'}</div>
+              <div class="gantt-days-cell">${taskCircular ? '⚠' : (taskDays !== null ? taskDays+'d' : '—')}</div>
+              <div class="gantt-date-cell" style="color:rgba(110,145,210,.4)">${taskCircular ? `<span style="color:#f87171" title="Circular dependency">⚠</span>` : (taskStart||'—')}</div>
+              <div class="gantt-date-cell" style="color:rgba(110,145,210,.4)">${taskCircular ? '' : (taskEnd||'—')}</div>
               <div class="gantt-pct-cell" style="color:${isDone?'#10b981':'var(--muted)'}">${isDone?'100':'0'}%</div>
             </div>`;
           });
@@ -3454,8 +3464,10 @@ function renderGanttRight(minDate, maxDate, today) {
         if (!roomCollapsed) {
           displayTasks.forEach(task => {
             const isDone = task.taskStatus === 'done';
+            const isReal = !task.fromScopeNotes;
+            const taskBarDates = isReal ? getTaskDates(task, room, phase) : { start: roomStart, end: roomEnd };
             barsHtml += barRow() +
-              bar(roomStart, roomEnd, `background:${isDone?'#10b981':'#334155'};border-radius:2px;position:absolute;height:8px;top:14px`, isDone?100:0, '', '') +
+              bar(taskBarDates.start || roomStart, taskBarDates.end || roomEnd, `background:${isDone?'#10b981':'#334155'};border-radius:2px;position:absolute;height:8px;top:14px`, isDone?100:0, '', '') +
               '</div>';
           });
           // Add task button row
@@ -3554,10 +3566,53 @@ function calcRoomPct(room, tasks) {
 }
 
 // Room dates: use room's own dates if set, otherwise auto-divide phase dates equally
-// Finds a room by id across ALL phases in the job, not just one phase's
-// rooms — a dependency (e.g. "Baseboards depends on Flooring") can
-// reasonably point to a room in a different phase than the one it's
-// currently in.
+// Flat sequential numbering across the whole tree (phases, rooms, real
+// tasks) in display order -- matches MS Project's own "ID" column,
+// which is what its Predecessors field actually references, not the
+// hierarchical WBS code. Computed once whenever _ganttData is built,
+// stored directly on each item (item._ganttNum) so both the row
+// rendering AND the dependency-picker modal (built independently) read
+// the same numbers without recomputing.
+//
+// Scope-note-derived pseudo-tasks (no real Firestore doc backing them,
+// synthetic ids like "scope_roomId_0") are excluded entirely -- there's
+// nothing to save a dependency or duration TO for those.
+function buildGanttNumbering() {
+  let n = 1;
+  _ganttData.forEach(({ phase, rooms }) => {
+    phase._ganttNum = n++;
+    rooms.forEach(({ room, tasks }) => {
+      room._ganttNum = n++;
+      (tasks || []).forEach(task => {
+        if (task.fromScopeNotes) return;
+        task._ganttNum = n++;
+      });
+    });
+  });
+}
+
+// Finds a room OR a real task anywhere in the job by id, returning a
+// normalized shape either way -- the single lookup both the room-level
+// and task-level dependency engines resolve through, so a dependency
+// can point at EITHER kind of thing (e.g. "Paint Bedroom 1" depending
+// on the specific "Run ceiling fan wiring" task inside the Electrical
+// room, not the whole Electrical room finishing).
+function findScheduleItemAnywhere(id) {
+  for (const { phase, rooms } of _ganttData) {
+    for (const { room, tasks } of rooms) {
+      if (room.id === id) return { type: 'room', item: room, room, phase };
+      const task = (tasks || []).find(t => t.id === id && !t.fromScopeNotes);
+      if (task) return { type: 'task', item: task, room, phase };
+    }
+  }
+  return null;
+}
+window.findScheduleItemAnywhere = findScheduleItemAnywhere;
+
+// Same room-only lookup kept for the existing room-level code paths
+// that specifically need a room (findRoomAnywhere stays room-only;
+// findScheduleItemAnywhere is the new unified one used by dependency
+// resolution, which needs to accept either kind).
 function findRoomAnywhere(roomId) {
   for (const { phase, rooms } of _ganttData) {
     const found = rooms.find(r => r.room.id === roomId);
@@ -3595,6 +3650,64 @@ function addDaysISO(iso, days) {
 // instead of being mistaken for a cycle. A real cycle (A depends on B
 // depends on A) is detected when a room's own id reappears in its own
 // active recursion chain.
+// Shared dependency-resolution core, used by BOTH getRoomDates and
+// getTaskDates below -- the actual algorithm (resolve every listed
+// dependency's own end date, take the latest, start the day after,
+// run for `duration` days) doesn't care whether the thing being
+// scheduled, or what it depends on, is a room or a task. Returns null
+// (not {start:null,end:null}) when there's simply no usable dependency
+// info, so the caller knows to fall through to ITS OWN fallback
+// (rooms auto-divide the phase; tasks just stay unscheduled) rather
+// than mistaking "no deps" for "circular."
+function computeDependencyBasedDates(item, itemId, _visiting) {
+  _visiting = _visiting || new Set();
+  if (_visiting.has(itemId)) return { circular: true };
+  if (!item.dependsOn || !item.dependsOn.length) return null;
+
+  const nextVisiting = new Set(_visiting);
+  nextVisiting.add(itemId);
+  let latestEnd = null;
+  let anyCircular = false;
+  for (const depId of item.dependsOn) {
+    const found = findScheduleItemAnywhere(depId);
+    if (!found) continue; // dependency was deleted since — skip rather than block scheduling entirely
+    const depDates = found.type === 'room'
+      ? getRoomDates(found.room, found.phase, nextVisiting)
+      : getTaskDates(found.item, found.room, found.phase, nextVisiting);
+    if (depDates.circular) { anyCircular = true; continue; }
+    if (depDates.end && (!latestEnd || depDates.end > latestEnd)) latestEnd = depDates.end;
+  }
+  if (anyCircular) return { circular: true };
+  if (!latestEnd) return null; // deps exist but none resolved to a real date — caller falls through
+
+  const start = addDaysISO(latestEnd, 1);
+  const duration = Math.max(1, item.durationDays || 1);
+  return { start, end: addDaysISO(start, duration - 1) };
+}
+
+// Individual task scheduling — same shape of answer as getRoomDates
+// (start/end/circular), but a much simpler fallback: a task with no
+// manual dates, no dependency, and no duration just stays unscheduled
+// ("—" in the UI), same as it always has. Tasks don't auto-divide
+// across anything the way rooms auto-divide across a phase — there's
+// no natural "even split" concept one level down.
+function getTaskDates(task, room, phase, _visiting) {
+  _visiting = _visiting || new Set();
+  if (task.startDate && task.endDate) return { start: task.startDate, end: task.endDate };
+
+  const depResult = computeDependencyBasedDates(task, task.id, _visiting);
+  if (depResult) return depResult; // real dates OR {circular:true} — either way, done
+
+  if (task.durationDays && room && room.startDate) {
+    // No dependency, but a duration was set anyway — anchor to the
+    // room's own start if it has one, otherwise stays unscheduled.
+    return { start: room.startDate, end: addDaysISO(room.startDate, Math.max(1, task.durationDays) - 1) };
+  }
+
+  return { start: null, end: null };
+}
+window.getTaskDates = getTaskDates;
+
 function getRoomDates(room, phase, _visiting) {
   _visiting = _visiting || new Set();
 
@@ -3608,29 +3721,12 @@ function getRoomDates(room, phase, _visiting) {
     return { start: null, end: null, circular: true };
   }
 
-  if (room.dependsOn && room.dependsOn.length) {
-    const nextVisiting = new Set(_visiting);
-    nextVisiting.add(room.id);
-    let latestEnd = null;
-    let anyCircular = false;
-    for (const depId of room.dependsOn) {
-      const found = findRoomAnywhere(depId);
-      if (!found) continue; // dependency was deleted since — skip rather than block scheduling entirely
-      const depDates = getRoomDates(found.room, found.phase, nextVisiting);
-      if (depDates.circular) { anyCircular = true; continue; }
-      if (depDates.end && (!latestEnd || depDates.end > latestEnd)) latestEnd = depDates.end;
-    }
-    if (anyCircular) return { start: null, end: null, circular: true };
-    if (latestEnd) {
-      const start = addDaysISO(latestEnd, 1);
-      const duration = Math.max(1, room.durationDays || 1);
-      const end = addDaysISO(start, duration - 1);
-      return { start, end };
-    }
-    // Dependencies exist but none resolved to a real date yet (e.g. the
-    // dependency itself has no schedule at all) — fall through to the
-    // normal fallback below rather than leaving this room unscheduled.
-  }
+  const depResult = computeDependencyBasedDates(room, room.id, _visiting);
+  if (depResult && depResult.circular) return { start: null, end: null, circular: true };
+  if (depResult) return depResult;
+  // Dependencies exist but none resolved to a real date yet (or there
+  // simply are none) — fall through to the normal fallback below,
+  // exactly as before.
 
   if (!phase.startDate || !phase.endDate) return { start: null, end: null };
 
@@ -3856,82 +3952,116 @@ window.clearRoomDateOverride = clearRoomDateOverride;
 
 // ── Room Schedule modal: duration + dependencies ──
 function openRoomScheduleModal(phaseId, roomId) {
-  const found = findRoomAnywhere(roomId);
-  if (!found) return;
-  const room = found.room;
-
-  document.getElementById('roomSchedPhaseId').value = phaseId;
-  document.getElementById('roomSchedRoomId').value = roomId;
-  document.getElementById('roomScheduleRoomName').textContent = room.name || '';
-  document.getElementById('roomSchedDuration').value = room.durationDays || '';
-  document.getElementById('roomSchedCycleWarning').style.display = 'none';
-
-  // Every other room in the job, grouped by phase, checked if it's
-  // already a dependency. Excludes the room itself — a room can't
-  // depend on itself.
-  const depsList = document.getElementById('roomSchedDepsList');
-  const currentDeps = new Set(room.dependsOn || []);
-  let html = '';
-  _ganttData.forEach(({ phase: p, rooms }) => {
-    const others = rooms.filter(r => r.room.id !== roomId);
-    if (!others.length) return;
-    html += `<div style="font-size:.7rem;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);padding:6px 4px 4px">${esc(p.name)}</div>`;
-    others.forEach(({ room: other }) => {
-      html += `<label style="display:flex;align-items:center;gap:8px;padding:6px 4px;cursor:pointer">
-        <input type="checkbox" class="roomSchedDepCheck" value="${other.id}" ${currentDeps.has(other.id)?'checked':''} style="width:16px;height:16px;cursor:pointer" />
-        <span style="font-size:.86rem">${esc(other.name)}</span>
-      </label>`;
-    });
-  });
-  depsList.innerHTML = html || '<div class="small muted" style="padding:8px">No other rooms in this job yet.</div>';
-
-  kOpen('roomScheduleModal');
+  openScheduleModal('room', phaseId, roomId, null);
 }
 window.openRoomScheduleModal = openRoomScheduleModal;
 
+function openTaskScheduleModal(phaseId, roomId, taskId) {
+  openScheduleModal('task', phaseId, roomId, taskId);
+}
+window.openTaskScheduleModal = openTaskScheduleModal;
+
+// Shared modal opener for both rooms and tasks. The dependency
+// checklist always shows EVERY schedulable item in the job — every
+// room AND every real task — numbered and grouped by room, since a
+// dependency can point at either kind (Travis's exact example:
+// "Paint Bedroom 1" depends on one specific task, "Run ceiling fan
+// wiring", not the whole Electrical room).
+function openScheduleModal(type, phaseId, roomId, taskId) {
+  const targetId = type === 'task' ? taskId : roomId;
+  const found = findScheduleItemAnywhere(targetId);
+  if (!found) return;
+  const target = found.item;
+
+  document.getElementById('roomSchedType').value = type;
+  document.getElementById('roomSchedPhaseId').value = phaseId;
+  document.getElementById('roomSchedRoomId').value = roomId;
+  document.getElementById('roomSchedTaskId').value = taskId || '';
+  document.getElementById('roomScheduleRoomName').textContent =
+    (type === 'task' ? `#${target._ganttNum} ${target.name} — task in ` + (found.room?.name || '') : `#${target._ganttNum} ${target.name}`);
+  document.getElementById('roomSchedDuration').value = target.durationDays || '';
+  document.getElementById('roomSchedCycleWarning').style.display = 'none';
+
+  // Every other schedulable item in the job (rooms AND real tasks),
+  // grouped by room for context, numbered, excluding the item itself.
+  const depsList = document.getElementById('roomSchedDepsList');
+  const currentDeps = new Set(target.dependsOn || []);
+  let html = '';
+  _ganttData.forEach(({ phase: p, rooms }) => {
+    rooms.forEach(({ room: r, tasks }) => {
+      const items = [];
+      if (r.id !== targetId) items.push({ id: r.id, num: r._ganttNum, name: r.name, isRoom: true });
+      (tasks || []).forEach(t => {
+        if (t.fromScopeNotes || t.id === targetId) return;
+        items.push({ id: t.id, num: t._ganttNum, name: t.name, isRoom: false });
+      });
+      if (!items.length) return;
+      html += `<div style="font-size:.7rem;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);padding:6px 4px 4px">${esc(p.name)} — ${esc(r.name)}</div>`;
+      items.forEach(it => {
+        html += `<label style="display:flex;align-items:center;gap:8px;padding:5px 4px;cursor:pointer">
+          <input type="checkbox" class="roomSchedDepCheck" value="${it.id}" ${currentDeps.has(it.id)?'checked':''} style="width:16px;height:16px;cursor:pointer;flex-shrink:0" />
+          <span style="font-size:.68rem;color:var(--muted);flex-shrink:0">#${it.num}</span>
+          <span style="font-size:.86rem${it.isRoom?';font-weight:700':''}">${esc(it.name)}${it.isRoom?' (whole room)':''}</span>
+        </label>`;
+      });
+    });
+  });
+  depsList.innerHTML = html || '<div class="small muted" style="padding:8px">Nothing else in this job yet.</div>';
+
+  kOpen('roomScheduleModal');
+}
+window.openScheduleModal = openScheduleModal;
+
 // Walks the dependency graph as it WOULD look with the proposed new
-// deps applied, checking whether roomId would end up depending on
+// deps applied, checking whether itemId would end up depending on
 // itself transitively — checked BEFORE saving, not left to surface as
-// a confusing "⚠ Circular" badge only after the fact.
-function wouldCreateCycle(roomId, proposedDeps) {
-  const visited = new Set();
+// a confusing "⚠ Circular" badge only after the fact. Works across
+// rooms and tasks equally via the unified resolver.
+function wouldCreateCycle(itemId, proposedDeps) {
   function walk(id, chain) {
-    if (chain.has(id)) return id === roomId; // reached back to the start = real cycle
+    if (chain.has(id)) return id === itemId; // reached back to the start = real cycle
     chain.add(id);
-    const deps = id === roomId ? proposedDeps : (findRoomAnywhere(id)?.room.dependsOn || []);
+    const deps = id === itemId ? proposedDeps : (findScheduleItemAnywhere(id)?.item.dependsOn || []);
     for (const depId of deps) {
       if (walk(depId, new Set(chain))) return true;
     }
     return false;
   }
-  return walk(roomId, new Set());
+  return walk(itemId, new Set());
 }
 
 async function saveRoomSchedule() {
+  const type = document.getElementById('roomSchedType').value || 'room';
   const phaseId = document.getElementById('roomSchedPhaseId').value;
   const roomId = document.getElementById('roomSchedRoomId').value;
+  const taskId = document.getElementById('roomSchedTaskId').value;
+  const targetId = type === 'task' ? taskId : roomId;
   const duration = parseInt(document.getElementById('roomSchedDuration').value) || null;
   const deps = [...document.querySelectorAll('.roomSchedDepCheck:checked')].map(el => el.value);
 
   const warnEl = document.getElementById('roomSchedCycleWarning');
-  if (wouldCreateCycle(roomId, deps)) {
-    warnEl.textContent = '⚠ This would create a circular dependency (this room would end up depending on itself through the chain you picked). Remove one of the checked items and try again.';
+  if (wouldCreateCycle(targetId, deps)) {
+    warnEl.textContent = '⚠ This would create a circular dependency (this would end up depending on itself through the chain you picked). Remove one of the checked items and try again.';
     warnEl.style.display = 'block';
     return;
   }
 
   if (!_ganttJobId || !conDb) return;
   try {
-    const found = findRoomAnywhere(roomId);
-    if (found) { found.room.durationDays = duration; found.room.dependsOn = deps; }
-    await coll('jobs').doc(_ganttJobId)
-      .collection('estimateGroups').doc(phaseId)
-      .collection('subgroups').doc(roomId)
-      .update({
-        durationDays: duration,
-        dependsOn: deps,
-        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-      });
+    const found = findScheduleItemAnywhere(targetId);
+    if (found) { found.item.durationDays = duration; found.item.dependsOn = deps; }
+
+    const docRef = type === 'task'
+      ? coll('jobs').doc(_ganttJobId).collection('estimateGroups').doc(phaseId)
+          .collection('subgroups').doc(roomId).collection('items').doc(taskId)
+      : coll('jobs').doc(_ganttJobId).collection('estimateGroups').doc(phaseId)
+          .collection('subgroups').doc(roomId);
+
+    await docRef.update({
+      durationDays: duration,
+      dependsOn: deps,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
     kClose('roomScheduleModal');
     renderJobGantt(_ganttJobId);
   } catch(e) {
