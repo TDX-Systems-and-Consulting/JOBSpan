@@ -3259,8 +3259,15 @@ function renderGanttLeft(jobId, job) {
             ${esc(room.name)}
           </div>
           <div class="gantt-days-cell">${roomDays !== null ? roomDays+'d' : '—'}</div>
-          <div class="gantt-date-cell" style="color:var(--muted)">${roomStart||'—'}</div>
-          <div class="gantt-date-cell" style="color:var(--muted)">${roomEnd||'—'}</div>
+          <div class="gantt-date-cell" onclick="event.stopPropagation()">${isOwner
+            ? `<input type="date" value="${room.startDate||''}" onchange="updateRoomDate('${phase.id}','${room.id}','startDate',this.value)" onclick="event.stopPropagation()" title="${room.startDate?'Custom date — overrides auto-scheduling':'Auto-scheduled from phase dates — set a date here to override'}">`
+            : (roomStart||'—')}
+          </div>
+          <div class="gantt-date-cell" onclick="event.stopPropagation()">${isOwner
+            ? `<input type="date" value="${room.endDate||''}" onchange="updateRoomDate('${phase.id}','${room.id}','endDate',this.value)" onclick="event.stopPropagation()" title="${room.endDate?'Custom date — overrides auto-scheduling':'Auto-scheduled from phase dates — set a date here to override'}">`
+            : (roomEnd||'—')}
+            ${isOwner && (room.startDate || room.endDate) ? `<button onclick="event.stopPropagation();clearRoomDateOverride('${phase.id}','${room.id}')" title="Clear override, go back to auto-scheduling" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:.7rem;margin-left:4px">✕</button>` : ''}
+          </div>
           <div class="gantt-pct-cell" style="color:${pctColor(roomPct)}">${roomPct}%</div>
         </div>`;
 
@@ -3696,6 +3703,50 @@ async function updatePhaseDate(phaseId, field, value) {
   }
 }
 window.updatePhaseDate = updatePhaseDate;
+
+// Room-level date override — the data model already supported this
+// (getRoomDates checks room.startDate/endDate before falling back to
+// auto-dividing the phase's range), but nothing in the UI let you
+// actually set it. Needed for exactly this case: pinning ONE specific
+// room to an exact date, independent of the even-division math that
+// otherwise spreads a phase's date range evenly across all its rooms
+// in listed order.
+async function updateRoomDate(phaseId, roomId, field, value) {
+  if (!_ganttJobId || !conDb) return;
+  try {
+    const entry = _ganttData.find(p => p.phase.id === phaseId);
+    const roomEntry = entry?.rooms.find(r => r.room.id === roomId);
+    if (roomEntry) roomEntry.room[field] = value;
+    await coll('jobs').doc(_ganttJobId)
+      .collection('estimateGroups').doc(phaseId)
+      .collection('subgroups').doc(roomId)
+      .update({ [field]: value, updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
+    renderJobGantt(_ganttJobId);
+  } catch(e) {
+    console.error('updateRoomDate failed:', e);
+    alert('Could not save date: ' + e.message);
+  }
+}
+window.updateRoomDate = updateRoomDate;
+
+// Clears a room's date override, going back to auto-dividing the
+// phase's range for this room.
+async function clearRoomDateOverride(phaseId, roomId) {
+  if (!_ganttJobId || !conDb || !confirm('Clear this room\'s custom dates and go back to auto-scheduling within the phase?')) return;
+  try {
+    const entry = _ganttData.find(p => p.phase.id === phaseId);
+    const roomEntry = entry?.rooms.find(r => r.room.id === roomId);
+    if (roomEntry) { delete roomEntry.room.startDate; delete roomEntry.room.endDate; }
+    await coll('jobs').doc(_ganttJobId)
+      .collection('estimateGroups').doc(phaseId)
+      .collection('subgroups').doc(roomId)
+      .update({ startDate: firebase.firestore.FieldValue.delete(), endDate: firebase.firestore.FieldValue.delete() });
+    renderJobGantt(_ganttJobId);
+  } catch(e) {
+    alert('Could not clear dates: ' + e.message);
+  }
+}
+window.clearRoomDateOverride = clearRoomDateOverride;
 
 async function toggleGanttTask(phaseId, roomId, taskId, checked) {
   if (!_ganttJobId || !conDb) return;
