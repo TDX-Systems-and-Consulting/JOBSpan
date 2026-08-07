@@ -4113,6 +4113,31 @@ async function toggleGanttTask(phaseId, roomId, taskId, checked) {
       if (roomEntry) {
         const task = roomEntry.tasks.find(t => t.id === taskId);
         if (task) task.taskStatus = checked ? 'done' : 'todo';
+
+        // Sync the ROOM's own status from its tasks -- this is the
+        // actual missing link between "checked off every task" and
+        // "this room is done": calcRoomPct only ever computed a %
+        // for display, it never wrote back to room.status, which is
+        // the field dependencyWarning() checks to decide whether
+        // whatever depends on this room is actually clear to start.
+        // Real tasks only (scope-note pseudo-tasks don't count,
+        // matching how they're excluded from scheduling everywhere
+        // else). Unchecking a task after full completion moves the
+        // room back to in-progress rather than all the way to
+        // not-started -- some real work clearly still happened.
+        const realTasks = roomEntry.tasks.filter(t => !t.fromScopeNotes);
+        if (realTasks.length) {
+          const allDone = realTasks.every(t => t.taskStatus === 'done');
+          const newStatus = allDone ? 'complete' : 'in-progress';
+          if (roomEntry.room.status !== newStatus) {
+            roomEntry.room.status = newStatus;
+            coll('jobs').doc(_ganttJobId)
+              .collection('estimateGroups').doc(phaseId)
+              .collection('subgroups').doc(roomId)
+              .update({ status: newStatus })
+              .catch(e => console.warn('Could not sync room status:', e.message));
+          }
+        }
       }
     }
   }
