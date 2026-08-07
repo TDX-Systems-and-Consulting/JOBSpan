@@ -123,6 +123,14 @@
     html[data-theme="light"] [style*="#8ea3c8"] { color: #64748b !important; }
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; margin: 0; padding: 0; }
     html, body { min-height: 100vh; background: var(--bg); color: var(--text); font-family: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif; overflow-x: hidden; max-width: 100%; overscroll-behavior-y: contain; }
+    /* iOS "Add to Home Screen" fix: apple-mobile-web-app-status-bar-style
+       is set to black-translucent, which makes the status bar (clock,
+       wifi, battery) TRANSPARENT and drawn directly on top of the page's
+       own content instead of pushing it down -- that's why the hamburger
+       menu was sitting right underneath the clock, unreachable. This
+       inset is 0 in a normal browser tab, so it's safe to apply always,
+       not just when running as a home-screen app. */
+    body { padding-top: env(safe-area-inset-top); }
     button, input, select, textarea { font: inherit; touch-action: manipulation; }
     input, select, textarea { width: 100%; background: var(--input-bg); color: var(--text); border: 1px solid var(--line); border-radius: 12px; padding: 10px 13px; outline: none; }
     input[type="date"], input[type="time"] { color-scheme: var(--date-scheme); }
@@ -257,7 +265,7 @@
     .kt-main {
       margin-left: 220px;
       flex: 1;
-      height: 100vh;
+      height: calc(100vh - env(safe-area-inset-top));
       display: flex;
       flex-direction: column;
       min-width: 0;
@@ -550,7 +558,7 @@
     .kt-col-empty { color: #9ca3af; font-size: .75rem; font-style: italic; padding: 8px 4px; text-align: center; }
 
     /* ══ MODAL ══ */
-    .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,5,14,.8); z-index: 10000; align-items: flex-start; justify-content: center; padding: 20px; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+    .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,5,14,.8); z-index: 10000; align-items: flex-start; justify-content: center; padding: 20px; padding-top: max(20px, env(safe-area-inset-top)); overflow-y: auto; -webkit-overflow-scrolling: touch; }
     .modal-overlay.fullscreen { padding: 0; align-items: stretch; }
     .modal-overlay.open { display: flex; }
     .modal-box { background: var(--modal-bg); border: 1px solid rgba(110,145,210,.2); border-radius: 22px; width: min(960px,calc(100vw - 24px)); margin: auto; box-shadow: 0 30px 80px rgba(0,0,0,.6); color: var(--text); max-height: 90vh; display: flex; flex-direction: column; overflow-x: hidden; }
@@ -3826,7 +3834,7 @@
   </div>
 
 <!-- ══ JOB DETAIL MODAL ══ -->
-<div id="jobDetailModal" class="modal-overlay" style="padding:0;align-items:stretch;z-index:9000">
+<div id="jobDetailModal" class="modal-overlay" style="padding:0;padding-top:env(safe-area-inset-top);align-items:stretch;z-index:9000">
   <div class="modal-box" style="max-width:100%;width:100%;margin:0;border-radius:0;height:100vh;max-height:100vh;display:flex;flex-direction:column">
 
     <!-- Header -->
@@ -4587,7 +4595,7 @@
 
 <div class="photo-queue-badge" style="display:none;position:fixed;bottom:18px;right:18px;z-index:9999;background:#d97706;color:#fff;border-radius:999px;padding:8px 16px;font-size:.8rem;font-weight:700;box-shadow:var(--shadow);align-items:center;gap:6px"></div>
 
-<script src="kytrac-app.js?v=202608061700"></script>
+<script src="kytrac-app.js?v=202608061730"></script>
 <script>
   // Register PWA service worker for installability + offline app-shell
   // loading. Registered after the main app script so a slow/failed SW
