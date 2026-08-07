@@ -10361,15 +10361,23 @@ const QBO_FUNCTIONS_BASE = 'https://us-central1-kytrac-72d91.cloudfunctions.net'
 
 function connectQuickBooks() {
   if (!currentCompanyId || !conCurrentUser) { alert('Not ready yet — try again in a moment.'); return; }
+  // Same mobile popup-blocker fix as viewInvoiceById/printInvoiceById:
+  // open the popup SYNCHRONOUSLY first (satisfies the "was this a
+  // direct user gesture" check mobile browsers require), THEN redirect
+  // that already-open window to the real URL once the async token
+  // fetch resolves — instead of opening a brand new window after the
+  // delay, which is exactly what was getting silently blocked.
+  const win = window.open('', '_blank', 'width=520,height=680');
   conCurrentUser.getIdToken().then(idToken => {
     const url = `${QBO_FUNCTIONS_BASE}/qbOAuthStart?token=${encodeURIComponent(idToken)}&companyId=${encodeURIComponent(currentCompanyId)}`;
-    const win = window.open(url, '_blank', 'width=520,height=680');
+    if (!win) { alert('Your browser blocked the popup — check your popup/pop-up blocker settings for this site and try again.'); return; }
+    win.location = url;
     // Poll for the popup closing, then refresh status — same pattern as
     // connectGoogleCalendar below.
     const poll = setInterval(() => {
       if (win && win.closed) { clearInterval(poll); setTimeout(checkQBConnectionStatus, 800); }
     }, 500);
-  }).catch(e => alert('Could not start QuickBooks connection: ' + e.message));
+  }).catch(e => { if (win) win.close(); alert('Could not start QuickBooks connection: ' + e.message); });
 }
 window.connectQuickBooks = connectQuickBooks;
 
@@ -14873,15 +14881,18 @@ window.loadGCalStatus = loadGCalStatus;
 
 function connectGoogleCalendar() {
   if (!conCurrentUser) return;
+  // Same fix as connectQuickBooks above.
+  const win = window.open('', '_blank', 'width=520,height=680');
   conCurrentUser.getIdToken().then(idToken => {
     const url = `${GCAL_FUNCTIONS_BASE}/gcalOAuthStart?token=${encodeURIComponent(idToken)}&companyId=${encodeURIComponent(currentCompanyId)}`;
-    const win = window.open(url, '_blank', 'width=520,height=680');
+    if (!win) { alert('Your browser blocked the popup — check your popup/pop-up blocker settings for this site and try again.'); return; }
+    win.location = url;
     // Poll for the popup closing, then refresh status - simplest way to
     // pick up the connection without needing a postMessage handshake.
     const poll = setInterval(() => {
       if (win && win.closed) { clearInterval(poll); setTimeout(loadGCalStatus, 800); }
     }, 500);
-  }).catch(e => alert('Could not start Google Calendar connection: ' + e.message));
+  }).catch(e => { if (win) win.close(); alert('Could not start Google Calendar connection: ' + e.message); });
 }
 window.connectGoogleCalendar = connectGoogleCalendar;
 
@@ -16625,11 +16636,14 @@ ${co.phone||''}
 ${co.email||''}`
         );
 
-        // Open email for each vendor
-        vendorsWithEmail.forEach((v, i) => {
-          setTimeout(() => {
-            window.open(`mailto:${v.vendorEmail}?subject=${subject}&body=${body}`, '_blank');
-          }, i * 500);
+        // Open email for each vendor. Previously staggered via
+        // setTimeout — even a 0ms delay breaks the "direct user
+        // gesture" chain mobile browsers require before allowing
+        // window.open() to succeed, so on mobile some or all of these
+        // could silently fail. Opening all of them synchronously,
+        // immediately, within the same click, avoids that.
+        vendorsWithEmail.forEach(v => {
+          window.open(`mailto:${v.vendorEmail}?subject=${subject}&body=${body}`, '_blank');
         });
 
         alert(`Bid requests sent to ${vendorsWithEmail.length} vendor${vendorsWithEmail.length!==1?'s':''}!
@@ -19260,13 +19274,23 @@ function printProposal() {
   const co = companyProfile;
   const itemized = !!document.getElementById('proposalItemizedToggle')?.checked;
 
+  // Same mobile popup-blocker fix as viewInvoiceById etc: open
+  // synchronously FIRST, before any async/delayed work — the fallback
+  // path below used to open the window inside a setTimeout(...,1500),
+  // which is exactly the kind of delayed-after-the-tap open mobile
+  // browsers silently block. Now the window opens immediately either
+  // way; only the CONTENT filling it in is ever delayed.
+  const win = window.open('', '_blank');
+  if (win) win.document.write('<html><body style="font-family:sans-serif;padding:40px;text-align:center;color:#666">Loading proposal…</body></html>');
+
   // Ensure estimate is loaded before computing proposal data
   if (!estGroups || !estGroups.length) {
     conLoadEstimate(conCurrentJobId);
     setTimeout(() => {
       const data = computeProposalData(job, itemized);
       saveProposalSnapshot(conCurrentJobId, data);
-      const win = window.open('', '_blank');
+      if (!win) { alert('Your browser blocked the popup — check your popup/pop-up blocker settings for this site and try again.'); return; }
+      win.document.open();
       win.document.write(renderProposalDocumentHtml(data, job, co));
       win.document.close();
     }, 1500);
@@ -19275,7 +19299,8 @@ function printProposal() {
 
   const data = computeProposalData(job, itemized);
   saveProposalSnapshot(conCurrentJobId, data);
-  const win = window.open('', '_blank');
+  if (!win) { alert('Your browser blocked the popup — check your popup/pop-up blocker settings for this site and try again.'); return; }
+  win.document.open();
   win.document.write(renderProposalDocumentHtml(data, job, co));
   win.document.close();
 }
@@ -19290,11 +19315,15 @@ function viewProposal() {
   const co = companyProfile;
   const itemized = !!document.getElementById('proposalItemizedToggle')?.checked;
 
+  const win = window.open('', '_blank');
+  if (win) win.document.write('<html><body style="font-family:sans-serif;padding:40px;text-align:center;color:#666">Loading proposal…</body></html>');
+
   if (!estGroups || !estGroups.length) {
     conLoadEstimate(conCurrentJobId);
     setTimeout(() => {
       const data = computeProposalData(job, itemized);
-      const win = window.open('', '_blank');
+      if (!win) { alert('Your browser blocked the popup — check your popup/pop-up blocker settings for this site and try again.'); return; }
+      win.document.open();
       win.document.write(renderProposalDocumentHtml(data, job, co, false));
       win.document.close();
     }, 1500);
@@ -19302,7 +19331,8 @@ function viewProposal() {
   }
 
   const data = computeProposalData(job, itemized);
-  const win = window.open('', '_blank');
+  if (!win) { alert('Your browser blocked the popup — check your popup/pop-up blocker settings for this site and try again.'); return; }
+  win.document.open();
   win.document.write(renderProposalDocumentHtml(data, job, co, false));
   win.document.close();
 }
