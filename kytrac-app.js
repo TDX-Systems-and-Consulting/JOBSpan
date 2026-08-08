@@ -3177,7 +3177,7 @@ async function renderJobGantt(jobId) {
   minDate.setDate(minDate.getDate() - 7);
   maxDate.setDate(maxDate.getDate() + 14);
 
-  // Calculate overall % complete
+  // Calculate overall % complete (duration-weighted — see calcJobPct)
   let totalTasks = 0, doneTasks = 0;
   _ganttData.forEach(({ rooms }) => {
     rooms.forEach(({ room, tasks }) => {
@@ -3186,7 +3186,7 @@ async function renderJobGantt(jobId) {
       doneTasks += dt.filter(t => t.taskStatus === 'done').length;
     });
   });
-  const overallPct = totalTasks ? Math.round(doneTasks / totalTasks * 100) : 0;
+  const overallPct = calcJobPct();
   const pctEl = document.getElementById('ganttCompletePct');
   if (pctEl) pctEl.textContent = totalTasks ? `${overallPct}% complete (${doneTasks}/${totalTasks} tasks)` : 'No tasks yet';
 
@@ -3453,9 +3453,7 @@ function renderGanttRight(minDate, maxDate, today) {
             .map(l => l.trim()).filter(Boolean)
             .map((line, i) => ({ id: `scope_${room.id}_${i}`, name: line, taskStatus: statusMap[`scope_${room.id}_${i}`] || 'todo' }));
         }
-        const roomPct = displayTasks.length
-          ? Math.round(displayTasks.filter(t => t.taskStatus === 'done').length / displayTasks.length * 100)
-          : 0;
+        const roomPct = calcRoomPct(room, tasks);
 
         barsHtml += barRow('background:rgba(8,19,37,.2)') +
           bar(roomStart, roomEnd, 'background:linear-gradient(90deg,#0d9488,#14b8a6);border-radius:3px;position:absolute;height:16px;top:10px', roomPct, room.name, '') +
@@ -3522,13 +3520,29 @@ function pctColor(pct) {
   return 'var(--muted)';
 }
 
+// Completion is weighted by task.durationDays (real scheduled effort —
+// days, never dollars) rather than a flat task count. A task with no
+// duration set falls back to a weight of 1, same as the old flat-count
+// behavior, so nothing breaks on jobs/tasks that haven't been given
+// durations yet. This makes a 5-day demo task count proportionally
+// more toward "% complete" than a 1-hour dishwasher install, without
+// ever referencing cost — a more precise version of effort-based
+// tracking, not a different philosophy from it.
+function taskWeight(t) {
+  const d = Number(t.durationDays);
+  return (d && d > 0) ? d : 1;
+}
+
 function calcJobPct() {
   let total = 0, done = 0;
   _ganttData.forEach(({ rooms }) => {
     rooms.forEach(({ room, tasks }) => {
       const displayTasks = getDisplayTasks(room, tasks);
-      total += displayTasks.length;
-      done += displayTasks.filter(t => t.taskStatus === 'done').length;
+      displayTasks.forEach(t => {
+        const w = taskWeight(t);
+        total += w;
+        if (t.taskStatus === 'done') done += w;
+      });
     });
   });
   return total ? Math.round(done / total * 100) : 0;
@@ -3553,8 +3567,11 @@ function calcPhasePct(rooms) {
   let total = 0, done = 0;
   rooms.forEach(({ room, tasks }) => {
     const dt = getDisplayTasks(room, tasks);
-    total += dt.length;
-    done += dt.filter(t => t.taskStatus === 'done').length;
+    dt.forEach(t => {
+      const w = taskWeight(t);
+      total += w;
+      if (t.taskStatus === 'done') done += w;
+    });
   });
   return total ? Math.round(done / total * 100) : 0;
 }
@@ -3562,7 +3579,13 @@ function calcPhasePct(rooms) {
 function calcRoomPct(room, tasks) {
   const dt = getDisplayTasks(room, tasks);
   if (!dt.length) return 0;
-  return Math.round(dt.filter(t => t.taskStatus === 'done').length / dt.length * 100);
+  let total = 0, done = 0;
+  dt.forEach(t => {
+    const w = taskWeight(t);
+    total += w;
+    if (t.taskStatus === 'done') done += w;
+  });
+  return total ? Math.round(done / total * 100) : 0;
 }
 
 // Room dates: use room's own dates if set, otherwise auto-divide phase dates equally
