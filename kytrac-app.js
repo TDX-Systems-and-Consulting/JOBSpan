@@ -5361,29 +5361,39 @@ async function sendInvoiceSplitToPlannerXD(invId) {
   if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }
 
   try {
-    const { materials, laborAndOther } = await fetchEstimateCostSplitFresh(jobId);
-    const flexTotal = materials + laborAndOther;
-    const materialsShare = flexTotal > 0 ? materials / flexTotal : 0.5;
-    const fixedPct = COO_BUDGET_PCTS.overhead + COO_BUDGET_PCTS.profit + COO_BUDGET_PCTS.marketing + COO_BUDGET_PCTS.flex;
-    const remaining = inv.total * (1 - fixedPct);
-    const parts = {
-      materials: remaining * materialsShare,
-      labor: remaining * (1 - materialsShare),
-      overhead: inv.total * COO_BUDGET_PCTS.overhead,
-      profit: inv.total * COO_BUDGET_PCTS.profit,
-      marketing: inv.total * COO_BUDGET_PCTS.marketing,
-      flex: inv.total * COO_BUDGET_PCTS.flex,
-    };
-    const taxes = parts.profit * COO_BUDGET_TAX_RATE;
+    // Whole-job breakdown first (real cost, gross-margin-ratio
+    // flexing — see computeCOOBudgetBreakdown), THEN scale every
+    // bucket down by this invoice's share of total revenue. A 35%
+    // deposit invoice gets 35% of every one of the six bucket dollar
+    // amounts, not a separately-recomputed 35%-of-fixed-percentages —
+    // this is what makes it agree exactly with the whole-job number
+    // shown elsewhere on the Financials tab.
+    const breakdown = await computeCOOBudgetBreakdown(job);
+    const share = breakdown.revenue > 0 ? inv.total / breakdown.revenue : 0;
     const fmt = v => '$' + v.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2});
-    const body = `Invoice ${inv.number || ''} — ${fmt(inv.total)}\n\n`
+    const scale = v => Math.round(v * share * 100) / 100;
+
+    const parts = {
+      materials: scale(breakdown.materials),
+      labor: scale(breakdown.labor),
+      overhead: scale(breakdown.overhead),
+      profit: scale(breakdown.profit),
+      marketing: scale(breakdown.marketing),
+      taxes: scale(breakdown.taxes),
+    };
+
+    const placeholderNote = breakdown.costSource && breakdown.costSource.startsWith('PLACEHOLDER')
+      ? `\n\n⚠️ Labor cost is a placeholder (no real subcontractor payments/hours logged yet) — this split will change once real cost data exists.`
+      : '';
+
+    const body = `Invoice ${inv.number || ''} — ${fmt(inv.total)} (${(share*100).toFixed(1)}% of job)\n\n`
       + `Materials: ${fmt(parts.materials)}\n`
-      + `Labor/Subs: ${fmt(parts.labor)}\n`
+      + `Labor: ${fmt(parts.labor)}\n`
       + `Overhead: ${fmt(parts.overhead)}\n`
-      + `Profit/Retained Earnings: ${fmt(parts.profit)}\n`
+      + `Retained Earnings: ${fmt(parts.profit)}\n`
       + `Marketing: ${fmt(parts.marketing)}\n`
-      + `Flex/Overrun buffer: ${fmt(parts.flex)}\n`
-      + `Taxes (from Profit line): ${fmt(taxes)}`;
+      + `Taxes (from Retained Earnings): ${fmt(parts.taxes)}`
+      + placeholderNote;
 
     const settDoc = await coll('settings').doc('company').get();
     const ownerUid = settDoc?.exists ? settDoc.data().ownerUid : null;
@@ -18343,9 +18353,16 @@ const COO_BUDGET_PCTS = {
   overhead: 0.15,
   profit: 0.12,
   marketing: 0.03,
-  flex: 0.05,
 };
-const COO_BUDGET_TAX_RATE = 0.275; // midpoint of the 25-30% SE+income tax range discussed, applied to Profit only
+// These three no longer mean "fixed % of revenue" — they're RATIO
+// WEIGHTS (15:12:3) applied to this job's REAL gross margin dollar
+// amount, so the buckets scale with what the job actually costs
+// instead of assuming every job hits the same cost ratio. Flex was
+// dropped entirely per Travis's 6-bucket model (Materials, Labor,
+// Overhead, Retained Earnings, Marketing, Taxes) — Taxes is still
+// derived FROM Retained Earnings below, not an independent weight.
+const COO_BUDGET_WEIGHT_SUM = COO_BUDGET_PCTS.overhead + COO_BUDGET_PCTS.profit + COO_BUDGET_PCTS.marketing;
+const COO_BUDGET_TAX_RATE = 0.275; // midpoint of the 25-30% SE+income tax range discussed, applied to Retained Earnings only
 
 function getEstimateCostSplit() {
   // Materials vs everything-else (Labor, Subcontractor, Equipment,
@@ -18367,53 +18384,106 @@ function getEstimateCostSplit() {
   return { materials, laborAndOther };
 }
 
+// Real cost for a job — Materials and Labor — in priority order from
+// most to least trustworthy, never catalog placeholder rates:
+//   Materials: billed materials ÷ 1.15 (backs out the established 15%
+//     markup — same formula validated by hand all session).
+//   Labor, in order:
+//     1. Real subcontractor payments actually logged on this job
+//        (jobs/{jobId}/subcontractorPayments) — real committed dollars.
+//     2. If none logged yet, estimate from real contractor data: sum
+//        each linked Contractor's crew hours clocked on this job ×
+//        that contractor's burdenedRate — the exact same math the
+//        Subcontractor Payment auto-suggest already uses, so this
+//        never disagrees with what that modal would suggest.
+//     3. Last resort: billed labor from the estimate itself, clearly
+//        flagged as a placeholder — no real cost data exists yet.
+async function computeRealJobCost(jobId) {
+  const { materials: billedMaterials, laborAndOther: billedLabor } = await fetchEstimateCostSplitFresh(jobId);
+  const realMaterials = billedMaterials / 1.15;
+
+  const paySnap = await coll('jobs').doc(jobId).collection('subcontractorPayments').get();
+  let loggedLabor = 0;
+  paySnap.forEach(d => { const p = d.data(); if (p.status !== 'Voided') loggedLabor += (p.amount || 0); });
+  if (loggedLabor > 0) {
+    return { materials: realMaterials, labor: loggedLabor, source: 'actual subcontractor payments' };
+  }
+
+  const contractorsOnJob = (allContractors || []).filter(c => (c.crewMemberEmails||[]).length);
+  if (contractorsOnJob.length) {
+    try {
+      const teSnap = await coll('timeentries').where('jobId', '==', jobId).get();
+      const hoursByEmail = {};
+      teSnap.forEach(d => {
+        const t = d.data();
+        if (!t.hours || !t.userEmail) return;
+        const email = t.userEmail.toLowerCase();
+        hoursByEmail[email] = (hoursByEmail[email] || 0) + t.hours;
+      });
+      let estimatedLabor = 0, anyHours = false;
+      contractorsOnJob.forEach(c => {
+        const rate = Number(c.burdenedRate) || 0;
+        (c.crewMemberEmails || []).forEach(email => {
+          const h = hoursByEmail[(email||'').toLowerCase()] || 0;
+          if (h > 0) { anyHours = true; estimatedLabor += h * rate; }
+        });
+      });
+      if (anyHours) return { materials: realMaterials, labor: estimatedLabor, source: 'estimated from clocked hours × contractor rate' };
+    } catch (e) { /* fall through to placeholder */ }
+  }
+
+  return { materials: realMaterials, labor: billedLabor, source: 'PLACEHOLDER — billed labor, no real subcontractor cost data logged yet' };
+}
+
 async function computeCOOBudgetBreakdown(job) {
-  const { materials, laborAndOther } = await fetchEstimateCostSplitFresh(job.id);
-  const flexTotal = materials + laborAndOther;
+  const { materials: billedMaterials, laborAndOther: billedLabor } = await fetchEstimateCostSplitFresh(job.id);
   // Revenue: prefer the signed contract value on the job itself
   // (reliable regardless of what else is open); fall back to the
   // fresh estimate total (materials + everything else) if there's no
   // contract value yet — e.g. a job still in Estimating status.
-  // Previously this called getEstimateTotal(), which reads a hidden
-  // field that only exists INSIDE the invoice-creation modal — calling
-  // it from the Financials tab's own button read nothing, silently.
-  const revenue = (job?.contractValue || job?.approvedOrders || flexTotal || 0);
-  // Fixed categories claim their share of revenue first; whatever
-  // Materials/Labor actually totaled in the estimate split the
-  // remainder in their real ratio — so the two flexible lines always
-  // sum correctly to "revenue minus the fixed categories," not to
-  // some arbitrary separate total.
-  const fixedTotal = revenue * (COO_BUDGET_PCTS.overhead + COO_BUDGET_PCTS.profit + COO_BUDGET_PCTS.marketing + COO_BUDGET_PCTS.flex);
-  const remaining = Math.max(0, revenue - fixedTotal);
-  const materialsShare = flexTotal > 0 ? materials / flexTotal : 0.5;
-  const overhead = revenue * COO_BUDGET_PCTS.overhead;
-  const profit = revenue * COO_BUDGET_PCTS.profit;
-  const marketing = revenue * COO_BUDGET_PCTS.marketing;
-  const flex = revenue * COO_BUDGET_PCTS.flex;
+  const revenue = (job?.contractValue || job?.approvedOrders || (billedMaterials + billedLabor) || 0);
+
+  const realCost = await computeRealJobCost(job.id);
+  const realCostTotal = realCost.materials + realCost.labor;
+  // This IS the number that flexes per job — a labor-heavy job with
+  // real subcontractor pay running hot shows a smaller gross margin
+  // dollar amount here, which then shrinks Overhead/Retained
+  // Earnings/Marketing together in the same 15:12:3 ratio, rather than
+  // those three staying fixed and silently going underfunded.
+  const grossMarginDollar = Math.max(0, revenue - realCostTotal);
+
+  const overhead = grossMarginDollar * (COO_BUDGET_PCTS.overhead / COO_BUDGET_WEIGHT_SUM);
+  const profit = grossMarginDollar * (COO_BUDGET_PCTS.profit / COO_BUDGET_WEIGHT_SUM);
+  const marketing = grossMarginDollar * (COO_BUDGET_PCTS.marketing / COO_BUDGET_WEIGHT_SUM);
   const taxes = profit * COO_BUDGET_TAX_RATE;
+
   return {
     revenue: Math.round(revenue * 100) / 100,
-    materials: Math.round(remaining * materialsShare * 100) / 100,
-    labor: Math.round(remaining * (1 - materialsShare) * 100) / 100,
+    materials: Math.round(realCost.materials * 100) / 100,
+    labor: Math.round(realCost.labor * 100) / 100,
     overhead: Math.round(overhead * 100) / 100,
     profit: Math.round(profit * 100) / 100,
     marketing: Math.round(marketing * 100) / 100,
-    flex: Math.round(flex * 100) / 100,
     taxes: Math.round(taxes * 100) / 100,
+    grossMarginDollar: Math.round(grossMarginDollar * 100) / 100,
+    costSource: realCost.source,
     generatedAt: new Date().toISOString(),
   };
 }
 
 function formatCOOBudgetBody(b) {
   const fmt = v => '$' + v.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2});
+  const placeholderNote = b.costSource && b.costSource.startsWith('PLACEHOLDER')
+    ? `\n\n⚠️ Labor cost is a placeholder (${b.costSource}) — log real subcontractor payments or clock hours for a real number.`
+    : `\n\n(Cost basis: ${b.costSource || 'unknown'})`;
   return `Revenue: ${fmt(b.revenue)}\n`
     + `Materials: ${fmt(b.materials)}\n`
-    + `Labor/Subs: ${fmt(b.labor)}\n`
+    + `Labor: ${fmt(b.labor)}\n`
     + `Overhead: ${fmt(b.overhead)}\n`
-    + `Profit/Retained Earnings: ${fmt(b.profit)}\n`
+    + `Retained Earnings: ${fmt(b.profit)}\n`
     + `Marketing: ${fmt(b.marketing)}\n`
-    + `Flex/Overrun buffer: ${fmt(b.flex)}\n`
-    + `Taxes (from Profit line): ${fmt(b.taxes)}`;
+    + `Taxes (from Retained Earnings): ${fmt(b.taxes)}`
+    + placeholderNote;
 }
 
 // Owner-only, manual trigger — deliberately NOT wired to a status
@@ -18480,18 +18550,18 @@ function renderCOOBudgetBreakdown() {
     return;
   }
   const fmt = v => '$' + v.toLocaleString(undefined, {minimumFractionDigits:0, maximumFractionDigits:0});
+  const costFlag = b.costSource && b.costSource.startsWith('PLACEHOLDER') ? ' ⚠️ placeholder labor cost' : '';
   const rows = [
     ['Materials', b.materials, '#fb923c'],
-    ['Labor/Subs', b.labor, '#60a5fa'],
+    ['Labor', b.labor, '#60a5fa'],
     ['Overhead', b.overhead, '#a3a3a3'],
-    ['Profit/Retained Earnings', b.profit, '#1dbb87'],
+    ['Retained Earnings', b.profit, '#1dbb87'],
     ['Marketing', b.marketing, '#c084fc'],
-    ['Flex/Overrun buffer', b.flex, '#fde68a'],
   ];
-  wrap.innerHTML = `<div class="finhub-sec-head" style="cursor:default"><span>📊 COO Budget Breakdown <span class="small muted">(Owner only) — Revenue ${fmt(b.revenue)}</span></span>${genBtn}</div>
+  wrap.innerHTML = `<div class="finhub-sec-head" style="cursor:default"><span>📊 COO Budget Breakdown <span class="small muted">(Owner only) — Revenue ${fmt(b.revenue)}${costFlag}</span></span>${genBtn}</div>
     <div class="finhub-sec-body">
       ${rows.map(([label, val, color]) => `<div class="finhub-line"><div class="finhub-line-title" style="color:${color}">${label}</div><div class="finhub-line-amt">${fmt(val)}</div></div>`).join('')}
-      <div class="finhub-line" style="border-top:1px solid rgba(110,145,210,.15);padding-top:8px;margin-top:4px"><div class="finhub-line-title" style="font-style:italic">Taxes (from Profit line)</div><div class="finhub-line-amt" style="font-style:italic">${fmt(b.taxes)}</div></div>
+      <div class="finhub-line" style="border-top:1px solid rgba(110,145,210,.15);padding-top:8px;margin-top:4px"><div class="finhub-line-title" style="font-style:italic">Taxes (from Retained Earnings)</div><div class="finhub-line-amt" style="font-style:italic">${fmt(b.taxes)}</div></div>
     </div>`;
 }
 window.renderCOOBudgetBreakdown = renderCOOBudgetBreakdown;
