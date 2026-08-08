@@ -2557,13 +2557,14 @@ function refreshJobFinancials(job) {
   if (!conDb) return;
   const jobId = job.id;
   let billsPaid = 0, materialsTotal = 0, subPayTotal = 0, laborCost = 0, doneCount = 0;
+  let projectedRealCost = null;
   const maybeApplyLive = () => {
-    if (++doneCount < 4) return;
+    if (++doneCount < 5) return;
     const liveActual = Math.round((billsPaid + materialsTotal + subPayTotal + laborCost) * 100) / 100;
     // Only override if live tracking actually has data, or the stored
     // field is empty — never silently zero out a real imported number.
     if (liveActual > 0 || !(job.actualCost > 0)) {
-      applyJobFinancialsDisplay(job, liveActual);
+      applyJobFinancialsDisplay(job, liveActual, projectedRealCost);
     }
   };
   coll('vendors').get().then(vSnap => {
@@ -2618,12 +2619,30 @@ function refreshJobFinancials(job) {
       maybeApplyLive();
     })
     .catch(maybeApplyLive);
+  // Fifth leg of the same live recompute: what "Cost to Complete"
+  // should show BEFORE any real spend exists on the job at all — a
+  // real projection using true materials (billed ÷ 1.15) and the best
+  // available real labor cost, not job.estCost (the old catalog/billed-
+  // price-derived estimate field this whole dashboard was silently
+  // falling back to whenever the job was too new to have any live
+  // actual cost yet — which is every brand-new job, always).
+  computeRealJobCost(jobId)
+    .then(rc => { projectedRealCost = rc.materials + rc.labor; maybeApplyLive(); })
+    .catch(() => { maybeApplyLive(); });
 }
 
-function applyJobFinancialsDisplay(job, acOverride) {
+function applyJobFinancialsDisplay(job, acOverride, realCostOverride) {
   const fmt = v => '$' + Number(v||0).toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:0});
   const cv = getJobValue(job);
-  const ec = job.estCost || 0;
+  // Projected cost baseline for a job with no real spend logged yet:
+  // prefer the real-cost projection (true materials + best-available
+  // real labor cost — see computeRealJobCost) over job.estCost, which
+  // is the OLD catalog/billed-price-derived estimate field. Every
+  // brand-new job falls into this branch, always, since it by
+  // definition has zero real spend yet — this was previously showing
+  // stale catalog-cost numbers on literally every job until real
+  // activity got logged on it.
+  const ec = (typeof realCostOverride === 'number' && realCostOverride > 0) ? realCostOverride : (job.estCost || 0);
   const ac = acOverride || 0;
   // Best-known cost for margin math: prefer real actual cost (now live
   // vendor bills + materials purchases, falling back to the stored
