@@ -5666,6 +5666,10 @@ function openAddSubPayFromJob(payId) {
   document.getElementById('subPayId').value = payId || '';
   const setVal = (id, v) => { const el = document.getElementById(id); if (el) el.value = v || ''; };
 
+  const job = conJobs.find(j => j.id === conCurrentJobId);
+  const jobLabelEl = document.getElementById('subPayJobLabel');
+  if (jobLabelEl) jobLabelEl.textContent = job ? `For: ${job.address || job.name || 'this job'}` : '';
+
   // Populate the dropdown from Contractors (real, standing payees),
   // plus a manual "Other" option for a one-off sub who was never added
   // as a contractor at all.
@@ -5692,6 +5696,8 @@ function openAddSubPayFromJob(payId) {
   setVal('subPayOverrideReason', existing?.overrideReason || '');
   document.getElementById('subPaySuggestedWrap').style.display = 'none';
   document.getElementById('subPayOverrideWrap').style.display = existing?.overrideReason ? '' : 'none';
+  document.getElementById('subPayScheduleWrap').style.display = 'none';
+  setVal('subPayJobTotal', '');
 
   kOpen('addSubPayModal');
 }
@@ -5724,12 +5730,15 @@ async function onSubPaySelectChange() {
     _subPaySuggestedAmount = null;
     if (suggestedWrap) suggestedWrap.style.display = 'none';
     if (overrideWrap) overrideWrap.style.display = 'none';
+    document.getElementById('subPayScheduleWrap').style.display = 'none';
     return;
   }
 
   const contractor = (allContractors || []).find(c => c.id === sel.value);
   const jobId = conCurrentJobId;
   if (!contractor || !jobId || !conDb) return;
+
+  showSubPayScheduleSection(contractor);
 
   if (suggestedWrap) { suggestedWrap.style.display = ''; suggestedWrap.textContent = 'Calculating amount owed from logged hours…'; }
 
@@ -5779,6 +5788,70 @@ async function onSubPaySelectChange() {
   }
 }
 window.onSubPaySelectChange = onSubPaySelectChange;
+
+// Shows/hides the "apply this job's payment schedule" section, using
+// the SAME resolveScheduleStages() the invoice picker already reads
+// from — so a 50/50 job shows 50/50 stage buttons here too, never a
+// second, separately-typed schedule that could drift from the real
+// one on the Estimate tab.
+function showSubPayScheduleSection(contractor) {
+  const job = conJobs.find(j => j.id === conCurrentJobId);
+  const stages = resolveScheduleStages(job?.paymentSchedule);
+  const wrap = document.getElementById('subPayScheduleWrap');
+  if (!wrap) return;
+  if (!stages.length) { wrap.style.display = 'none'; return; }
+
+  wrap.style.display = '';
+  const typeLabel = job?.paymentSchedule?.type || '—';
+  document.getElementById('subPayScheduleType').textContent = typeLabel;
+
+  const totalEl = document.getElementById('subPayJobTotal');
+  const savedTotal = contractor.contractorJobTotals && contractor.contractorJobTotals[conCurrentJobId];
+  if (totalEl) totalEl.value = savedTotal || '';
+
+  renderSubPayScheduleButtons();
+}
+
+function renderSubPayScheduleButtons() {
+  const job = conJobs.find(j => j.id === conCurrentJobId);
+  const stages = resolveScheduleStages(job?.paymentSchedule);
+  const total = parseFloat(document.getElementById('subPayJobTotal')?.value) || 0;
+  const btnWrap = document.getElementById('subPayScheduleButtons');
+  if (!btnWrap) return;
+
+  if (!total) {
+    btnWrap.innerHTML = '<span class="small muted" style="font-style:italic">Enter the contractor\'s total for this job to see stage amounts.</span>';
+    return;
+  }
+
+  btnWrap.innerHTML = stages.map((s, i) => {
+    const amt = Math.round(total * s.pct / 100 * 100) / 100;
+    return `<button type="button" class="btn" style="padding:6px 12px;font-size:.8rem" onclick="applySubPayScheduleStage(${amt},'${esc(s.label)}',${s.pct})">${esc(s.label)} (${s.pct}%) → $${amt.toFixed(2)}</button>`;
+  }).join('');
+}
+window.renderSubPayScheduleButtons = renderSubPayScheduleButtons;
+
+// Clicking a stage button fills the amount + description from the
+// job's own schedule. If this differs from the hours×rate suggestion
+// (or there's no hours suggestion at all), the override-reason field
+// still appears per the usual rule — but pre-filled with a real,
+// specific reason instead of leaving it blank to retype, since
+// "matches the job's own payment schedule" is a genuinely different
+// and equally legitimate basis for the number, not a shortcut around
+// the requirement.
+function applySubPayScheduleStage(amount, label, pct) {
+  const amountEl = document.getElementById('subPayAmount');
+  const descEl = document.getElementById('subPayDesc');
+  if (amountEl) amountEl.value = amount;
+  if (descEl && !descEl.value.trim()) descEl.value = label + ' (' + pct + '%)';
+  onSubPayAmountInput();
+  const overrideWrap = document.getElementById('subPayOverrideWrap');
+  const reasonEl = document.getElementById('subPayOverrideReason');
+  if (overrideWrap && overrideWrap.style.display !== 'none' && reasonEl && !reasonEl.value.trim()) {
+    reasonEl.value = `Matches job's payment schedule — ${label} (${pct}%)`;
+  }
+}
+window.applySubPayScheduleStage = applySubPayScheduleStage;
 
 // Fires on every keystroke in the Amount field. If a real suggested
 // amount exists and the typed value no longer matches it, the override
@@ -5839,6 +5912,17 @@ function saveSubcontractorPayment() {
   const promise = payId ? col.doc(payId).update(data)
     : col.add({ ...data, createdAt: firebase.firestore.FieldValue.serverTimestamp() });
   promise.then(() => {
+    // Remember the entered "contractor's total for this job" on the
+    // contractor record itself (keyed by job), so reopening this modal
+    // for the same job+contractor later has it prefilled instead of
+    // needing retyping for every stage payment.
+    const jobTotal = parseFloat(document.getElementById('subPayJobTotal')?.value) || 0;
+    if (selVal && selVal !== '__other__' && jobTotal) {
+      coll('contractors').doc(selVal).set(
+        { contractorJobTotals: { [jobId]: jobTotal } },
+        { merge: true }
+      ).catch(() => {}); // non-critical — the payment itself already saved
+    }
     kClose('addSubPayModal');
     fhLoadJobSubPayments(jobId, () => {
       fhRenderSubPayments();
