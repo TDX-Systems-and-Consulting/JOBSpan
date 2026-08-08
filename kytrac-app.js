@@ -3321,8 +3321,15 @@ function renderGanttLeft(jobId, job) {
                 ${isReal ? `<button onclick="event.stopPropagation();openTaskScheduleModal('${phase.id}','${room.id}','${task.id}')" title="${taskDepCount ? taskDepCount+' dependenc'+(taskDepCount===1?'y':'ies')+' set' : 'Set duration and dependencies'}" style="background:none;border:1px solid rgba(110,145,210,.25);border-radius:6px;color:${taskDepCount?'var(--amber)':'var(--muted)'};cursor:pointer;font-size:.65rem;margin-left:6px;padding:0 4px;flex-shrink:0">🔗${taskDepCount?' '+taskDepCount:''}</button>` : ''}
               </div>
               <div class="gantt-days-cell">${taskCircular ? '⚠' : (taskDays !== null ? taskDays+'d' : '—')}</div>
-              <div class="gantt-date-cell" style="color:rgba(110,145,210,.4)">${taskCircular ? `<span style="color:#f87171" title="Circular dependency">⚠</span>` : (taskStart||'—')}</div>
-              <div class="gantt-date-cell" style="color:rgba(110,145,210,.4)">${taskCircular ? '' : (taskEnd||'—')}</div>
+              <div class="gantt-date-cell" onclick="event.stopPropagation()">${taskCircular ? `<span style="color:#f87171" title="Circular dependency">⚠</span>` : (isReal && isOwner
+                ? `<input type="date" value="${task.startDate||''}" onchange="updateTaskDate('${phase.id}','${room.id}','${task.id}','startDate',this.value)" onclick="event.stopPropagation()" title="${task.startDate?'Custom date — overrides dependency/duration scheduling':(taskDepCount?'Computed from dependencies — set a date here to override':'Set a start date directly, or use 🔗 for duration/dependencies')}">`
+                : (taskStart||'—'))}
+              </div>
+              <div class="gantt-date-cell" onclick="event.stopPropagation()">${taskCircular ? '' : (isReal && isOwner
+                ? `<input type="date" value="${task.endDate||''}" onchange="updateTaskDate('${phase.id}','${room.id}','${task.id}','endDate',this.value)" onclick="event.stopPropagation()" title="${task.endDate?'Custom date — overrides dependency/duration scheduling':(taskDepCount?'Computed from dependencies — set a date here to override':'Set an end date directly, or use 🔗 for duration/dependencies')}">`
+                : (taskEnd||'—'))}
+                ${isReal && isOwner && (task.startDate || task.endDate) ? `<button onclick="event.stopPropagation();clearTaskDateOverride('${phase.id}','${room.id}','${task.id}')" title="Clear override, go back to duration/dependency-based scheduling" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:.7rem;margin-left:4px">✕</button>` : ''}
+              </div>
               <div class="gantt-pct-cell" style="color:${isDone?'#10b981':'var(--muted)'}">${isDone?'100':'0'}%</div>
             </div>`;
           });
@@ -3974,6 +3981,53 @@ async function clearRoomDateOverride(phaseId, roomId) {
   }
 }
 window.clearRoomDateOverride = clearRoomDateOverride;
+
+// Same pattern as updateRoomDate/clearRoomDateOverride above, one
+// level down. getTaskDates() already checks task.startDate/endDate
+// FIRST, ahead of dependency- and duration-based scheduling — that
+// override behavior was already fully built and working. What was
+// missing was any actual input to type a date into for a task row;
+// the row only ever rendered the computed result as plain text. A
+// task like "Dumpster Rental" with no duration and no dependency had
+// no way to be scheduled at all — this is the fix.
+async function updateTaskDate(phaseId, roomId, taskId, field, value) {
+  if (!_ganttJobId || !conDb) return;
+  try {
+    const entry = _ganttData.find(p => p.phase.id === phaseId);
+    const roomEntry = entry?.rooms.find(r => r.room.id === roomId);
+    const task = roomEntry?.tasks.find(t => t.id === taskId);
+    if (task) task[field] = value;
+    await coll('jobs').doc(_ganttJobId)
+      .collection('estimateGroups').doc(phaseId)
+      .collection('subgroups').doc(roomId)
+      .collection('items').doc(taskId)
+      .update({ [field]: value, updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
+    renderJobGantt(_ganttJobId);
+  } catch(e) {
+    console.error('updateTaskDate failed:', e);
+    alert('Could not save date: ' + e.message);
+  }
+}
+window.updateTaskDate = updateTaskDate;
+
+async function clearTaskDateOverride(phaseId, roomId, taskId) {
+  if (!_ganttJobId || !conDb || !confirm('Clear this task\'s custom dates and go back to dependency/duration-based scheduling?')) return;
+  try {
+    const entry = _ganttData.find(p => p.phase.id === phaseId);
+    const roomEntry = entry?.rooms.find(r => r.room.id === roomId);
+    const task = roomEntry?.tasks.find(t => t.id === taskId);
+    if (task) { delete task.startDate; delete task.endDate; }
+    await coll('jobs').doc(_ganttJobId)
+      .collection('estimateGroups').doc(phaseId)
+      .collection('subgroups').doc(roomId)
+      .collection('items').doc(taskId)
+      .update({ startDate: firebase.firestore.FieldValue.delete(), endDate: firebase.firestore.FieldValue.delete() });
+    renderJobGantt(_ganttJobId);
+  } catch(e) {
+    alert('Could not clear dates: ' + e.message);
+  }
+}
+window.clearTaskDateOverride = clearTaskDateOverride;
 
 // ── Room Schedule modal: duration + dependencies ──
 function openRoomScheduleModal(phaseId, roomId) {
