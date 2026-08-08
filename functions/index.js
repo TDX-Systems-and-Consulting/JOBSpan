@@ -1450,19 +1450,29 @@ exports.sendJobspanEmail = functions.https.onCall(async (data, context) => {
     ]
   };
 
-  const sgRes = await fetch('https://api.sendgrid.com/v3/mail/send', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${sgKey}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify(payload)
-  });
+  let sgRes;
+  try {
+    sgRes = await fetch('https://api.sendgrid.com/v3/mail/send', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${sgKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload)
+    });
+  } catch (e) {
+    // The request itself failed (network blip, timeout, DNS) rather than
+    // coming back with a bad status — without this catch, that's an
+    // uncaught exception and Firebase masks it as a bare "internal"
+    // error with zero detail on the client. Surface it instead.
+    console.error('SendGrid request failed:', e.message);
+    throw new functions.https.HttpsError('internal', `Email send failed: request error — ${e.message}`);
+  }
 
   if (!sgRes.ok) {
     const errText = await sgRes.text();
     console.error('SendGrid error:', sgRes.status, errText);
-    throw new functions.https.HttpsError('internal', `Email send failed: ${sgRes.status}`);
+    throw new functions.https.HttpsError('internal', `Email send failed: SendGrid ${sgRes.status} — ${errText.slice(0, 200)}`);
   }
 
   // Log the send to Firestore for audit trail
