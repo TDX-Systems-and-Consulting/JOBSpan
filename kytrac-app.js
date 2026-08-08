@@ -13410,14 +13410,18 @@ function openContractorModal(id) {
   document.getElementById('contractorStatus').value = c?.status || 'Active';
   document.getElementById('contractorW9OnFile').checked = !!c?.w9OnFile;
 
-  // Populate crew-member multi-select from every Team Member — any of
-  // them can be linked to a contractor, not just ones already flagged
-  // 'subcontractor', since that flag is being retired from Team Members.
-  const crewSel = document.getElementById('contractorCrewEmails');
+  // Explicit checkboxes, not a native multi-select — a native
+  // <select multiple> has no visible "remove this one person" action
+  // and browsers often show the first option highlighted just from
+  // focus/default styling even when nothing is actually selected,
+  // which is exactly what looked like an un-removable pre-selection.
+  const crewWrap = document.getElementById('contractorCrewEmails');
   const linkedEmails = c?.crewMemberEmails || [];
-  crewSel.innerHTML = (_lastTeamMemberList || []).map(m =>
-    `<option value="${esc(m.email||'')}" ${linkedEmails.includes(m.email)?'selected':''}>${esc(m.name||m.email||'Unnamed')}</option>`
-  ).join('');
+  crewWrap.innerHTML = (_lastTeamMemberList || []).map(m => {
+    const email = m.email || '';
+    const checked = linkedEmails.includes(email) ? 'checked' : '';
+    return `<label style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:4px 0"><input type="checkbox" value="${esc(email)}" ${checked} style="width:16px;height:16px"><span style="font-size:.88rem">${esc(m.name||email||'Unnamed')}</span></label>`;
+  }).join('') || '<div class="small muted" style="font-style:italic">No Team Members yet — add them under Company Settings → Team first.</div>';
 
   document.getElementById('deleteContractorBtn').style.display = c ? 'inline-flex' : 'none';
   kOpen('contractorModal');
@@ -13428,8 +13432,10 @@ function saveContractor() {
   const name = document.getElementById('contractorName')?.value.trim();
   if (!name) { alert('Contractor name is required.'); return; }
   const id = document.getElementById('contractorId')?.value;
-  const crewSel = document.getElementById('contractorCrewEmails');
-  const crewMemberEmails = crewSel ? Array.from(crewSel.selectedOptions).map(o => o.value) : [];
+  const crewWrap = document.getElementById('contractorCrewEmails');
+  const crewMemberEmails = crewWrap
+    ? Array.from(crewWrap.querySelectorAll('input[type="checkbox"]:checked')).map(cb => cb.value)
+    : [];
   const data = {
     name,
     trade: document.getElementById('contractorTrade')?.value,
