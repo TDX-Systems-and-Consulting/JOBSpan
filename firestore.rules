@@ -161,6 +161,16 @@ service cloud.firestore {
           allow read, write: if inCompany(companyId);
         }
       }
+      // Same exact gap as vendors above, repeated on the newer
+      // Contractors collection — no rule at all was written for it
+      // when it was built, so every save silently failed with
+      // "Missing or insufficient permissions" until this was added.
+      // No subcollection here (unlike vendors/bills) since
+      // subcontractorPayments deliberately stayed job-scoped under
+      // jobs/{jobId}/subcontractorPayments, already covered below.
+      match /contractors/{contractorId} {
+        allow read, write: if inCompany(companyId);
+      }
       match /documents/{docId} {
         allow read, write: if inCompany(companyId);
         // Portal (anonymous) can create signed proposal documents only
