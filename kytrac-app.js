@@ -5614,7 +5614,7 @@ function fhRenderSubPayments() {
     ? '<div class="finhub-empty">No subcontractor payments logged for this job.</div>'
     : items.map(p => `
     <div class="finhub-line" onclick="openAddSubPayFromJob('${p.id}')" style="cursor:pointer">
-      <div><div class="finhub-line-title">${esc(p.subName||'Subcontractor')}</div><div class="finhub-line-sub">${esc(p.desc||'')}</div></div>
+      <div><div class="finhub-line-title">${esc(p.subName||'Subcontractor')}</div><div class="finhub-line-sub">${esc(p.desc||'')}${p.overrideReason ? ' · <span style="color:#f59e0b">⚠ override: '+esc(p.overrideReason)+'</span>' : ''}</div></div>
       <div class="finhub-line-amt">${fhMoney(p.amount)}</div>
       <div class="finhub-line-bal" style="color:${p.status==='Paid'?'#a3f2d2':'#fde68a'}">${esc(p.status||'Agreed')}</div>
       <div>${fhBadge('Subcontractor','#c084fc')}</div>
@@ -5682,6 +5682,16 @@ function openAddSubPayFromJob(payId) {
   setVal('subPayNotes', existing?.notes);
   document.getElementById('subPayStatus').value = existing?.status || 'Agreed';
   document.getElementById('deleteSubPayBtn').style.display = existing ? 'inline-flex' : 'none';
+
+  // Reset override-tracking state. Editing an existing payment doesn't
+  // re-trigger a suggestion unless the person actively re-picks a name
+  // from the dropdown — we're not second-guessing an already-agreed
+  // number just because they opened it to edit the notes.
+  _subPaySuggestedAmount = existing?.suggestedAmount ?? null;
+  setVal('subPayOverrideReason', existing?.overrideReason || '');
+  document.getElementById('subPaySuggestedWrap').style.display = 'none';
+  document.getElementById('subPayOverrideWrap').style.display = existing?.overrideReason ? '' : 'none';
+
   kOpen('addSubPayModal');
 }
 window.openAddSubPayFromJob = openAddSubPayFromJob;
@@ -5690,12 +5700,87 @@ window.openAddSubPayFromJob = openAddSubPayFromJob;
 function openAddSubPayFromJobShortcut() { openAddSubPayFromJob(null); }
 window.openAddSubPayFromJobShortcut = openAddSubPayFromJobShortcut;
 
-function onSubPaySelectChange() {
+// Tracks the last auto-calculated "suggested" amount (hours logged on
+// THIS job × the subcontractor's stored burdenedRate) so we can detect
+// when the person types something different and require them to say
+// why — the actual ask being "prepopulate it, but force an explanation
+// for any manual override" rather than silently accepting either one.
+let _subPaySuggestedAmount = null;
+
+async function onSubPaySelectChange() {
   const sel = document.getElementById('subPaySelect');
   const wrap = document.getElementById('subPayOtherWrap');
   if (wrap) wrap.style.display = sel.value === '__other__' ? '' : 'none';
+
+  const suggestedWrap = document.getElementById('subPaySuggestedWrap');
+  const overrideWrap = document.getElementById('subPayOverrideWrap');
+  const amountEl = document.getElementById('subPayAmount');
+
+  if (!sel.value || sel.value === '__other__') {
+    // No real subcontractor selected — nothing to suggest against, and
+    // an "Other" one-off sub has no logged hours/rate to compute from.
+    _subPaySuggestedAmount = null;
+    if (suggestedWrap) suggestedWrap.style.display = 'none';
+    if (overrideWrap) overrideWrap.style.display = 'none';
+    return;
+  }
+
+  const member = (_lastTeamMemberList || []).find(m => (m.email||'').replace(/\./g,'_') === sel.value);
+  const jobId = conCurrentJobId;
+  if (!member || !jobId || !conDb) return;
+
+  if (suggestedWrap) { suggestedWrap.style.display = ''; suggestedWrap.textContent = 'Calculating amount owed from logged hours…'; }
+
+  try {
+    const teSnap = await coll('timeentries').where('jobId', '==', jobId).get();
+    let hours = 0;
+    teSnap.forEach(d => {
+      const t = d.data();
+      if (!t.hours) return;
+      if ((t.userEmail || '').toLowerCase() !== (member.email || '').toLowerCase()) return;
+      hours += t.hours;
+    });
+    const rate = Number(member.burdenedRate) || 0;
+    const suggested = Math.round(hours * rate * 100) / 100;
+
+    if (!hours || !rate) {
+      _subPaySuggestedAmount = null; // nothing real to compare overrides against
+      if (suggestedWrap) {
+        suggestedWrap.style.display = '';
+        suggestedWrap.textContent = !hours
+          ? 'No clock-in hours logged for ' + (member.name || member.email) + ' on this job yet — enter the amount manually.'
+          : (member.name || member.email) + ' has no burdened rate set (Settings → Team) — enter the amount manually.';
+      }
+      return;
+    }
+
+    _subPaySuggestedAmount = suggested;
+    if (amountEl) amountEl.value = suggested;
+    if (suggestedWrap) {
+      suggestedWrap.style.display = '';
+      suggestedWrap.textContent = `Suggested: ${hours.toFixed(1)} hrs × $${rate.toFixed(2)}/hr = $${suggested.toFixed(2)} (from logged hours on this job)`;
+    }
+    if (overrideWrap) overrideWrap.style.display = 'none'; // matches suggestion exactly right now
+  } catch (e) {
+    _subPaySuggestedAmount = null;
+    if (suggestedWrap) { suggestedWrap.style.display = ''; suggestedWrap.textContent = 'Could not calculate suggested amount: ' + e.message; }
+  }
 }
 window.onSubPaySelectChange = onSubPaySelectChange;
+
+// Fires on every keystroke in the Amount field. If a real suggested
+// amount exists and the typed value no longer matches it, the override
+// reason field becomes visible AND required before saving.
+function onSubPayAmountInput() {
+  const overrideWrap = document.getElementById('subPayOverrideWrap');
+  if (!overrideWrap) return;
+  if (_subPaySuggestedAmount === null) { overrideWrap.style.display = 'none'; return; }
+  const current = parseFloat(document.getElementById('subPayAmount')?.value) || 0;
+  const differs = Math.abs(current - _subPaySuggestedAmount) > 0.005;
+  overrideWrap.style.display = differs ? '' : 'none';
+  if (!differs) { const r = document.getElementById('subPayOverrideReason'); if (r) r.value = ''; }
+}
+window.onSubPayAmountInput = onSubPayAmountInput;
 
 function saveSubcontractorPayment() {
   const jobId = conCurrentJobId;
@@ -5715,12 +5800,26 @@ function saveSubcontractorPayment() {
   if (!subName) { alert('Select a subcontractor or enter a name.'); return; }
   if (!desc) { alert('Scope/description is required.'); return; }
   if (!amount) { alert('Amount is required.'); return; }
+
+  // If the amount was auto-suggested from logged hours × rate and the
+  // person changed it, require them to say why before it saves — the
+  // whole point of prepopulating is that a silent override defeats it.
+  const overrideWrap = document.getElementById('subPayOverrideWrap');
+  const overrideVisible = overrideWrap && overrideWrap.style.display !== 'none';
+  const overrideReason = document.getElementById('subPayOverrideReason')?.value.trim() || '';
+  if (overrideVisible && !overrideReason) {
+    alert('This amount differs from the suggested $' + _subPaySuggestedAmount.toFixed(2) + ' (hours × rate). Enter a reason for the override before saving.');
+    return;
+  }
+
   const payId = document.getElementById('subPayId')?.value;
   const data = {
     subKey, subName, desc, amount,
     date: document.getElementById('subPayDate')?.value || new Date().toISOString().split('T')[0],
     status: document.getElementById('subPayStatus')?.value || 'Agreed',
     notes: document.getElementById('subPayNotes')?.value.trim() || '',
+    suggestedAmount: overrideVisible ? _subPaySuggestedAmount : null,
+    overrideReason: overrideVisible ? overrideReason : '',
     companyId: currentCompanyId,
     updatedAt: firebase.firestore.FieldValue.serverTimestamp()
   };
