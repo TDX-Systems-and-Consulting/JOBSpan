@@ -9919,10 +9919,74 @@ async function commitMarkPaid(jobId, invId, total) {
     if (method === 'Check' && payment.checkNumber) paidNote += ` #${payment.checkNumber}`;
     logInvoiceActivity(jobId, 'invoice_paid', paidNote.trim());
 
+    const job = conJobs.find(j => j.id === jobId);
+
+    // 1c. For every subcontractor payment logged on this job that isn't
+    // marked Paid yet, create a To-Do ("Pay Domingo Handyman LLC...")
+    // and push a PlannerXD notification, same as the proposal-signed
+    // flow — always logs its outcome to Activity (sent/skipped/failed)
+    // rather than swallowing errors, since a silent failure here was
+    // exactly what made the original signature bridge undiagnosable.
+    // Deliberately fires on ANY invoice paid, not just a "final" one —
+    // it only actually does anything if unpaid sub payments already
+    // exist on the job, so a deposit invoice with no sub work logged
+    // yet is a harmless no-op.
+    try {
+      const subPaySnap = await coll('jobs').doc(jobId).collection('subcontractorPayments').get();
+      const unpaidDocs = [];
+      subPaySnap.forEach(d => { if ((d.data().status || 'Agreed') !== 'Paid') unpaidDocs.push(d); });
+      if (unpaidDocs.length) {
+        const jobLabel = (job && (job.address || job.name)) || 'Job';
+        const todoWrites = [];
+        unpaidDocs.forEach(d => {
+          const p = d.data();
+          const amtStr = (p.amount || 0).toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2});
+          todoWrites.push(coll('todos').add({
+            text: `Pay ${p.subName || 'subcontractor'} — $${amtStr}${p.desc ? ' (' + p.desc + ')' : ''} — ${jobLabel}`,
+            priority: 'high',
+            dueDate: '',
+            jobId,
+            jobName: jobLabel,
+            assignee: '',
+            assigneeName: '',
+            done: false,
+            createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+            createdBy: conCurrentUser?.email || '',
+            createdByName: conCurrentUser?.displayName || conCurrentUser?.email || '',
+            source: 'invoice_paid_sub_owed'
+          }));
+        });
+        await Promise.all(todoWrites);
+        logInvoiceActivity(jobId, 'todo_created', `${unpaidDocs.length} subcontractor payment to-do(s) created — invoice paid.`);
+
+        const settDoc = await coll('settings').doc('company').get();
+        const ownerUid = settDoc.exists ? settDoc.data().ownerUid : null;
+        if (!ownerUid) {
+          logInvoiceActivity(jobId, 'plannerxd_push_skipped', 'PlannerXD notification skipped — no ownerUid set on company settings.');
+        } else {
+          const subNames = unpaidDocs.map(d => d.data().subName || 'subcontractor');
+          try {
+            await conDb.collection('plannerxd_notifications').doc(ownerUid).collection('items').add({
+              type: 'sub_payment_owed',
+              title: 'Pay Subcontractor(s) — ' + jobLabel,
+              body: 'Invoice paid. Subcontractor(s) owed: ' + subNames.join(', '),
+              jobId, companyId: currentCompanyId, actionLabel: 'Open Job',
+              createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+              createdMs: Date.now(), read: false
+            });
+            logInvoiceActivity(jobId, 'plannerxd_push_sent', 'PlannerXD notified — subcontractor payment owed.');
+          } catch (pushErr) {
+            logInvoiceActivity(jobId, 'plannerxd_push_failed', 'PlannerXD notification failed: ' + pushErr.message);
+          }
+        }
+      }
+    } catch (subErr) {
+      logInvoiceActivity(jobId, 'sub_payment_todo_failed', 'Could not check/create subcontractor payment to-do: ' + subErr.message);
+    }
+
     // 2. Auto-advance job status to To Be Scheduled (Approved was removed
     // as a distinct stage), but only if it hasn't already progressed
     // further in the pipeline (never move a job backwards).
-    const job = conJobs.find(j => j.id === jobId);
     const approvedIdx = CON_JOB_STATUSES.indexOf('To Be Scheduled');
     const currentIdx = job ? CON_JOB_STATUSES.indexOf(job.status) : -1;
     if (job && (currentIdx === -1 || currentIdx < approvedIdx)) {
