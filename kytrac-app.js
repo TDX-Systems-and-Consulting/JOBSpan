@@ -175,6 +175,7 @@ const KT_PAGES = {
   todos:              { el:'ktPageTodos',              title:'✅ To-Dos' },
   customers:          { el:'ktPageCustomers',          title:'👥 Customers' },
   vendors:            { el:'ktPageVendors',            title:'🏭 Vendors' },
+  contractors:        { el:'ktPageContractors',        title:'👷 Contractors' },
   settings:           { el:'ktPageSettings',           title:'⚙️ Company Settings' },
 };
 
@@ -509,6 +510,7 @@ function ktNav(key, btn) {
   if(key==='todos') { loadTodos(); populateTodoJobFilter(); populateTodoAssigneeFilter(); renderTodos(); }
   if(key==='customers') { loadCustomers(); renderCustomers(); }
   if(key==='vendors') { loadVendors(); renderVendors(); }
+  if(key==='contractors') { loadContractors(); renderContractors(); }
   if(key==='reports') { renderActiveReport(); }
   if(key==='purchaseorders') { loadPOs(); populatePOFilters(); renderPOs(); }
   if(key==='documents') { loadDocuments(); populateDocJobFilter(); renderDocuments(); }
@@ -5664,15 +5666,14 @@ function openAddSubPayFromJob(payId) {
   document.getElementById('subPayId').value = payId || '';
   const setVal = (id, v) => { const el = document.getElementById(id); if (el) el.value = v || ''; };
 
-  // Populate the dropdown with team members flagged as flat-rate
-  // subcontractors, plus a manual "Other" option for a one-off sub
-  // who was never added as a team member at all.
+  // Populate the dropdown from Contractors (real, standing payees),
+  // plus a manual "Other" option for a one-off sub who was never added
+  // as a contractor at all.
   const sel = document.getElementById('subPaySelect');
-  const subMembers = (_lastTeamMemberList || []).filter(m => m.paymentType === 'subcontractor');
   const existingSubKey = existing ? (existing.subKey || '') : '';
   sel.innerHTML = '<option value="">Select…</option>' +
-    subMembers.map(m => `<option value="${esc((m.email||'').replace(/\./g,'_'))}" ${existingSubKey===(m.email||'').replace(/\./g,'_')?'selected':''}>${esc(m.name||m.email||'Unnamed')}</option>`).join('') +
-    `<option value="__other__" ${existing && !existingSubKey ? 'selected' : ''}>Other (not a team member)…</option>`;
+    (allContractors || []).map(c => `<option value="${esc(c.id)}" ${existingSubKey===c.id?'selected':''}>${esc(c.name||'Unnamed')}</option>`).join('') +
+    `<option value="__other__" ${existing && !existingSubKey ? 'selected' : ''}>Other (not a contractor)…</option>`;
 
   setVal('subPayOtherName', existing && !existingSubKey ? existing.subName : '');
   document.getElementById('subPayOtherWrap').style.display = (existing && !existingSubKey) ? '' : 'none';
@@ -5701,10 +5702,11 @@ function openAddSubPayFromJobShortcut() { openAddSubPayFromJob(null); }
 window.openAddSubPayFromJobShortcut = openAddSubPayFromJobShortcut;
 
 // Tracks the last auto-calculated "suggested" amount (hours logged on
-// THIS job × the subcontractor's stored burdenedRate) so we can detect
-// when the person types something different and require them to say
-// why — the actual ask being "prepopulate it, but force an explanation
-// for any manual override" rather than silently accepting either one.
+// THIS job × the contractor's burdenedRate, summed across every Team
+// Member in its crewMemberEmails) so we can detect when the person
+// types something different and require them to say why — the actual
+// ask being "prepopulate it, but force an explanation for any manual
+// override" rather than silently accepting either one.
 let _subPaySuggestedAmount = null;
 
 async function onSubPaySelectChange() {
@@ -5717,7 +5719,7 @@ async function onSubPaySelectChange() {
   const amountEl = document.getElementById('subPayAmount');
 
   if (!sel.value || sel.value === '__other__') {
-    // No real subcontractor selected — nothing to suggest against, and
+    // No real contractor selected — nothing to suggest against, and
     // an "Other" one-off sub has no logged hours/rate to compute from.
     _subPaySuggestedAmount = null;
     if (suggestedWrap) suggestedWrap.style.display = 'none';
@@ -5725,11 +5727,21 @@ async function onSubPaySelectChange() {
     return;
   }
 
-  const member = (_lastTeamMemberList || []).find(m => (m.email||'').replace(/\./g,'_') === sel.value);
+  const contractor = (allContractors || []).find(c => c.id === sel.value);
   const jobId = conCurrentJobId;
-  if (!member || !jobId || !conDb) return;
+  if (!contractor || !jobId || !conDb) return;
 
   if (suggestedWrap) { suggestedWrap.style.display = ''; suggestedWrap.textContent = 'Calculating amount owed from logged hours…'; }
+
+  const crewEmails = (contractor.crewMemberEmails || []).map(e => (e||'').toLowerCase());
+  if (!crewEmails.length) {
+    _subPaySuggestedAmount = null;
+    if (suggestedWrap) {
+      suggestedWrap.style.display = '';
+      suggestedWrap.textContent = contractor.name + ' has no crew members linked (edit it under Contractors) — enter the amount manually.';
+    }
+    return;
+  }
 
   try {
     const teSnap = await coll('timeentries').where('jobId', '==', jobId).get();
@@ -5737,10 +5749,10 @@ async function onSubPaySelectChange() {
     teSnap.forEach(d => {
       const t = d.data();
       if (!t.hours) return;
-      if ((t.userEmail || '').toLowerCase() !== (member.email || '').toLowerCase()) return;
+      if (!crewEmails.includes((t.userEmail || '').toLowerCase())) return;
       hours += t.hours;
     });
-    const rate = Number(member.burdenedRate) || 0;
+    const rate = Number(contractor.burdenedRate) || 0;
     const suggested = Math.round(hours * rate * 100) / 100;
 
     if (!hours || !rate) {
@@ -5748,8 +5760,8 @@ async function onSubPaySelectChange() {
       if (suggestedWrap) {
         suggestedWrap.style.display = '';
         suggestedWrap.textContent = !hours
-          ? 'No clock-in hours logged for ' + (member.name || member.email) + ' on this job yet — enter the amount manually.'
-          : (member.name || member.email) + ' has no burdened rate set (Settings → Team) — enter the amount manually.';
+          ? 'No clock-in hours logged for ' + contractor.name + '\'s crew on this job yet — enter the amount manually.'
+          : contractor.name + ' has no burdened rate set (Contractors) — enter the amount manually.';
       }
       return;
     }
@@ -5758,7 +5770,7 @@ async function onSubPaySelectChange() {
     if (amountEl) amountEl.value = suggested;
     if (suggestedWrap) {
       suggestedWrap.style.display = '';
-      suggestedWrap.textContent = `Suggested: ${hours.toFixed(1)} hrs × $${rate.toFixed(2)}/hr = $${suggested.toFixed(2)} (from logged hours on this job)`;
+      suggestedWrap.textContent = `Suggested: ${hours.toFixed(1)} crew hrs × $${rate.toFixed(2)}/hr = $${suggested.toFixed(2)} (from logged hours on this job)`;
     }
     if (overrideWrap) overrideWrap.style.display = 'none'; // matches suggestion exactly right now
   } catch (e) {
@@ -5791,9 +5803,9 @@ function saveSubcontractorPayment() {
   if (selVal === '__other__') {
     subName = document.getElementById('subPayOtherName')?.value.trim() || '';
   } else if (selVal) {
-    const member = (_lastTeamMemberList || []).find(m => (m.email||'').replace(/\./g,'_') === selVal);
+    const contractor = (allContractors || []).find(c => c.id === selVal);
     subKey = selVal;
-    subName = member?.name || member?.email || 'Subcontractor';
+    subName = contractor?.name || 'Contractor';
   }
   const desc = document.getElementById('subPayDesc')?.value.trim();
   const amount = parseFloat(document.getElementById('subPayAmount')?.value) || 0;
@@ -10317,6 +10329,12 @@ function conLoadJobs() {
     loadCustomers();
     loadTimeEntries();
     loadVendors();
+    // Same reasoning as loadTeamMembers below — Contractors need to be
+    // loaded at startup, not just when someone visits the Contractors
+    // page, so the Subcontractor Payment dropdown on a job's Financials
+    // tab always has real data instead of showing empty until someone
+    // happens to click Contractors first.
+    loadContractors();
     loadDocuments();
     loadGlobalLogs();
     loadGlobalPhases();
@@ -13295,6 +13313,202 @@ function deleteVendor() {
     .then(() => { kClose('vendorModal'); kClose('vendorDetailModal'); })
     .catch(e => alert('Error: ' + e.message));
 }
+
+// ── Contractors ──
+// A Contractor is a standing PAYEE — a company/crew you pay for labor
+// (1099 flat-rate or hourly), distinct from Vendors (materials/services
+// you buy) and distinct from Team Members (people who log in and clock
+// hours). One contractor's rate applies to the COMBINED hours of every
+// Team Member listed in its crewMemberEmails, matching the established
+// "$X/hr flat for the whole crew, not per-man" model — see
+// crewMemberEmails on the modal.
+let allContractors = [];
+
+function loadContractors() {
+  if (!conDb) return;
+  coll('contractors').orderBy('name').onSnapshot(snap => {
+    allContractors = [];
+    snap.forEach(doc => allContractors.push({ id: doc.id, ...doc.data() }));
+    renderContractors();
+  }, () => {});
+}
+window.loadContractors = loadContractors;
+
+function renderContractors() {
+  const grid = document.getElementById('contractorGrid');
+  const countEl = document.getElementById('contractorCount');
+  if (!grid) return;
+
+  const q = (document.getElementById('contractorSearch')?.value || '').toLowerCase();
+  let contractors = allContractors;
+  if (q) contractors = contractors.filter(c =>
+    (c.name||'').toLowerCase().includes(q) ||
+    (c.trade||'').toLowerCase().includes(q) ||
+    (c.contact||'').toLowerCase().includes(q) ||
+    (c.email||'').toLowerCase().includes(q)
+  );
+
+  if (countEl) countEl.textContent = `${allContractors.length} contractor${allContractors.length!==1?'s':''} total`;
+
+  if (!contractors.length) {
+    grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--muted);font-style:italic">
+      ${allContractors.length===0 ? 'No contractors yet. Add your first one above.' : 'No contractors match your search.'}
+    </div>`;
+    return;
+  }
+
+  const today = new Date().toISOString().split('T')[0];
+  const in30 = new Date(Date.now() + 30*86400000).toISOString().split('T')[0];
+  const statusColors = { Active:'#1dbb87', 'On Hold':'#ef5350', Inactive:'#6b7280' };
+
+  grid.innerHTML = contractors.map(c => {
+    const insExpired = c.insExp && c.insExp < today;
+    const insWarn = c.insExp && !insExpired && c.insExp <= in30;
+    const insClass = insExpired ? 'ins-expired' : insWarn ? 'ins-warn' : 'ins-ok';
+    const insLabel = insExpired ? '⚠️ INS EXPIRED' : insWarn ? '⚠️ Ins expiring' : c.insExp ? '✓ Insured' : '';
+    const sColor = statusColors[c.status||'Active'] || '#1dbb87';
+    const initials = (c.name||'?').split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
+    const crewCount = (c.crewMemberEmails||[]).length;
+
+    return `<div class="vendor-card" onclick="openContractorModal('${c.id}')">
+      <div style="display:flex;gap:12px;align-items:flex-start;margin-bottom:10px">
+        <div class="vendor-avatar">${initials}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:800;font-size:.95rem;color:#eaf0fb">${esc(c.name||'')}</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">
+            <span class="vendor-trade-badge">${esc(c.trade||'')}</span>
+            <span style="font-size:.7rem;font-weight:700;color:${sColor}">${c.status||'Active'}</span>
+          </div>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:4px">
+        ${c.contact ? `<div style="font-size:.82rem;color:var(--muted)">👤 ${esc(c.contact)}</div>` : ''}
+        ${c.phone ? `<div style="font-size:.82rem;display:flex;align-items:center;gap:6px">
+          <a href="tel:${esc(c.phone)}" onclick="event.stopPropagation()" style="color:#a3f2d2;text-decoration:none;font-weight:600">📞 ${esc(c.phone)}</a>
+          <a href="sms:${esc(c.phone)}" onclick="event.stopPropagation()" style="background:rgba(59,130,246,.15);color:#93c5fd;border:1px solid rgba(59,130,246,.25);border-radius:6px;padding:1px 7px;font-size:.7rem;font-weight:700;text-decoration:none">📱 Text</a>
+        </div>` : ''}
+        ${c.email ? `<div style="font-size:.82rem"><a href="mailto:${esc(c.email)}" onclick="event.stopPropagation()" style="color:#eaf0fb;text-decoration:none">✉️ ${esc(c.email)}</a></div>` : ''}
+        <div style="font-size:.82rem;color:var(--muted)">💵 $${(c.burdenedRate||0).toFixed(2)}/hr${crewCount ? ` · 👷 ${crewCount} crew member${crewCount!==1?'s':''}` : ' · ⚠️ no crew members linked'}</div>
+        ${c.w9OnFile ? `<div style="font-size:.76rem;color:#1dbb87">✓ W-9 on file</div>` : `<div style="font-size:.76rem;color:#f59e0b">⚠️ No W-9 on file</div>`}
+        ${c.insExp ? `<div style="font-size:.76rem;margin-top:4px" class="${insClass}">${insLabel}: ${c.insExp}</div>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
+window.renderContractors = renderContractors;
+
+function openContractorModal(id) {
+  const c = id ? allContractors.find(x => x.id === id) : null;
+  document.getElementById('contractorModalTitle').textContent = c ? 'Edit Contractor' : 'Add Contractor';
+  document.getElementById('contractorId').value = id || '';
+  const setVal = (elId, val) => { const el = document.getElementById(elId); if (el) el.value = val || ''; };
+  setVal('contractorName', c?.name); setVal('contractorContact', c?.contact);
+  setVal('contractorPhone', c?.phone); setVal('contractorEmail', c?.email);
+  setVal('contractorInsExp', c?.insExp); setVal('contractorNotes', c?.notes);
+  setVal('contractorRate', c?.burdenedRate);
+  document.getElementById('contractorTrade').value = c?.trade || 'General Labor';
+  document.getElementById('contractorStatus').value = c?.status || 'Active';
+  document.getElementById('contractorW9OnFile').checked = !!c?.w9OnFile;
+
+  // Populate crew-member multi-select from every Team Member — any of
+  // them can be linked to a contractor, not just ones already flagged
+  // 'subcontractor', since that flag is being retired from Team Members.
+  const crewSel = document.getElementById('contractorCrewEmails');
+  const linkedEmails = c?.crewMemberEmails || [];
+  crewSel.innerHTML = (_lastTeamMemberList || []).map(m =>
+    `<option value="${esc(m.email||'')}" ${linkedEmails.includes(m.email)?'selected':''}>${esc(m.name||m.email||'Unnamed')}</option>`
+  ).join('');
+
+  document.getElementById('deleteContractorBtn').style.display = c ? 'inline-flex' : 'none';
+  kOpen('contractorModal');
+}
+window.openContractorModal = openContractorModal;
+
+function saveContractor() {
+  const name = document.getElementById('contractorName')?.value.trim();
+  if (!name) { alert('Contractor name is required.'); return; }
+  const id = document.getElementById('contractorId')?.value;
+  const crewSel = document.getElementById('contractorCrewEmails');
+  const crewMemberEmails = crewSel ? Array.from(crewSel.selectedOptions).map(o => o.value) : [];
+  const data = {
+    name,
+    trade: document.getElementById('contractorTrade')?.value,
+    status: document.getElementById('contractorStatus')?.value,
+    contact: document.getElementById('contractorContact')?.value.trim() || '',
+    phone: document.getElementById('contractorPhone')?.value.trim() || '',
+    email: document.getElementById('contractorEmail')?.value.trim() || '',
+    insExp: document.getElementById('contractorInsExp')?.value || '',
+    w9OnFile: !!document.getElementById('contractorW9OnFile')?.checked,
+    burdenedRate: parseFloat(document.getElementById('contractorRate')?.value) || 0,
+    crewMemberEmails,
+    notes: document.getElementById('contractorNotes')?.value.trim() || '',
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+  };
+  const col = coll('contractors');
+  const promise = id ? col.doc(id).update(data)
+    : col.add({ ...data, companyId: currentCompanyId, createdAt: firebase.firestore.FieldValue.serverTimestamp(), createdBy: conCurrentUser?.email||'' });
+  promise.then(() => kClose('contractorModal')).catch(e => alert('Error: ' + e.message));
+}
+window.saveContractor = saveContractor;
+
+function deleteContractor() {
+  const id = document.getElementById('contractorId')?.value;
+  if (!id || !confirm('Delete this contractor? Payment history under it will remain in the database but will no longer be reachable from this list.')) return;
+  coll('contractors').doc(id).delete()
+    .then(() => kClose('contractorModal'))
+    .catch(e => alert('Error: ' + e.message));
+}
+window.deleteContractor = deleteContractor;
+
+// One-time migration: turns every existing Team Member flagged
+// paymentType:'subcontractor' into a real Contractor record (1:1,
+// crewMemberEmails:[that one email]) so existing hour-tracking/rate
+// data isn't lost when the concept moves out of Team Members. Safe to
+// run more than once -- skips any team member whose email already
+// matches an existing contractor's crewMemberEmails.
+async function migrateSubcontractorTeamMembersToContractors() {
+  if (currentUserRole !== 'Owner') { alert('Only Owners can run this migration.'); return; }
+  if (!conDb) return;
+  const teamDoc = await coll('settings').doc('team').get();
+  const members = teamDoc.exists ? extractTeamMembers(teamDoc.data()) : {};
+  const subMembers = Object.values(members).filter(m => m.paymentType === 'subcontractor');
+  if (!subMembers.length) { alert('No Team Members are flagged as subcontractor — nothing to migrate.'); return; }
+
+  const contractorSnap = await coll('contractors').get();
+  const alreadyLinked = new Set();
+  contractorSnap.forEach(d => (d.data().crewMemberEmails||[]).forEach(e => alreadyLinked.add((e||'').toLowerCase())));
+
+  const toMigrate = subMembers.filter(m => !alreadyLinked.has((m.email||'').toLowerCase()));
+  if (!toMigrate.length) { alert('All flagged subcontractor Team Members already have a matching Contractor record.'); return; }
+
+  if (!confirm(`Create ${toMigrate.length} new Contractor record(s) from Team Members currently flagged as subcontractor?\n\n` +
+    toMigrate.map(m => '• ' + (m.name||m.email)).join('\n'))) return;
+
+  const writes = toMigrate.map(m => coll('contractors').add({
+    name: m.name || m.email || 'Unnamed Contractor',
+    trade: 'General Labor',
+    status: 'Active',
+    contact: m.name || '',
+    phone: m.phone || '',
+    email: m.email || '',
+    insExp: '',
+    w9OnFile: false,
+    burdenedRate: Number(m.burdenedRate) || 0,
+    crewMemberEmails: m.email ? [m.email] : [],
+    notes: 'Migrated from Team Members (was flagged Flat-Rate Subcontractor).',
+    companyId: currentCompanyId,
+    createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+    createdBy: conCurrentUser?.email || ''
+  }));
+  try {
+    await Promise.all(writes);
+    alert(`✅ Created ${toMigrate.length} Contractor record(s). Review them under Contractors, then update rates/crew as needed.`);
+    loadContractors();
+  } catch (e) {
+    alert('Migration error: ' + e.message);
+  }
+}
+window.migrateSubcontractorTeamMembersToContractors = migrateSubcontractorTeamMembersToContractors;
 
 // ── Bills / AP ──
 function loadVendorBills(vendorId) {

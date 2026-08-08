@@ -1153,6 +1153,9 @@
         <span class="kt-nav-icon">🏭</span> Vendors
         <span class="kt-nav-badge" id="navVendorBadge" style="display:none;background:#ef5350">!</span>
       </button>
+      <button class="kt-nav-item" onclick="ktNav('contractors',this)">
+        <span class="kt-nav-icon">👷</span> Contractors
+      </button>
 
       <div class="kt-nav-section">Financials</div>
       <button class="kt-nav-item" onclick="ktNav('costing',this)">
@@ -1951,6 +1954,38 @@
 
     </div>
 
+    <!-- ── PAGE: CONTRACTORS ── -->
+    <!-- A contractor is a standing payee (a company/crew you pay for
+         labor — e.g. an LLC), distinct from Vendors (who you buy
+         materials/services from) and distinct from Team Members (who
+         log in and clock hours). One contractor can have several Team
+         Members' clocked hours count toward what's owed to it (see
+         crewMemberEmails on the Add Contractor modal) — e.g. Domingo
+         Handyman LLC gets paid, while Gonzalo/Rosario/Francisco each
+         clock in individually under their own Team Member logins. -->
+    <div class="kt-page" id="ktPageContractors">
+
+      <!-- Header -->
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px">
+        <div>
+          <h2 style="margin:0;font-size:1.1rem">👷 Contractors</h2>
+          <div class="small muted" id="contractorCount" style="margin-top:3px"></div>
+        </div>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <input id="contractorSearch" placeholder="Search contractors..." style="width:200px;padding:8px 14px;font-size:.84rem" oninput="renderContractors()" />
+          <button class="btn-amber" onclick="openContractorModal()">+ Add Contractor</button>
+        </div>
+      </div>
+
+      <div class="small muted" style="margin-bottom:16px;font-style:italic">Companies/crews you pay for labor (1099 flat-rate or hourly). Not for material vendors — see Vendors — and not for people who need a JOBSMETRIX login — see Company Settings → Team.
+        <button class="btn" style="padding:2px 10px;font-size:.72rem;margin-left:8px" onclick="migrateSubcontractorTeamMembersToContractors()">Migrate existing subcontractor Team Members →</button>
+      </div>
+
+      <!-- Contractor grid -->
+      <div class="vendor-grid" id="contractorGrid"></div>
+
+    </div>
+
     <!-- ── PAGE: DOCUMENTS ── -->
     <div class="kt-page" id="ktPageDocuments">
 
@@ -2638,6 +2673,64 @@
       <button class="btn btn-danger" id="deleteVendorBtn" onclick="deleteVendor()" style="display:none">Delete</button>
       <button class="btn" onclick="kClose('vendorModal')">Cancel</button>
       <button class="btn-amber" onclick="saveVendor()">Save Vendor</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ CONTRACTOR MODAL (Add/Edit) ══ -->
+<div id="contractorModal" class="modal-overlay">
+  <div class="modal-box" style="max-width:560px">
+    <div class="modal-head">
+      <h3 id="contractorModalTitle" style="margin:0">Add Contractor</h3>
+      <button class="btn" onclick="kClose('contractorModal')">Close</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="contractorId" />
+      <div class="form-grid">
+        <div class="full"><label class="small muted" style="display:block;margin-bottom:5px">Company / Contractor Name *</label>
+          <input id="contractorName" placeholder="e.g. Domingo Handyman LLC" /></div>
+        <div><label class="small muted" style="display:block;margin-bottom:5px">Trade</label>
+          <select id="contractorTrade">
+            <option>General Labor</option><option>Electrical</option><option>Plumbing</option>
+            <option>HVAC</option><option>Drywall</option><option>Flooring</option><option>Painting</option>
+            <option>Roofing</option><option>Masonry</option><option>Framing</option><option>Concrete</option>
+            <option>Insulation</option><option>Tile</option><option>Cabinets</option>
+            <option>Windows & Doors</option><option>Excavation</option><option>Other</option>
+          </select>
+        </div>
+        <div><label class="small muted" style="display:block;margin-bottom:5px">Status</label>
+          <select id="contractorStatus">
+            <option value="Active">Active</option>
+            <option value="On Hold">On Hold</option>
+            <option value="Inactive">Inactive</option>
+          </select>
+        </div>
+        <div><label class="small muted" style="display:block;margin-bottom:5px">Contact Name</label>
+          <input id="contractorContact" placeholder="Primary contact" /></div>
+        <div><label class="small muted" style="display:block;margin-bottom:5px">Phone</label>
+          <input id="contractorPhone" placeholder="(314) 555-0100" type="tel" /></div>
+        <div><label class="small muted" style="display:block;margin-bottom:5px">Email</label>
+          <input id="contractorEmail" placeholder="contact@company.com" type="email" /></div>
+        <div><label class="small muted" style="display:block;margin-bottom:5px">Insurance Exp. Date</label>
+          <input id="contractorInsExp" type="date" /></div>
+        <div><label class="small muted" style="display:block;margin-bottom:5px">
+          <input id="contractorW9OnFile" type="checkbox" style="width:auto;margin-right:6px;vertical-align:middle" />W-9 on file
+        </label></div>
+        <div><label class="small muted" style="display:block;margin-bottom:5px">Burdened Rate ($/hr) *</label>
+          <input id="contractorRate" type="number" step="0.01" placeholder="e.g. 100.00 (flat rate for the whole crew)" /></div>
+        <div class="full">
+          <label class="small muted" style="display:block;margin-bottom:5px">Crew members whose clocked hours count toward this contractor's pay</label>
+          <select id="contractorCrewEmails" multiple size="4" style="width:100%;padding:8px;font-size:.84rem"></select>
+          <div class="small muted" style="margin-top:4px;font-style:italic">Hold Cmd/Ctrl to select more than one. These are Team Members who clock in/out under their own login — the contractor's rate applies to their combined hours on a job.</div>
+        </div>
+        <div class="full"><label class="small muted" style="display:block;margin-bottom:5px">Notes</label>
+          <textarea id="contractorNotes" rows="2" placeholder="Agreement terms, preferences, notes..."></textarea></div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-danger" id="deleteContractorBtn" onclick="deleteContractor()" style="display:none">Delete</button>
+      <button class="btn" onclick="kClose('contractorModal')">Cancel</button>
+      <button class="btn-amber" onclick="saveContractor()">Save Contractor</button>
     </div>
   </div>
 </div>
@@ -4633,7 +4726,7 @@
 
 <div class="photo-queue-badge" style="display:none;position:fixed;bottom:18px;right:18px;z-index:9999;background:#d97706;color:#fff;border-radius:999px;padding:8px 16px;font-size:.8rem;font-weight:700;box-shadow:var(--shadow);align-items:center;gap:6px"></div>
 
-<script src="kytrac-app.js?v=202608081354"></script>
+<script src="kytrac-app.js?v=202608081403"></script>
 <script>
   // Register PWA service worker for installability + offline app-shell
   // loading. Registered after the main app script so a slow/failed SW
